@@ -18,13 +18,11 @@ from tomus.core.llm import (
     ClaudeProvider,
     DeepSeekProvider,
     FallbackLLMDispatcher,
-    GitHubModelsProvider,
     GroqProvider,
     NvidiaProvider,
     ClassificationResult,
     ExternalMetadata,
 )
-
 
 # --------------------------------------------------------------------------- #
 # Helpers
@@ -44,7 +42,6 @@ def _classification_payload(**overrides):
     payload.update(overrides)
     return payload
 
-
 def _mock_success_openai(route, payload):
     """Mock no formato OpenAI (DeepSeek): choices[0].message.content."""
     route.mock(
@@ -54,16 +51,14 @@ def _mock_success_openai(route, payload):
         )
     )
 
-
 def _mock_success_claude(route, payload):
-    """Mock no formato Anthropic (Claude): content[0].text."""
+    """Mock no formato Anthropic (Claude): content[0].text com blocos type=text."""
     route.mock(
         return_value=httpx.Response(
             200,
-            json={"content": [{"text": json.dumps(payload)}]},
+            json={"content": [{"type": "text", "text": json.dumps(payload)}]},
         )
     )
-
 
 # --------------------------------------------------------------------------- #
 # 1. Instanciação de DeepSeekProvider e ClaudeProvider
@@ -73,12 +68,10 @@ def test_deepseek_provider_instancia():
     assert provider is not None
     assert provider._model == "deepseek-flash"
 
-
 def test_claude_provider_instancia():
-    provider = ClaudeProvider(api_key="test-key", model="claude-3-5-haiku-20241022")
+    provider = ClaudeProvider(api_key="test-key", model="claude-haiku-5-5")
     assert provider is not None
-    assert provider._model == "claude-3-5-haiku-20241022"
-
+    assert provider._model == "claude-haiku-5-5"
 
 # --------------------------------------------------------------------------- #
 # 2. Mock de chamada com sucesso para DeepSeek e Claude
@@ -102,7 +95,6 @@ def test_deepseek_chamada_sucesso():
     assert result.tipo == "Livro"
     assert result.title == "Psicologia Social"
 
-
 @respx.mock
 def test_claude_chamada_sucesso():
     payload = _classification_payload()
@@ -122,24 +114,12 @@ def test_claude_chamada_sucesso():
     assert result.tipo == "Livro"
     assert result.title == "Psicologia Social"
 
-
-# --------------------------------------------------------------------------- #
-# 2b. Instanciação de GroqProvider e GitHubModelsProvider
 # --------------------------------------------------------------------------- #
 def test_groq_provider_instancia():
     provider = GroqProvider(api_key="test-key", model="openai/gpt-oss-120b")
     assert provider is not None
     assert provider._model == "openai/gpt-oss-120b"
 
-
-def test_github_models_provider_instancia():
-    provider = GitHubModelsProvider(api_key="test-key", model="openai/gpt-4o")
-    assert provider is not None
-    assert provider._model == "openai/gpt-4o"
-
-
-# --------------------------------------------------------------------------- #
-# 2c. Mock de chamada com sucesso para Groq e GitHub Models
 # --------------------------------------------------------------------------- #
 @respx.mock
 def test_groq_chamada_sucesso():
@@ -159,27 +139,6 @@ def test_groq_chamada_sucesso():
     assert result.area_basica == "Psicologia"
     assert result.tipo == "Livro"
     assert result.title == "Psicologia Social"
-
-
-@respx.mock
-def test_github_models_chamada_sucesso():
-    payload = _classification_payload()
-    route = respx.post("https://models.github.ai/inference/chat/completions")
-    _mock_success_openai(route, payload)
-
-    provider = GitHubModelsProvider(api_key="test-key")
-    result = provider.classify(
-        sampled_text="Texto de amostra com conteúdo suficiente para classificação.",
-        cip_text="",
-        external_metadata=None,
-    )
-
-    assert result.confidence_score == 0.92
-    assert result.grande_area == "Ciências Humanas"
-    assert result.area_basica == "Psicologia"
-    assert result.tipo == "Livro"
-    assert result.title == "Psicologia Social"
-
 
 # --------------------------------------------------------------------------- #
 # 3. FallbackLLMDispatcher: falha no primário -> chaveamento para o fallback
@@ -215,7 +174,6 @@ def test_fallback_dispatcher_primario_falha_secundario_sucesso():
     assert result.grande_area == "Ciências Humanas"
     assert result.title == "Psicologia Social"
 
-
 @respx.mock
 def test_fallback_dispatcher_todos_falham_retorna_ultimo_erro():
     """Todos os provedores falham; dispatcher retorna o último erro."""
@@ -240,7 +198,6 @@ def test_fallback_dispatcher_todos_falham_retorna_ultimo_erro():
 
     assert result.confidence_score == 0.0
     assert "Falha na chamada ao LLM" in result.reasoning
-
 
 @respx.mock
 def test_fallback_dispatcher_primario_retorna_erro_rede_secundario_sucesso():
@@ -271,33 +228,27 @@ def test_fallback_dispatcher_primario_retorna_erro_rede_secundario_sucesso():
     assert result.reasoning == "Classificação via Claude fallback."
 
 
-@respx.mock
-def test_fallback_dispatcher_groq_falha_github_sucesso():
-    """Provedor primário Groq falha; GitHub Models responde com sucesso."""
-    erro_payload = _classification_payload(
-        reasoning="Falha na chamada ao LLM Groq: timeout",
-        confidence_score=0.0,
-    )
-    rota_primario = respx.post("https://api.groq.com/openai/v1/chat/completions")
-    _mock_success_openai(rota_primario, erro_payload)
+def test_resolve_api_key_string_and_list():
+    from tomus.core.llm import _resolve_api_key
 
-    ok_payload = _classification_payload(reasoning="Classificação via GitHub Models fallback.")
-    rota_fallback = respx.post("https://models.github.ai/inference/chat/completions")
-    _mock_success_openai(rota_fallback, ok_payload)
+    assert _resolve_api_key("minha_chave") == "minha_chave"
+    assert _resolve_api_key(["chave1", "chave2"]) == "chave1"
+    assert _resolve_api_key([]) == ""
+    assert _resolve_api_key("") == ""
 
-    primario = GroqProvider(api_key="test-key")
-    fallback = GitHubModelsProvider(api_key="test-key")
 
-    dispatcher = FallbackLLMDispatcher([("groq", primario), ("github", fallback)])
+def test_create_provider_chain_nvidia_as_primary():
+    from tomus.core.config import AppConfig
+    from tomus.core.llm import create_provider_chain, NvidiaProvider
 
-    assert dispatcher.primary_name == "groq"
-    assert dispatcher.provider_names == ["groq", "github"]
+    cfg = AppConfig()
+    cfg.api_keys.nvidia_api_key = "nvapi-test-key"
+    cfg.llm.provider = "nvidia"
 
-    result = dispatcher.classify(
-        sampled_text="Texto de amostra com conteúdo suficiente para classificação.",
-        cip_text="",
-        external_metadata=None,
-    )
+    dispatcher = create_provider_chain(cfg)
+    assert len(dispatcher._providers) >= 1
+    nome_primario, instancia = dispatcher._providers[0]
+    assert nome_primario == "nvidia"
+    assert isinstance(instancia, NvidiaProvider)
 
-    assert result.confidence_score == 0.92
-    assert result.reasoning == "Classificação via GitHub Models fallback."
+

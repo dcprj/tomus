@@ -28,25 +28,54 @@ ICON_PATH = _RES_DIR / "tomus_icon.png" if (_RES_DIR / "tomus_icon.png").exists(
 
 
 def _apply_webengine_defenses() -> None:
-    """Aplicar variáveis de ambiente defensivas para QWebEnginePage em bundle macOS.
+    """Aplicar variáveis de ambiente defensivas para QWebEnginePage no macOS e bundles.
 
-    Quando o aplicativo está empacotado (``sys.frozen`` é True, típico de
-    pyinstaller/briefcase no macOS), o QtWebEngine pode falhar com SIGABRT
-    devido ao sandbox do processo auxiliar. Definir
-    ``QTWEBENGINE_DISABLE_SANDBOX=1`` desativa o sandbox, e apontar
-    ``QTWEBENGINE_PROCESS_PATH`` para o binário do processo dentro do bundle
-    (``sys._MEIPASS``) garante que o processo auxiliar seja encontrado.
+    No macOS e em ambientes congelados (PyInstaller), o QtWebEngine pode falhar
+    com SIGABRT devido ao sandbox rígido do processo Chromium ou restrições do
+    WindowServer (HIServices). Definir ``QTWEBENGINE_DISABLE_SANDBOX=1`` desativa
+    o sandbox problemático, e apontar ``QTWEBENGINEPROCESS_PATH`` para o binário
+    dentro do bundle (``sys._MEIPASS``) garante que o processo auxiliar seja
+    encontrado.
 
     Chamado *antes* de qualquer instância de QApplication / QWebEnginePage.
     """
-    if getattr(sys, "frozen", False):
+    if sys.platform == "darwin" or getattr(sys, "frozen", False):
         os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
-        meipass = getattr(sys, "_MEIPASS", None)
-        if meipass:
-            webengine_process = Path(meipass) / "QtWebEngineProcess"
-            if webengine_process.exists():
-                os.environ.setdefault("QTWEBENGINE_PROCESS_PATH", str(webengine_process))
+    if getattr(sys, "frozen", False):
+        meipass = Path(getattr(sys, "_MEIPASS", ""))
+        if meipass and meipass.exists():
+            # Caminho canônico do QtWebEngineProcess dentro do bundle congelado.
+            # O PyInstaller preserva a estrutura relativa dos arquivos coletados.
+            candidate_paths = [
+                meipass / "PySide6" / "Qt" / "lib" / "QtWebEngineCore.framework" / "Versions" / "Resources" / "Helpers" / "QtWebEngineProcess.app" / "Contents" / "MacOS" / "QtWebEngineProcess",
+                meipass / "PySide6" / "QtWebEngineCore.framework" / "Versions" / "Resources" / "Helpers" / "QtWebEngineProcess.app" / "Contents" / "MacOS" / "QtWebEngineProcess",
+                meipass / "QtWebEngineProcess",
+                meipass / "QtWebEngineProcess.app" / "Contents" / "MacOS" / "QtWebEngineProcess",
+            ]
+            for candidate in candidate_paths:
+                if candidate.exists():
+                    # QTWEBENGINEPROCESS_PATH (sem underscore) é o nome esperado pelo Qt.
+                    os.environ.setdefault("QTWEBENGINEPROCESS_PATH", str(candidate))
+                    # Também define QTWEBENGINE_PROCESS_PATH (com underscore) para
+                    # máxima compatibilidade com diferentes versões do Qt.
+                    os.environ.setdefault("QTWEBENGINE_PROCESS_PATH", str(candidate))
+                    break
+
+            # Definir QTWEBENGINE_RESOURCES_PATH para os arquivos .pak e icudtl.dat.
+            # O QtWebEngine precisa desses arquivos para renderizar páginas web.
+            resources_candidates = [
+                meipass / "PySide6" / "Qt" / "lib" / "QtWebEngineCore.framework" / "Versions" / "Resources" / "Resources",
+                meipass / "PySide6" / "QtWebEngineCore.framework" / "Versions" / "Resources" / "Resources",
+            ]
+            for resources_path in resources_candidates:
+                if resources_path.exists() and (resources_path / "qtwebengine_resources.pak").exists():
+                    os.environ.setdefault("QTWEBENGINE_RESOURCES_PATH", str(resources_path))
+                    # Também definir QTWEBENGINE_LOCALES_PATH para as traduções de locale.
+                    locales_path = resources_path / "qtwebengine_locales"
+                    if locales_path.exists() and (locales_path / "en-US.pak").exists():
+                        os.environ.setdefault("QTWEBENGINE_LOCALES_PATH", str(locales_path))
+                    break
 
 
 def launch_gui(

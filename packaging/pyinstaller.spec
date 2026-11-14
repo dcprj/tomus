@@ -9,7 +9,7 @@ Gera:
 import os
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_dynamic_libs
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_dynamic_libs, collect_all
 
 block_cipher = None
 
@@ -65,7 +65,7 @@ hiddenimports = [
 ]
 
 # Coletar submódulos e arquivos de dados do Docling e motor de OCR
-for pkg in ["docling", "docling_core", "docling_parse", "docling_ibm_models", "rapidocr", "onnxruntime"]:
+for pkg in ["docling", "docling_core", "docling_parse", "docling_ibm_models", "rapidocr", "onnxruntime", "latex2mathml", "pylatexenc", "pypdfium2", "pypdfium2_raw"]:
     try:
         datas += collect_data_files(pkg)
     except Exception:
@@ -78,6 +78,22 @@ for pkg in ["docling", "docling_core", "docling_parse", "docling_ibm_models", "r
 # Coletar binários/DLLs do onnxruntime (essenciais no Windows para RapidOCR)
 binaries = []
 binaries += collect_dynamic_libs("onnxruntime")
+
+# Coletar TODOS os arquivos do QtWebEngine (QtWebEngineProcess.app, .pak, icudtl.dat)
+# Essenciais para evitar crash SIGABRT no WebContentsAdapter em bundles congelados
+webengine_data = collect_all("PySide6.QtWebEngineCore")
+webengine_widgets_data = collect_all("PySide6.QtWebEngineWidgets")
+datas += webengine_data[0] if isinstance(webengine_data, tuple) else webengine_data
+binaries += webengine_data[1] if isinstance(webengine_data, tuple) else []
+hiddenimports += webengine_data[2] if isinstance(webengine_data, tuple) else []
+datas += webengine_widgets_data[0] if isinstance(webengine_widgets_data, tuple) else webengine_widgets_data
+binaries += webengine_widgets_data[1] if isinstance(webengine_widgets_data, tuple) else []
+hiddenimports += webengine_widgets_data[2] if isinstance(webengine_widgets_data, tuple) else []
+
+# Coletar binários do QtWebEngineProcess (macOS)
+if sys.platform == "darwin":
+    qwebengine_process_binaries = collect_dynamic_libs("PySide6.QtWebEngineCore")
+    binaries += qwebengine_process_binaries
 
 try:
     hiddenimports += collect_submodules("tomus")
@@ -93,7 +109,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "IPython", "notebook", "scipy", "pkg_resources", "setuptools"],
+    excludes=["tkinter", "matplotlib", "IPython", "notebook"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -153,8 +169,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "Tomus",
             "CFBundleDisplayName": "Tomus — Organizador Acadêmico de PDFs",
-            "CFBundleVersion": "1.1.2",
-            "CFBundleShortVersionString": "1.1.2",
+            "CFBundleVersion": "1.2.0",
+            "CFBundleShortVersionString": "1.2.0",
             "CFBundlePackageType": "APPL",
             "CFBundleSignature": "????",
             "LSMinimumSystemVersion": "12.0.0",

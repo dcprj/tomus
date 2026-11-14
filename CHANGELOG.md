@@ -5,6 +5,37 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adota versionamento semântico ([Semantic Versioning](https://semver.org/lang/pt-BR/)).
 
+## [1.2.0] - 2026-11-14
+
+### Motor de LLM & Resiliência
+- **Pool Multi-Chave com Rotação Automática (`src/tomus/core/config.py`, `src/tomus/core/llm.py`)**: suporte a listas de chaves de API (`gemini_api_key`, `groq_api_key`, etc.) com rotação circular automática round-robin ao detectar `HTTP 429 Too Many Requests`.
+- **Provedores e Modelos Homologados**:
+  - `NvidiaProvider`: atualizado para o modelo de alta precisão `meta/llama-3.2-90b-vision-instruct`.
+  - `ClaudeProvider`: homologado com o modelo `claude-haiku-5-5`, compatível com blocos híbridos `thinking` e `text`.
+  - `GroqProvider`: homologado com `llama-3.3-70b-versatile` (cota gratuita de 1.000 requisições/dia) posicionado como 1º fallback imediato da cadeia.
+  - Cascata oficial de contingência (`fallback_chain = ["groq", "nvidia", "claude", "deepseek"]`).
+- **Remoção de Legado**: `GitHubModelsProvider` e `github_token` descontinuados e removidos do core, CLI, GUI e documentação.
+
+### Interface Gráfica & Ergonomia
+- **Triagem Manual com Subárea e Auto-Inferência de Grande Área (`src/tomus/gui/web/index.html`, `src/tomus/gui/web/app.js`, `src/tomus/gui/bridge.py`, `src/tomus/gui/widgets/inspector.py`)**: substituição do campo de Grande Área por Área Específica (Subárea) na revisão manual (com inferência automática da Grande Área CAPES a partir da Área Básica) e reorganização da Árvore CAPES/CNPq exibindo Subáreas abaixo de cada Área Básica.
+- **Alças de Redimensionamento de Painéis e Colunas (`src/tomus/gui/web/index.html`, `src/tomus/gui/web/style.css`, `src/tomus/gui/web/app.js`)**: adição de splitter redimensionável entre a barra lateral e a tabela (`#sidebarResizer`), guia visual na divisória do inspetor (`#tableResizer`) e redimensionamento livre de todas as 7 colunas da tabela (incluindo redução abaixo da largura do texto com truncamento por reticências).
+- **Validador Ativo de Chaves de API (`src/tomus/core/key_validator.py`, `src/tomus/gui/bridge.py`)**: verificação em tempo real da validade das chaves configuradas na janela de Preferências.
+- **Citação ABNT NBR 6023 Normativa (`src/tomus/gui/web/app.js`, `src/tomus/gui/bridge.py`)**:
+  - Título da obra destacado em negrito puro (`<strong>`), subtítulo em caracteres normais.
+  - Autores em texto normal (sem negrito), com sobrenomes em caixa alta.
+  - Sanitização de edições duplicadas (eliminando a anomalia `"1. ed. ed."`).
+  - Botão "Copiar Citação" integrado à área de transferência do sistema via `QGuiApplication.clipboard` nativo.
+- **Experiência Desktop Pura**:
+  - Desativação do menu de contexto de navegador web do Chromium (`NoContextMenu` no Qt e `contextmenu` preventDefault no JS), eliminando opções irrelevantes como *Reload*, *Back* e *View Source*.
+  - Precedência de status sobre a árvore CAPES: clicar em qualquer filtro de status desativa a seleção da árvore e "Todos os Itens" restaura a esteira completa.
+
+### Documentação & Engenharia
+- **Documentação Técnica & Arquitetura**: elaboração de [`docs/DOCUMENTACAO_TECNICA.md`](docs/DOCUMENTACAO_TECNICA.md) e [`docs/documentacao_tecnica.html`](docs/documentacao_tecnica.html) com diagramas de camadas, esteira e máquina de estados em Mermaid.
+- **Manual do Usuário Didático**: elaboração de [`docs/MANUAL_DO_USUARIO.md`](docs/MANUAL_DO_USUARIO.md) e [`docs/manual_do_usuario.html`](docs/manual_do_usuario.html) com tutorial de obtenção de chaves (Gemini, Groq, NVIDIA, Claude, Google Books) e glossário de termos técnicos.
+- **Landing Page**: atualização de [`docs/index.html`](docs/index.html) com navegação balanceada e links diretos para a documentação técnica e o manual.
+
+---
+
 ## [1.1.2] - 2026-11-10
 
 ### Corrigido

@@ -34,11 +34,10 @@ __all__ = ["OperationalToolbar", "SessionResumeBanner"]
 # Provedores oficiais suportados pelo motor (seção 3.2 item A).
 PROVIDERS = [
     ("gemini", "Gemini (gemini-3.5-flash)"),
-    ("groq", "Groq (openai/gpt-oss-20b)"),
+    ("groq", "Groq (openai/gpt-oss-120b)"),
     ("nvidia", "NVIDIA NIM"),
     ("deepseek", "DeepSeek"),
     ("claude", "Anthropic Claude"),
-    ("github", "GitHub Models"),
 ]
 
 _IS_MAC = sys.platform == "darwin"

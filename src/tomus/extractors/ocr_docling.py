@@ -28,6 +28,7 @@ _OCR_MAX_PAGES = 8
 _ALPHANUM_THRESHOLD = 30
 
 _CONVERTER: Optional[object] = None
+_RAPIDOCR_ENGINE: Optional[object] = None
 
 
 def _get_converter():
@@ -48,6 +49,60 @@ def _get_converter():
         _logger.warning("Docling DocumentConverter indisponível no ambiente: %s", exc)
         _CONVERTER = None
         return None
+
+
+def _get_rapidocr_engine():
+    """Retornar uma instância singleton/lazy do mecanismo RapidOCR.
+
+    Retorna ``None`` quando o RapidOCR não estiver disponível.
+    """
+    global _RAPIDOCR_ENGINE
+    if _RAPIDOCR_ENGINE is not None:
+        return _RAPIDOCR_ENGINE
+    try:
+        from rapidocr import RapidOCR  # type: ignore
+
+        _RAPIDOCR_ENGINE = RapidOCR()
+        return _RAPIDOCR_ENGINE
+    except Exception as exc:
+        _logger.warning("RapidOCR indisponível no ambiente: %s", exc)
+        _RAPIDOCR_ENGINE = None
+        return None
+
+
+def _ocr_with_rapidocr(doc: fitz.Document, pages: list[int]) -> str:
+    """Extrair texto via RapidOCR renderizando páginas selecionadas.
+
+    Renderiza cada página em ``pages`` como PNG a 150 DPI via PyMuPDF e passa
+    os bytes para a instância RapidOCR, juntando as linhas de texto com
+    quebra de linha.
+    """
+    engine = _get_rapidocr_engine()
+    if engine is None:
+        return ""
+
+    linhas: list[str] = []
+    for idx in pages:
+        try:
+            pix = doc[idx].get_pixmap(dpi=150)
+            png_bytes = pix.tobytes("png")
+            result = engine(png_bytes)
+            if result is None:
+                continue
+            # O resultado do RapidOCR pode trazer txts ou ser iterável de caixas.
+            txts = getattr(result, "txts", None)
+            if txts:
+                linhas.extend(str(t) for t in txts if t)
+            else:
+                # Fallback: iterar sobre caixas (bbox, texto, confianca)
+                for box in result:
+                    if len(box) >= 2:
+                        linhas.append(str(box[1]))
+        except Exception as exc:  # pragma: no cover - defesa por página
+            _logger.warning("RapidOCR falhou na página %d: %s", idx, exc)
+            continue
+
+    return "\n".join(linhas).strip()
 
 
 def _pages_without_text(doc: fitz.Document) -> list[int]:
@@ -85,9 +140,11 @@ def _build_slice_pdf(path: Path, pages: list[int]) -> Optional[bytes]:
 def ocr_scanned_pages(path: Path) -> str:
     """Executar OCR seletivo nas páginas sem texto do ``path``.
 
-    Retorna o texto extraído pelo Docling, ou uma string vazia quando o Docling
-    não estiver disponível, não houver páginas para OCR ou ocorrer qualquer
-    exceção (fallback seguro).
+    Tenta primeiro via DocumentConverter do Docling. Se o converter for None,
+    ocorrer qualquer exceção no Docling, ou o texto extraído pelo Docling tiver
+    menos de 50 caracteres alfanuméricos, aciona o fallback RapidOCR.
+    Retorna uma string vazia quando não houver páginas para OCR ou ambos os
+    mecanismos falharem (fallback seguro).
     """
     try:
         doc = fitz.open(str(path))
@@ -113,28 +170,41 @@ def ocr_scanned_pages(path: Path) -> str:
         # Limitar a no máximo 8 páginas.
         selected = empty_in_window[:_OCR_MAX_PAGES]
 
-        pdf_bytes = _build_slice_pdf(path, selected)
-        if pdf_bytes is None:
-            return ""
-
+        # --- Tentativa 1: Docling DocumentConverter ---
         converter = _get_converter()
-        if converter is None:
-            return ""
+        if converter is not None:
+            try:
+                from docling.datamodel.base_models import DocumentStream  # type: ignore
 
-        from docling.datamodel.base_models import DocumentStream  # type: ignore
+                pdf_bytes = _build_slice_pdf(path, selected)
+                if pdf_bytes is not None:
+                    buf = io.BytesIO(pdf_bytes)
+                    stream = DocumentStream(name=f"{path.stem}_slice.pdf", stream=buf)
+                    result = converter.convert(source=stream)
+                    extracted_text = ""
+                    if result is not None and hasattr(result, "document"):
+                        doc_obj = result.document
+                        if hasattr(doc_obj, "export_to_text"):
+                            extracted_text = doc_obj.export_to_text() or ""
+                        elif hasattr(doc_obj, "text"):
+                            extracted_text = doc_obj.text or ""
 
-        buf = io.BytesIO(pdf_bytes)
-        stream = DocumentStream(name=f"{path.stem}_slice.pdf", stream=buf)
+                    # Se o Docling retornou texto útil (>= 50 chars alfanumericos),
+                    # usar diretamente.
+                    if sum(1 for ch in extracted_text if ch.isalnum()) >= 50:
+                        return extracted_text
+                    # Senão, cai para o RapidOCR abaixo.
+            except Exception as exc:  # Docling exceção -> tentar RapidOCR
+                _logger.warning(
+                    "Docling exceção para %s, tentando RapidOCR: %s", path.name, exc
+                )
 
-        result = converter.convert(source=stream)
-        extracted_text = ""
-        if result is not None and hasattr(result, "document"):
-            doc_obj = result.document
-            if hasattr(doc_obj, "export_to_text"):
-                extracted_text = doc_obj.export_to_text() or ""
-            elif hasattr(doc_obj, "text"):
-                extracted_text = doc_obj.text or ""
-        return extracted_text
+        # --- Tentativa 2: RapidOCR (fallback) ---
+        rapid_text = _ocr_with_rapidocr(doc, selected)
+        if rapid_text:
+            return rapid_text
+
+        return ""
     except Exception as exc:
         _logger.warning("Erro durante conversão OCR do Docling para %s: %s", path.name, exc)
         return ""

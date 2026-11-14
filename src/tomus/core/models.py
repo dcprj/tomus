@@ -81,6 +81,8 @@ class LLMClassificationOutput(BaseModel):
 
     grande_area: str
     area_basica: str
+    subarea: str = ""
+    especialidade: str = ""
     tipo: DocumentType
     authors: list[str] = Field(default_factory=list)
     title: str = ""

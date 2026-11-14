@@ -12,11 +12,11 @@ BUILD_DIR="${PROJECT_ROOT}/build"
 
 # Ler a versão do pyproject.toml
 if [ -f "${PROJECT_ROOT}/.venv/bin/python3" ]; then
-    VERSION=$("${PROJECT_ROOT}/.venv/bin/python3" -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.1.2")
+    VERSION=$("${PROJECT_ROOT}/.venv/bin/python3" -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.2.0")
 elif command -v python3 &> /dev/null; then
-    VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || python3 -c "import tomli; print(tomli.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.1.2")
+    VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || python3 -c "import tomli; print(tomli.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.2.0")
 else
-    VERSION="1.1.2"
+    VERSION="1.2.0"
 fi
 
 DMG_NAME="${APP_NAME}-${VERSION}-macOS.dmg"
@@ -57,7 +57,22 @@ fi
 
 echo "✅ Bundle ${APP_PATH} gerado com sucesso!"
 
-# 4. Assinatura Ad-Hoc (para execução local sem crash de assinatura)
+# 5. Corrigir caminhos do QtWebEngineProcess (evitar SIGABRT no WebContentsAdapter)
+echo "🔧 Configurando caminhos do QtWebEngineProcess..."
+FRAMEWORK_DIR="${APP_PATH}/Contents/Frameworks/PySide6/Qt/lib/QtWebEngineCore.framework"
+HELPERS_SRC="${FRAMEWORK_DIR}/Versions/Resources/Helpers/QtWebEngineProcess.app"
+HELPERS_DST="${FRAMEWORK_DIR}/Helpers"
+if [ -d "${HELPERS_SRC}" ] && [ ! -L "${HELPERS_DST}" ]; then
+    ln -s "${HELPERS_SRC}" "${HELPERS_DST}"
+    echo "✓ Symlink criado: ${HELPERS_DST}"
+fi
+MACOS_DST="${APP_PATH}/Contents/MacOS/QtWebEngineProcess"
+if [ -f "${HELPERS_SRC}/Contents/MacOS/QtWebEngineProcess" ] && [ ! -L "${MACOS_DST}" ]; then
+    ln -s "${HELPERS_SRC}/Contents/MacOS/QtWebEngineProcess" "${MACOS_DST}"
+    echo "✓ Symlink criado: ${MACOS_DST}"
+fi
+
+# 6. Assinatura Ad-Hoc (para execução local sem crash de assinatura)
 echo "🔏 Aplicando assinatura ad-hoc (codesign)..."
 codesign --force --deep --sign - "${APP_PATH}"
 

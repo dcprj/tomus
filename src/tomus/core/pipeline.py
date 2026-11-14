@@ -78,9 +78,13 @@ def _emit(callback: EventCallback | None, stage: str, source_path: Path,
 
 
 def _classification_to_dict(result: ClassificationResult) -> dict[str, Any]:
+    subarea = (result.subarea or "").strip() or "Geral"
+    especialidade = (result.especialidade or "").strip() or "Geral"
     return {
         "grande_area": result.grande_area,
         "area_basica": result.area_basica,
+        "subarea": subarea,
+        "especialidade": especialidade,
         "tipo": result.tipo,
         "authors": result.authors,
         "title": result.title,
@@ -160,41 +164,45 @@ def _process_one(
     with finalize_lock:
         cached = cache.get(sha256, taxonomy_version, model_name)
     if cached is not None:
-        _emit(emit, "cache", source_path, "hit", "Reutilizando classificação em cache",
-              completed_files=completed_count[0] if completed_count else None,
-              total_files=total_files)
-        classification = cached
-        used_ocr = bool(cached.get("used_ocr", False))
-        confidence = float(classification.get("confidence_score", 0.0))
-        if confidence >= config.general.confidence_min:
-            filename = _organizer_filename(classification)
+        cached_subarea = (cached.get("subarea") or "").strip()
+        if cached_subarea and cached_subarea.lower() not in ("não especificada", "nao especificada", "none", "null", ""):
+            _emit(emit, "cache", source_path, "hit", "Reutilizando classificação em cache",
+                  completed_files=completed_count[0] if completed_count else None,
+                  total_files=total_files)
+            classification = cached
+            used_ocr = bool(cached.get("used_ocr", False))
+            confidence = float(classification.get("confidence_score", 0.0))
+            if confidence >= config.general.confidence_min:
+                filename = _organizer_filename(classification)
+                with finalize_lock:
+                    entry = organizer.add_organized(
+                        source_path=source_path,
+                        grande_area=classification.get("grande_area", ""),
+                        area_basica=classification.get("area_basica", ""),
+                        subarea=classification.get("subarea", ""),
+                        especialidade=classification.get("especialidade", ""),
+                        tipo=classification.get("tipo", "Outros"),
+                        filename=filename,
+                        sha256=sha256,
+                        used_ocr=used_ocr,
+                        classification=classification,
+                    )
+                _emit_terminal("pipeline", entry.status.value, "Cache hit aprovado",
+                               classification=classification,
+                               destination_path=entry.destination_path)
+                return organizer.entries[-1]
             with finalize_lock:
-                entry = organizer.add_organized(
+                entry = organizer.add_manual_review(
                     source_path=source_path,
-                    grande_area=classification.get("grande_area", ""),
-                    area_basica=classification.get("area_basica", ""),
-                    tipo=classification.get("tipo", "Outros"),
-                    filename=filename,
                     sha256=sha256,
+                    reason=f"Cache hit abaixo do limiar ({confidence:.2f})",
                     used_ocr=used_ocr,
                     classification=classification,
                 )
-            _emit_terminal("pipeline", entry.status.value, "Cache hit aprovado",
+            _emit_terminal("pipeline", "manual_review", "Cache hit abaixo do limiar",
                            classification=classification,
                            destination_path=entry.destination_path)
             return organizer.entries[-1]
-        with finalize_lock:
-            entry = organizer.add_manual_review(
-                source_path=source_path,
-                sha256=sha256,
-                reason=f"Cache hit abaixo do limiar ({confidence:.2f})",
-                used_ocr=used_ocr,
-                classification=classification,
-            )
-        _emit_terminal("pipeline", "manual_review", "Cache hit abaixo do limiar",
-                       classification=classification,
-                       destination_path=entry.destination_path)
-        return organizer.entries[-1]
 
     # --- Stage 2: Extração (inclui OCR seletivo — serializado via lock) ---
     _emit(emit, "extractor", source_path, "started", "Extraindo conteúdo do PDF",
@@ -295,6 +303,8 @@ def _process_one(
                 source_path=source_path,
                 grande_area=result.grande_area,
                 area_basica=result.area_basica,
+                subarea=result.subarea,
+                especialidade=result.especialidade,
                 tipo=result.tipo,
                 filename=filename,
                 sha256=sha256,
@@ -424,7 +434,6 @@ def run_pipeline(
             config.api_keys.nvidia_api_key,
             config.api_keys.deepseek_api_key,
             config.api_keys.claude_api_key,
-            config.api_keys.github_token,
         ])
         if has_configured_key:
             try:

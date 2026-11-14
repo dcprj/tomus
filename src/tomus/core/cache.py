@@ -176,6 +176,16 @@ class FileCache:
         self._conn.execute("DELETE FROM processed_files")
         self._conn.commit()
 
+    def delete(self, sha256: str) -> None:
+        """Remover uma entrada específica do cache pelo hash SHA-256."""
+        if not self.enabled:
+            return
+        self._ensure_conn()
+        if self._conn is None:
+            return
+        self._conn.execute("DELETE FROM processed_files WHERE sha256 = ?", (sha256,))
+        self._conn.commit()
+
     def count(self) -> int:
         """Retorna o número total de entradas registradas no cache SQLite."""
         if not self.enabled or not self.db_path.exists():

@@ -76,8 +76,8 @@ def test_abnt_reference_completa():
     """Referência com autores, título e ano."""
     classificacao = {
         "authors": ["MOREIRA, M. B.", "MEDEIROS, C. A."],
-        "title": "Princípios Básicos de Análise do Comportamento",
-        "year": 2007,
+        "titulo": "Princípios Básicos de Análise do Comportamento",
+        "ano": 2007,
     }
     ref = format_abnt_reference(classificacao)
     assert ref.startswith("MOREIRA, M. B.; MEDEIROS, C. A.")
@@ -89,9 +89,9 @@ def test_abnt_reference_com_subtitulo():
     """Referência com subtítulo separado por dois pontos."""
     classificacao = {
         "authors": ["SILVA, João"],
-        "title": "Título do Trabalho",
-        "subtitle": "uma abordagem comportamental",
-        "year": 2020,
+        "titulo": "Título do Trabalho",
+        "subtitulo": "uma abordagem comportamental",
+        "ano": 2020,
     }
     ref = format_abnt_reference(classificacao)
     assert "**Título do Trabalho**: uma abordagem comportamental" in ref
@@ -101,8 +101,8 @@ def test_abnt_reference_com_doi():
     """Referência com DOI inclui 'Disponível em: https://doi.org/...'."""
     classificacao = {
         "authors": ["SILVA, João"],
-        "title": "Título",
-        "year": 2021,
+        "titulo": "Título",
+        "ano": 2021,
         "doi": "10.1234/abc",
     }
     ref = format_abnt_reference(classificacao)
@@ -113,8 +113,8 @@ def test_abnt_reference_com_isbn():
     """Referência com ISBN inclui 'ISBN ...'."""
     classificacao = {
         "authors": ["SILVA, João"],
-        "title": "Título",
-        "year": 2021,
+        "titulo": "Título",
+        "ano": 2021,
         "isbn": "978-85-123456-7-8",
     }
     ref = format_abnt_reference(classificacao)
@@ -125,8 +125,8 @@ def test_abnt_reference_sem_autor():
     """Sem autor, inicia pelo título com primeira palavra em caixa alta."""
     classificacao = {
         "authors": [],
-        "title": "estudos sobre comportamento",
-        "year": 2019,
+        "titulo": "estudos sobre comportamento",
+        "ano": 2019,
     }
     ref = format_abnt_reference(classificacao)
     assert ref.startswith("**ESTUDOS sobre comportamento**")
@@ -140,10 +140,12 @@ def test_companion_front_matter_yaml():
     """O front matter deve começar e terminar com '---'."""
     classificacao = {
         "authors": ["SILVA, João"],
-        "title": "Título de Teste",
-        "year": 2020,
+        "titulo": "Título de Teste",
+        "ano": 2020,
         "grande_area": "Ciências Humanas",
         "area_basica": "Psicologia",
+        "subarea": "Psicologia Clínica",
+        "especialidade": "Psicoterapia Cognitivo-Comportamental",
         "tipo": "Livro",
         "confidence_score": 0.90,
     }
@@ -154,18 +156,20 @@ def test_companion_front_matter_yaml():
         classification=classificacao,
     )
     assert md.startswith("---\n")
-    assert "title: 'Título de Teste'" in md
-    assert "authors:" in md
+    assert "titulo: 'Título de Teste'" in md
+    assert "autores:" in md
     assert "  - 'SILVA, João'" in md
-    assert "year: 2020" in md
+    assert "ano: 2020" in md
     assert "grande_area: 'Ciências Humanas'" in md
     assert "area_basica: 'Psicologia'" in md
+    assert "subarea: 'Psicologia Clínica'" in md
+    assert "especialidade: 'Psicoterapia Cognitivo-Comportamental'" in md
     assert "tipo: 'Livro'" in md
     assert "sha256: abc123" in md
-    assert "confidence_score: 0.9" in md
-    assert "used_ocr: false" in md
-    assert "source_file: teste.pdf" in md
-    assert "organized_at:" in md
+    assert "indice_confianca: 0.9" in md
+    assert "utilizou_ocr: false" in md
+    assert "arquivo_origem: 'teste.pdf'" in md
+    assert "organizado_em:" in md
     assert md.count("---") == 2  # abertura e fechamento
 
 
@@ -173,11 +177,13 @@ def test_companion_com_subtitulo_doi_isbn():
     """Front matter inclui subtítulo, DOI e ISBN quando presentes."""
     classificacao = {
         "authors": ["SILVA, João"],
-        "title": "Título",
-        "subtitle": "subtítulo de teste",
-        "year": 2021,
+        "titulo": "Título",
+        "subtitulo": "subtítulo de teste",
+        "ano": 2021,
         "grande_area": "Ciências Exatas",
         "area_basica": "Computação",
+        "subarea": "Engenharia de Software",
+        "especialidade": "Inteligência Artificial",
         "tipo": "Artigo",
         "doi": "10.1234/xyz",
         "isbn": "978-85-000000-0-0",
@@ -190,21 +196,23 @@ def test_companion_com_subtitulo_doi_isbn():
         classification=classificacao,
         used_ocr=True,
     )
-    assert "subtitle: 'subtítulo de teste'" in md
+    assert "subtitulo: 'subtítulo de teste'" in md
     assert "doi: '10.1234/xyz'" in md
     assert "isbn: '978-85-000000-0-0'" in md
-    assert "used_ocr: true" in md
-    assert "confidence_score: 0.85" in md
+    assert "utilizou_ocr: true" in md
+    assert "indice_confianca: 0.85" in md
 
 
 def test_companor_corpo_markdown():
     """O corpo do markdown deve ter título, referência e metadados."""
     classificacao = {
         "authors": ["SILVA, João"],
-        "title": "Título do Documento",
-        "year": 2020,
+        "titulo": "Título do Documento",
+        "ano": 2020,
         "grande_area": "Ciências Humanas",
         "area_basica": "Psicologia",
+        "subarea": "Psicologia Clínica",
+        "especialidade": "Psicoterapia Cognitivo-Comportamental",
         "tipo": "Livro",
         "confidence_score": 0.90,
     }
@@ -217,7 +225,7 @@ def test_companor_corpo_markdown():
     assert "# Título do Documento" in md
     assert "## Referência Bibliográfica (ABNT NBR 6023)" in md
     assert "## Metadados do Arquivo" in md
-    assert "**Área Temática:** Ciências Humanas / Psicologia" in md
+    assert "**Área Temática:** Ciências Humanas / Psicologia / Psicologia Clínica / Psicoterapia Cognitivo-Comportamental" in md
     assert "**Tipo de Documento:** Livro" in md
     assert "**Arquivo Original:** teste.pdf" in md
     assert "**SHA-256:** abc123" in md
@@ -239,8 +247,8 @@ def test_organizer_gera_arquivo_companheiro(tmp_path: Path):
     )
     classificacao = {
         "authors": ["SILVA, João"],
-        "title": "Livro de Teste",
-        "year": 2020,
+        "titulo": "Livro de Teste",
+        "ano": 2020,
         "grande_area": "Ciências Humanas",
         "area_basica": "Psicologia",
         "tipo": "Livro",
@@ -251,6 +259,8 @@ def test_organizer_gera_arquivo_companheiro(tmp_path: Path):
         source_path=source / "livro_teste.pdf",
         grande_area="Ciências Humanas",
         area_basica="Psicologia",
+        subarea="Psicologia Clínica",
+        especialidade="Psicologia Clínica",
         tipo="Livro",
         filename=nome,
         sha256="abc123",
@@ -279,10 +289,12 @@ def test_organizer_dry_run_nao_gera_companheiro(tmp_path: Path):
     )
     classificacao = {
         "authors": ["SILVA, João"],
-        "title": "Livro de Teste",
-        "year": 2020,
+        "titulo": "Livro de Teste",
+        "ano": 2020,
         "grande_area": "Ciências Humanas",
         "area_basica": "Psicologia",
+        "subarea": "Psicologia Clínica",
+        "especialidade": "Psicoterapia Cognitivo-Comportamental",
         "tipo": "Livro",
         "confidence_score": 0.90,
     }
@@ -291,6 +303,8 @@ def test_organizer_dry_run_nao_gera_companheiro(tmp_path: Path):
         source_path=source / "livro_teste.pdf",
         grande_area="Ciências Humanas",
         area_basica="Psicologia",
+        subarea="Psicologia Clínica",
+        especialidade="Psicoterapia Cognitivo-Comportamental",
         tipo="Livro",
         filename=nome,
         sha256="abc123",
@@ -321,8 +335,8 @@ def test_organizer_duplicata_vai_para_pasta_duplicatas_com_md(tmp_path: Path):
     )
     classificacao = {
         "authors": ["SILVA, João"],
-        "title": "Livro Duplicado",
-        "year": 2020,
+        "titulo": "Livro Duplicado",
+        "ano": 2020,
         "grande_area": "Ciências Humanas",
         "area_basica": "Psicologia",
         "tipo": "Livro",
@@ -334,6 +348,8 @@ def test_organizer_duplicata_vai_para_pasta_duplicatas_com_md(tmp_path: Path):
         source_path=source / "a.pdf",
         grande_area="Ciências Humanas",
         area_basica="Psicologia",
+        subarea="Psicologia Clínica",
+        especialidade="Psicoterapia Cognitivo-Comportamental",
         tipo="Livro",
         filename=nome,
         sha256="abc123",
@@ -346,6 +362,8 @@ def test_organizer_duplicata_vai_para_pasta_duplicatas_com_md(tmp_path: Path):
         source_path=source / "b.pdf",
         grande_area="Ciências Humanas",
         area_basica="Psicologia",
+        subarea="Psicologia Clínica",
+        especialidade="Psicoterapia Cognitivo-Comportamental",
         tipo="Livro",
         filename=nome,
         sha256="abc123",
@@ -380,8 +398,8 @@ def test_organizer_duplicata_move_limpa_origem(tmp_path: Path):
     )
     classificacao = {
         "authors": ["SILVA, João"],
-        "title": "Livro Movido",
-        "year": 2020,
+        "titulo": "Livro Movido",
+        "ano": 2020,
         "grande_area": "Ciências Humanas",
         "area_basica": "Psicologia",
         "tipo": "Livro",
@@ -392,6 +410,8 @@ def test_organizer_duplicata_move_limpa_origem(tmp_path: Path):
         source_path=source / "a.pdf",
         grande_area="Ciências Humanas",
         area_basica="Psicologia",
+        subarea="Psicologia Clínica",
+        especialidade="Psicoterapia Cognitivo-Comportamental",
         tipo="Livro",
         filename=nome,
         sha256="abc456",
@@ -402,6 +422,8 @@ def test_organizer_duplicata_move_limpa_origem(tmp_path: Path):
         source_path=source / "b.pdf",
         grande_area="Ciências Humanas",
         area_basica="Psicologia",
+        subarea="Psicologia Clínica",
+        especialidade="Psicoterapia Cognitivo-Comportamental",
         tipo="Livro",
         filename=nome,
         sha256="abc456",
@@ -462,13 +484,13 @@ def test_abnt_reference_artigo_periodico():
     """Valida formatação ABNT NBR 6023 para artigos de periódicos sem pontos duplicados."""
     classificacao = {
         "authors": ["Bulamah, Lucas Charafeddine", "Kupermann, Daniel"],
-        "title": "A dupla volta da subjetivação em Winnicott",
+        "titulo": "A dupla volta da subjetivação em Winnicott",
         "tipo": "Artigo",
-        "journal_name": "Tempo Psicanalítico",
-        "city": "Rio de Janeiro",
+        "periodico": "Tempo Psicanalítico",
+        "cidade": "Rio de Janeiro",
         "volume": "54.1",
-        "pages": "134-155",
-        "year": 2022,
+        "paginas": "134-155",
+        "ano": 2022,
         "doi": "10.1590/tempo.v54i1.1234",
     }
     ref = format_abnt_reference(classificacao)
@@ -485,27 +507,28 @@ def test_companion_frontmatter_campos_completos(tmp_path: Path):
     """Valida inclusão de todos os campos bibliográficos no YAML frontmatter e metadados."""
     classificacao = {
         "authors": ["Carneiro, Sueli"],
-        "title": "Escritos de uma vida",
+        "titulo": "Escritos de uma vida",
         "tipo": "Livro",
-        "publisher": "Pólen Livros",
-        "city": "São Paulo",
-        "edition": "1. ed.",
-        "pages": "288 p.",
-        "year": 2018,
+        "editora": "Pólen Livros",
+        "cidade": "São Paulo",
+        "edicao": "1. ed.",
+        "paginas": "288 p.",
+        "ano": 2018,
         "isbn": "9786557826669",
         "grande_area": "Ciências Humanas",
         "area_basica": "Sociologia",
+        "subarea": "Teoria Sociológica",
+        "especialidade": "Sociologia da Cultura",
     }
     dest = tmp_path / "livro.md"
     src = tmp_path / "origem.pdf"
     content = generate_companion_markdown(dest, src, "sha123", classificacao)
 
-    assert "publisher: 'Pólen Livros'" in content
-    assert "city: 'São Paulo'" in content
-    assert "edition: '1. ed.'" in content
+    assert "editora: 'Pólen Livros'" in content
+    assert "cidade: 'São Paulo'" in content
+    assert "edicao: '1. ed.'" in content
     assert "isbn: '9786557826669'" in content
     assert "- **Editora / Publicador:** Pólen Livros" in content
     assert "- **Local de Publicação:** São Paulo" in content
     assert "CARNEIRO, Sueli. **Escritos de uma vida**" in content
     assert ".." not in content
-

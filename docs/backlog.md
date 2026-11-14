@@ -57,7 +57,23 @@ Thread 0 Crashed (Dispatch queue: com.apple.main-thread):
 
 ---
 
-## 🎨 Identidade Visual e Experiência Desktop
+### [BUG-TRIAGE-01] Falha na Materialização da Triagem Manual Assistida sob Modo "Mover"
+- **Prioridade:** Alta (Bloqueador de Triagem sob `file_operation = "move"`)
+- **Status:** Concluído / Resolvido (v1.2.0)
+- **Data do Registro:** 2026-11-12
+- **Origem:** Teste Real com Acervo (Dario)
+- **Responsáveis:** Atlas (Foundation) & Forja (Core/Pipeline)
+- **Escopo:** `src/tomus/gui/worker.py`, `src/tomus/gui/bridge.py`, `src/tomus/gui/web/app.js`
+- **Sintoma:** Ao clicar em "Aprovar e Materializar na Biblioteca" em um item de revisão manual, a tela não alterava e o arquivo não era materializado na pasta temática de destino.
+- **Causa Raiz:**
+  1. No modo *Mover*, o pipeline move o PDF de origem para `/Destino/revisao_manual/<nome>.pdf`. O `ManualTriageService` tentava ler o arquivo em `entry.source_path` (que já não existia mais), disparando `FileNotFoundError`.
+  2. A função `_resolve_collision` não estava importada no escopo de `worker.py`, gerando `NameError`.
+- **Solução Implementada:**
+  1. Busca em cascata do arquivo físico: Origem -> `entry.destination_path` -> `/Destino/revisao_manual/<nome>.pdf`.
+  2. Limpeza automática do arquivo obsoleto de `revisao_manual/` após materializar no destino definitivo.
+  3. Importação canônica de `_resolve_collision` e inclusão do teste de regressão automatizado `test_triage_service_materialize_from_revisao_manual` (20/20 testes passando).
+
+---
 
 ### [FEAT-BRAND-01] Aplicação da Identidade Visual Oficial (Logo e Ícone de /logo_e_icone)
 
@@ -337,6 +353,481 @@ Atualmente, a aplicação grava qualquer string inserida nos campos de chave de 
   1. Remoção de `setup_logging` do escopo global de importação de `src/tomus/gui/app.py`.
   2. Inicialização segura de logging dentro de `launch_gui()` apontando para `Path.home() / ".tomus" / "tomus.log"`.
   3. Tratamento defensivo em `src/tomus/core/logging.py` com bloco `try/except` envolvendo a criação do `FileHandler` e fallback gracioso para `NullHandler()`, impedindo qualquer interrupção do aplicativo por falha de I/O de log.
+
+---
+
+## ⏱️ Estimativa de Tempo para Finalização (ETA) na Barra de Status da GUI [FEAT-UI-02]
+
+- **Prioridade:** Média / Alta (UX & Acompanhamento de Lotes Grandes)
+- **Status:** Planejado (Backlog)
+- **Data do Registro:** 2026-11-11
+- **Origem:** Demanda de Produto (Dario — identificada durante teste com lote de 907 PDFs)
+- **Responsável:** Prisma (Tomus UX/UI & Desktop GUI Architect)
+
+### 1. Objetivo e Layout do Rodapé (Design Aprovado)
+Exibir no rodapé da interface gráfica (`footer.status-bar`), onde já constam a barra de progresso, o percentual, o estágio atual, a contagem de processados (`X / Y processados`) e os itens restantes (`Restam: Z`), duas métricas dinâmicas essenciais desenhadas e aprovadas pelo Arquiteto-Chefe (Dario):
+
+1. **`Média por arquivo: <tempo>`** (ex.: `3 min` quando há OCR neural em PDFs escaneados, ou `2.5 s` em PDFs digitais nativos);
+2. **`Total estimado: <tempo>`** (ex.: `1 h e 30 min` ou `12 min`), calculando dinamicamente a estimativa até o término do lote.
+
+#### Estrutura Visual do Rodapé (Mockup Homologado):
+```text
+[━━━━━               ] 13%  Estágio: Extração de Texto  |  55 / 420 processados  |  Restam: 365  |  média por arquivo: 3 min  |  Total estimado: 1 h e 30 min
+```
+
+### 2. Especificação Técnica e UX
+1. **Posicionamento no DOM (`src/tomus/gui/web/index.html`):**
+   - No container `.status-metrics` do rodapé (`footer.status-bar`), logo após `<span id="remainingIndicator">Restam: 0</span>`, adicionar:
+     - Separador vertical: `<span class="sep">|</span>`
+     - Média por arquivo: `<span id="avgTimeIndicator">média por arquivo: —</span>`
+     - Separador vertical: `<span class="sep">|</span>`
+     - Total estimado: `<span id="etaIndicator">Total estimado: —</span>`
+2. **Cálculo Dinâmico e Amortecido (`src/tomus/gui/web/app.js`):**
+   - Registrar `state.batchStartTime = Date.now()` no disparo de `startOrganize`.
+   - Em `handlePipelineEvent(ev)`, quando `ev.completed_files > 0` e `ev.total_files > ev.completed_files`:
+     - Calcular o tempo decorrido total: `elapsedSec = (Date.now() - state.batchStartTime) / 1000`.
+     - Calcular o tempo médio real por arquivo: `avgSec = elapsedSec / ev.completed_files`.
+     - Formatar **Média por arquivo**:
+       - `>= 60s`: `${Math.round(avgSec / 60)} min`
+       - `< 60s`: `${avgSec.toFixed(1)} s`
+     - Calcular o **Total estimado** (tempo restante): `remainingSec = Math.round(avgSec * (ev.total_files - ev.completed_files))`.
+     - Formatar **Total estimado**:
+       - `>= 3600s`: `${Math.floor(remainingSec / 3600)} h e ${Math.round((remainingSec % 3600) / 60)} min`
+       - `>= 60s`: `${Math.round(remainingSec / 60)} min`
+       - `< 60s`: `${remainingSec} s`
+   - Ao finalizar ou interromper o lote (`handlePipelineFinished` / `clearScreenForNewBatch`), exibir o tempo total consolidado e resetar os indicadores.
+3. **Tipografia & Prevenção de Layout Shift (`src/tomus/gui/web/styles.css`):**
+   - Aplicar `font-variant-numeric: tabular-nums` e largura mínima com `white-space: nowrap` para que a alteração de segundos e minutos não cause pulos visuais na barra de status.
+
+---
+
+## 📦 Processamento Fracionado Inteligente de Grandes Acervos (Sub-Lotes de 50 a 100 PDFs com Persistência e Retomada) [FEAT-BATCH-01]
+
+- **Prioridade:** Alta (UX, Resiliência de Cotas de API & Ergonomia em Grandes Bibliotecas)
+- **Status:** Planejado (Backlog)
+- **Data do Registro:** 2026-11-11
+- **Origem:** Demanda Estratégica de Produto (Dario — concebida durante processamento real de acervo de 907 PDFs)
+- **Responsáveis:** Forja (Core, Pipeline & Persistência de Sessão) & Prisma (UX/UI & Fluxo Interativo na GUI)
+
+### 1. Problema e Motivação
+Ao organizar bibliotecas acadêmicas volumosas (centenas ou milhares de PDFs), processar tudo em uma única corrida contínua pode levar dezenas de minutos ou horas, consumir limites de *rate limit* / cota diária de APIs gratuitas (BYOK) e exigir que o usuário mantenha o computador ativo sem pausas naturais de revisão. Oferecer o fatiamento opcional em sub-lotes (*chunks*) de **50 a 100 PDFs** proporciona controle total, segurança contra quedas de energia/rede e pontos naturais de parada e retomada.
+
+### 2. Fluxo de Experiência do Usuário (UX)
+1. **Detecção de Lote Grande (Pré-Voo / Pre-Flight Check):**
+   - Ao clicar em **"Organizar Acervo"**, o scanner realiza uma contagem rápida dos PDFs pendentes na pasta de origem (descontando os já organizados/cacheados no destino, se aplicável).
+   - Se o total de PDFs a processar for **superior a 100 arquivos**, exibir um modal de sugestão amigável antes de iniciar:
+     - **Título:** *"Grande Acervo Detectado (ex.: 907 PDFs)"*
+     - **Mensagem:** *"Deseja dividir o processamento em lotes menores (50 a 100 PDFs por etapa)? Isso permite revisar resultados parciais, poupar cotas de API e pausar/retomar com segurança quando quiser."*
+     - **Seletor de Tamanho do Sub-Lote:** Opções rápidas `50 PDFs por lote` | `100 PDFs por lote` (padrão recomendado: `100`).
+     - **Botões de Decisão:**
+       - **`Dividir em Lotes Menores (Recomendado)`**: Ativa o modo fracionado.
+       - **`Processar Tudo de Uma Vez`**: Segue o fluxo contínuo tradicional exatamente como funciona hoje.
+2. **Transição ao Finalizar Cada Sub-Lote:**
+   - Ao concluir um sub-lote (ex.: Lote 1 de 10 — 100 PDFs processados), exibir o modal de conclusão da etapa com o resumo parcial daquele lote e o progresso global da biblioteca (`100 / 907 concluídos — 807 restantes`), perguntando ao usuário:
+     - **`Prosseguir para o Próximo Lote (+100 PDFs)`**: Inicia imediatamente o próximo sub-lote.
+     - **`Continuar Depois (Salvar Progresso)`**: Encerra a sessão de forma limpa, mantendo todo o estado persistido em disco para retomada futura.
+3. **Banner e Detecção Automática de Retomada:**
+   - Ao reabrir o aplicativo (ou ao selecionar novamente o mesmo par `Origem -> Destino`), se houver uma sessão fracionada pendente, exibir em destaque no topo da janela (ou ao clicar em Organizar):
+     - *"Sessão em Lotes Pendente: 100 de 907 PDFs já processados (Lote 1/10 concluído). Deseja retomar do Lote 2?"* com botões **`[Retomar Próximo Lote]`** e **`[Reiniciar / Descartar Estado]`**.
+
+### 3. Arquitetura de Persistência e Retomada (`tomus.core.session` & `manifest.json`)
+1. **Registro Determinístico do Plano de Lotes (`~/.cache/tomus/batch_sessions.json` ou tabela SQLite `batch_sessions`):**
+   - Persistir para cada par `(source_dir, target_dir)`:
+     - `session_id`, `created_at`, `updated_at`
+     - `batch_size` (`50` ou `100`)
+     - `total_discovered_pdfs`: lista ordenada e determinística dos caminhos/hashes SHA-256 escaneados.
+     - `completed_paths` / `completed_sha256`: conjunto de arquivos já processados nos sub-lotes anteriores.
+     - `current_batch_index` e `total_batches`.
+2. **Idempotência e Consolidação Cumulativa no Destino:**
+   - Quando um novo sub-lote é executado, o `LibraryOrganizer` **acumula** (faz *merge*) as novas entradas no `manifest.json` e no `revisao_manual/relatorio_revisao.md` existentes no diretório de destino, em vez de sobrescrevê-los apenas com os itens do sub-lote atual.
+   - O `FileCache` SQLite (`~/.cache/tomus/state.db`) atua como segunda camada de garantia: qualquer arquivo já aprovado em sub-lotes anteriores jamais consome nova chamada de LLM ou OCR.
+
+---
+
+## 🗂️ Precedência de Filtros e Retorno à Visão Inicial da Organização [FEAT-UI-03]
+
+- **Prioridade:** Alta (Ergonomia de Navegação & UX da Bancada)
+- **Status:** Planejado (Backlog)
+- **Data do Registro:** 2026-11-11
+- **Origem:** Demanda de Usabilidade (Dario — detectada durante acompanhamento de lote de 907 PDFs)
+- **Responsável:** Prisma (Tomus UX/UI & Desktop GUI Architect)
+
+### 1. Diagnóstico do Problema
+1. **Filtro de Árvore Preso:** Ao navegar por um nó da Árvore CAPES/CNPq (`state.activeAreaFilter`), o estado do nó permanecia ativo mesmo ao clicar em filtros de status laterais (*Duplicatas*, *Erros*, *Ignorados*). Isso provocava uma interseção lógica restritiva (ex.: `status == 'duplicate_skipped' AND area == 'Linguística'`), resultando em tela vazia e impedindo o usuário de inspecionar os arquivos daquela categoria.
+2. **Impossibilidade de Retornar à Visão Inicial:** Ao clicar em **"Todos os Itens"**, a árvore mantinha sua seleção prévia, impedindo o usuário de voltar à visão global e fluida da esteira de classificação em andamento.
+
+### 2. Especificação da Nova Lógica de Precedência
+1. **Precedência Global dos Filtros de Status:**
+   - Os botões de status (*Todos os Itens*, *Organizados*, *Revisão Manual*, *Duplicatas*, *Ignorados*, *Erros*) possuem precedência hierárquica sobre a árvore.
+   - Ao clicar em **Duplicatas**, a tabela exibe **todas as duplicatas** detectadas no lote global, limpando automaticamente o filtro de área (`state.activeAreaFilter = null`) e desmarcando visualmente nós ativos na árvore.
+   - O mesmo comportamento aplica-se rigorosamente a **Erros**, **Ignorados**, **Revisão Manual** e **Organizados**.
+2. **"Todos os Itens" como Reset Geral da Bancada:**
+   - O clique em **Todos os Itens** limpa integralmente quaisquer filtros de árvore (`state.activeAreaFilter = null`), desmarca seleções e retorna imediatamente à visão panorâmica original da organização em tempo real.
+3. **Navegação Taxonômica Contextual:**
+   - O filtro de área só é ativado quando o usuário clica expressamente em um nó da Árvore CAPES/CNPq (atuando por padrão sobre os itens organizados/classificados daquela área).
+
+---
+
+## 📋 Botão Copiar Citação ABNT e Rigor Tipográfico NBR 6023 [BUG-UI-01]
+
+- **Prioridade:** Alta (Qualidade Visual, Ergonomia & Conformidade Normativa)
+- **Status:** Planejado (Backlog)
+- **Data do Registro:** 2026-11-11
+- **Origem:** Demanda de Usabilidade (Dario — detectada com evidência fotográfica no Inspetor de Documentos)
+- **Responsáveis:** Prisma (UX/UI & Frontend Web) & Atlas (Ponte Nativa PySide6/Bridge)
+
+### 1. Diagnóstico dos Problemas Identificados
+1. **Falha no Botão "Copiar Citação ABNT":**
+   - `navigator.clipboard.writeText` no Chromium embarcado (`QWebEngineView`) sob protocolo de arquivos locais (`file://`) falha silenciosamente por restrições de permissão de clipboard sem handshake nativo. Como a Promise não possui fallback, o botão não copia o texto nem exibe o feedback visual.
+2. **Inversão Tipográfica na Referência ABNT NBR 6023:**
+   - No `src/tomus/gui/web/app.js`, os **Autores** estavam envolvidos incorretamente em `<strong>` (negrito), enquanto o **Título** estava envolvido em `<em><strong>` (renderizando em itálico).
+   - **Padrão Oficial ABNT NBR 6023:**
+     - **Autores:** Texto normal com sobrenomes em caixa alta (ex.: `KATO, Maria da Penha A. Campos de Almeida; ...`) — **sem negrito**.
+     - **Título de Livros/Teses:** Destacado em **negrito puro** (`<strong>Título</strong>`), sem itálico. Subtítulo após dois pontos permanece em texto normal (sem negrito).
+     - **Artigos em Periódicos:** Título do artigo em texto normal; apenas o **Nome do Periódico** em **negrito**.
+3. **Duplicação no Campo de Edição (`1. ed. ed.`):**
+   - No `app.js`, a concatenação `${item.edition}. ed.` gerou `1. ed. ed.` quando o metadado já continha a abreviação `ed.`.
+
+### 2. Plano de Correção Técnica
+1. **Área de Transferência Nativa via Bridge PySide6 (`src/tomus/gui/bridge.py`):**
+   - Adicionar o método `@Slot(str) def copyToClipboard(self, text: str) -> bool` utilizando `QGuiApplication.clipboard().setText(text)`.
+   - No JavaScript (`app.js`), acionar prioritariamente `backend.copyToClipboard(text)` com feedback visual garantido (`✔ Copiado!`) e fallback secundário para `navigator.clipboard` / `document.execCommand('copy')`.
+2. **Ajuste Cirúrgico no Renderizador de Citação (`app.js`):**
+   - Remover `<strong>` dos autores: `parts.push(escapeHtml(authors))`.
+   - Ajustar destaque do título de livros: `parts.push('<strong>' + escapeHtml(title) + '</strong>' + escapeHtml(subtitle))`.
+   - Sanitizar string de edição para evitar repetições: regex substituindo `(?:\s*ed\.?)+$` por `. ed.`.
+
+---
+
+## 🚫 Desativação do Menu de Contexto Padrão do Navegador (Back, Reload, View Source) [BUG-UI-02]
+
+- **Prioridade:** Média / Alta (Polimento de Produto & Integridade de Estado Desktop)
+- **Status:** Planejado (Backlog)
+- **Data do Registro:** 2026-11-11
+- **Origem:** Demanda de Usabilidade (Dario — identificada ao clicar na interface da bancada)
+- **Responsáveis:** Atlas (Foundation/Main Window) & Prisma (UX/UI Web)
+
+### 1. Diagnóstico do Problema
+No macOS e Windows, cliques secundários (ou gestos acidentais de dois dedos no trackpad / mouse) disparam o menu de contexto nativo padrão do Chromium no `QWebEngineView`, exibindo opções de navegador web como:
+- *Back* (Voltar)
+- *Forward* (Avançar)
+- *Reload* (Recarregar)
+- *Save page* (Salvar página como)
+- *View page source* (Exibir código-fonte da página)
+
+Esse comportamento expõe os bastidores web da aplicação, quebra a experiência de app nativo desktop e, caso o usuário clique acidentalmente em *Reload*, pode reiniciar o DOM e resetar a visualização da fila de documentos em andamento.
+
+### 2. Solução Técnica
+1. **No PySide6 (`src/tomus/gui/main_window.py`):**
+   - Configurar `self.web_view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)` na inicialização da janela.
+2. **No Frontend (`src/tomus/gui/web/app.js`):**
+   - Adicionar listener defensivo: `document.addEventListener('contextmenu', e => { if (!['INPUT', 'TEXTAREA'].includes(e.target.tagName)) e.preventDefault(); });` para bloquear qualquer menu nativo do motor em áreas não editáveis.
+
+---
+
+## 🎛️ Redimensionamento Interativo via Mouse de Painéis (Splitters) e Colunas da Tabela [FEAT-UI-04]
+
+- **Prioridade:** Média / Alta (Ergonomia Visual & Customização do Espaço de Trabalho)
+- **Status:** Planejado (Backlog)
+- **Data do Registro:** 2026-11-11
+- **Origem:** Demanda de Usabilidade (Dario — detectada durante acompanhamento de lote volumoso de 907 PDFs)
+- **Responsável:** Prisma (Tomus UX/UI & Desktop GUI Architect)
+
+### 1. Diagnóstico e Necessidade de Interface
+1. **Painéis Laterais com Larguras Fixas:**
+   - Atualmente, a estrutura principal de 3 painéis (`.main-content`) utiliza um grid fixo (`230px 1fr 370px`). Em telas de diferentes resoluções (Retina, ultrawide ou notebooks compactos), o usuário não consegue expandir a árvore de taxonomia para visualizar ramos profundos, nem encolher o inspetor lateral para dar mais amplitude à tabela central.
+2. **Colunas da Tabela Central com Largura Rígida:**
+   - As colunas de *Título / Arquivo*, *Autor(es)* e *Grande Área / Área Básica* possuem larguras pré-determinadas em CSS com `text-overflow: ellipsis`. Em livros com múltiplos autores ou títulos acadêmicos longos com subtítulos explicativos, o usuário fica impedido de alargar a coluna diretamente pelo cabeçalho para leitura integral.
+
+### 2. Especificação Técnica da Entrega
+1. **Splitters Horizontais entre Painéis (`.panel-resizer`):**
+   - Inserir divisores verticais arrastáveis com cursor `col-resize` entre:
+     - **Divisor Esquerdo:** Barra Lateral (Filtros & Taxonomia) ↔ Tabela Central.
+     - **Divisor Direito:** Tabela Central ↔ Inspetor de Documentos.
+   - **Limites Defensivos:**
+     - Barra Lateral: Mínimo 180px, Máximo 420px.
+     - Inspetor: Mínimo 280px, Máximo 560px.
+     - Tabela Central: Flexível (`1fr`), preservando área mínima de 400px.
+2. **Redimensionadores de Coluna na Tabela (`.table-resizer`):**
+   - Inserir alças arrastáveis na borda direita dos cabeçalhos (`th`):
+     - Entre `TÍTULO / ARQUIVO` e `AUTOR(ES)`.
+     - Entre `AUTOR(ES)` e `ANO`.
+     - Entre `GRANDE ÁREA / ÁREA BÁSICA` e `TIPO`.
+   - Cursor interativo `col-resize`, feedback visual de guia vertical durante o arraste e suporte a clique duplo para ajuste automático ao conteúdo (*auto-fit*).
+3. **Persistência de Preferências do Usuário (`localStorage`):**
+   - Gravar as larguras personalizadas dos painéis e das colunas no `localStorage` do WebView (`tomus_panel_widths` e `tomus_column_widths`), restaurando automaticamente o layout customizado nas próximas aberturas do aplicativo.
+
+---
+
+## ⚡ Atualização do Modelo Padrão NVIDIA NIM para Llama 3.2 90B [FEAT-LLM-02]
+
+- **Prioridade:** Alta (Resiliência do Roteamento Multi-Provedor & Fallback Ativo)
+- **Status:** Planejado / Validado em Teste de Inferência
+- **Data do Registro:** 2026-11-11
+- **Origem:** Diagnóstico de API pós-lote de 907 PDFs
+- **Responsável:** Forja (Pipeline & LLM Engine)
+
+### 1. Diagnóstico do Problema
+O modelo anteriormente configurado no Tomus (`nvidia/llama-3.1-nemotron-70b-instruct`) foi descontinuado pela NVIDIA e retorna `404 Function Not Found` para requisições em novas contas. Isso fez com que, quando a cota gratuita do Gemini se esgotou às 11:08:08, o fallback para a NVIDIA falhasse em cadeia, enviando documentos perfeitamente saudáveis para a revisão manual.
+
+### 2. Especificação da Correção
+1. **Novo Modelo Homologado:** Alterar o identificador do modelo em `src/tomus/core/config.py` e `src/tomus/core/llm.py` de `nvidia/llama-3.1-nemotron-70b-instruct` para **`meta/llama-3.2-90b-vision-instruct`**.
+2. **Atualização da Chave:** Atualizar a chave validada `nvapi-OG0t...` em `~/.config/tomus/config.toml`.
+3. **Validação de Teste Real:** Teste de inferência real executado com sucesso retornando classificação taxonômica precisa (Freud, *Luto e Melancolia* classificado em Psicologia/Psicanálise com 95% de confiança).
+
+---
+
+## 🗑️ Remoção do Provedor "GitHub Models (gpt-4o)" da Interface e Preferências [FEAT-LLM-03]
+
+- **Prioridade:** Imediata / Alta (Sprint v1.2.0 - Limpeza de Interface)
+- **Status:** Planejado (Backlog)
+- **Data do Registro:** 2026-11-11
+- **Origem:** Demanda de Produto (Dario — remoção de modelo desnecessário do menu de provedores)
+- **Responsáveis:** Prisma (UX/UI & Dropdown Web) & Forja (Config & Backend)
+
+### 1. Diagnóstico e Decisão de Produto
+O seletor de modelos da barra superior do Tomus exibia a opção `GitHub Models (gpt-4o)`. Conforme decisão da Direção, esse provedor deve ser removido da interface gráfica, simplificando a esteira para os provedores de alta capacidade e gratuidade voltados ao uso acadêmico (Gemini, Groq, NVIDIA, DeepSeek, Claude).
+
+### 2. Escopo da Remoção
+1. **Dropdown Principal (`src/tomus/gui/web/index.html`):**
+   - Remover `<option value="github">GitHub Models (gpt-4o)</option>`.
+2. **Componentes Desktop Nativos:**
+   - Remover `("github", "GitHub Models")` de `src/tomus/gui/widgets/toolbar.py`.
+   - Remover campo de token do GitHub de `src/tomus/gui/widgets/preferences_dialog.py`.
+3. **Bridge e Fallbacks:**
+   - Remover `"github": "gpt-4o"` do mapeamento padrão em `src/tomus/gui/bridge.py`.
+
+---
+
+## ⚡ Homologação e Priorização do Groq (Llama 3.3 70B Versatile) na Cadeia de Fallback [FEAT-LLM-04]
+
+- **Prioridade:** Alta (Resiliência de Cota Gratuita & Velocidade de Inferência LPU)
+- **Status:** Planejado (Backlog)
+- **Data do Registro:** 2026-11-11
+- **Origem:** Análise estratégica de limites de API (`console.groq.com/settings/limits`)
+- **Responsáveis:** Forja (Core/Pipeline/LLM) & Prisma (Preferências GUI)
+
+### 1. Diagnóstico e Vantagens Técnicas
+O provedor Groq oferece uma das maiores capacidades operacionais gratuitas do mercado para o modelo denso de 70 bilhões de parâmetros (`llama-3.3-70b-versatile`):
+- **Cota Diária Gratuita:** 1.000 requisições por dia (RPD), permitindo organizar acervos volumosos (como o lote de 907 PDFs) em uma única corrida sem interrupção.
+- **Taxa por Minuto:** 30 requisições por minuto (RPM) — o dobro do limite do Gemini gratuito (15 RPM).
+- **Tempo de Resposta dos Chips LPU:** Inferência entre 1 e 2 segundos por PDF com JSON estrito validado.
+- **Janela de Contexto:** 128.000 tokens (cobre sumários e metadados densos sem truncamento).
+
+### 2. Escopo de Implementação
+1. **Cadeia Padrão de Fallback:**
+   - Posicionar a Groq como primeiro fallback imediato caso a cota do Gemini oscile: `fallback_chain = ["groq", "nvidia", "deepseek"]`.
+2. **Integração no Pool Multi-Chaves (`[FEAT-POOL-01]`):**
+   - Suporte ao cadastro de múltiplas chaves Groq (`groq_api_keys`) nas Preferências, com rotação automática em caso de 429.
+3. **Health Check Ativo:**
+   - Teste de 1 token ao salvar a chave da Groq em Preferências via endpoint compatível OpenAI (`https://api.groq.com/openai/v1/chat/completions`).
+
+---
+
+## 🧠 Homologação do Anthropic Claude (Claude Haiku 5.5) e Suporte a Blocos de Resposta [FEAT-LLM-05]
+
+- **Prioridade:** Alta (Homologação de Provedor Pago de Alta Precisão)
+- **Status:** Planejado / Validado com Sucesso em Teste de Inferência Real
+- **Data do Registro:** 2026-11-11
+- **Origem:** Integração de chave paga da Anthropic (`sk-ant-usr-...`)
+- **Responsáveis:** Forja (Pipeline/LLM) & Prisma (Preferências GUI)
+
+### 1. Diagnóstico e Validação em Tempo Real
+- A chave gerada e configurada pelo usuário foi testada com sucesso diretamente na API da Anthropic (`https://api.anthropic.com/v1/messages`).
+- O modelo topo de linha atual homologado é o **`claude-haiku-5-5`**, que demonstrou altíssima acurácia taxonômica (classificando *Luto e Melancolia* em Psicologia > Psicanálise > Teoria Psicanalítica com 90% de confiança em menos de 2 segundos).
+- **Ajuste Técnico no Parser de Resposta (`ClaudeProvider`):** Os modelos da geração Claude 5 emitem blocos estruturados contendo `thinking` e `text`. O método `_call_claude` em `src/tomus/core/llm.py` deve extrair o bloco cujo `type == 'text'`, evitando a exceção `KeyError: 'text'` ao acessar cegamente `content[0]`.
+
+### 2. Escopo de Entrega
+1. Configuração do modelo padrão Anthropic para `claude-haiku-5-5` em `config.py` e `llm.py`.
+2. Extração resiliente de blocos textuais (`[b['text'] for b in data['content'] if b.get('type') == 'text']`).
+3. Gravação da chave validada no `~/.config/tomus/config.toml` (`claude_api_key`).
+4. Adição do Claude na lista de provedores ativos e na cadeia de fallback.
+
+---
+
+## 📝 Companion Markdown em Revisão Manual, Edição Guiada na GUI e Materialização Seletiva [FEAT-TRIAGE-01]
+
+- **Prioridade:** Alta (Ergonomia de Triagem, Preservação de Metadados & Ciclo Completo de Acervo)
+- **Status:** Planejado (Backlog)
+- **Data do Registro:** 2026-11-11
+- **Origem:** Demanda Estratégica de Produto (Dario — concebida após análise dos arquivos não classificados)
+- **Responsáveis:** Forja (Core/Pipeline/Storage) & Prisma (UX/UI & Triagem na GUI)
+
+### 1. Requisitos de Entrega e Fluxo de Trabalho
+
+1. **Geração Incondicional do Arquivo Companheiro (`.md`):**
+   - Mesmo quando um documento for direcionado para `revisao_manual/`, o Tomus deve gerar imediatamente o arquivo `.md` correspondente ao lado do PDF (`revisao_manual/<nome_original>.md`).
+   - O arquivo conterá os metadados preliminares já resgatados pelo sistema (título sugerido pelo PyMuPDF, autor prévio, ISBN se houver, amostra de texto e motivo explícito da ida para revisão manual).
+
+2. **Edição Manual de Metadados na Interface Gráfica:**
+   - Ao final da classificação do lote (ou filtrando por "Revisão Manual"), o usuário poderá inspecionar cada item no painel lateral e editar diretamente os campos:
+     - Título e Subtítulo
+     - Autores
+     - Ano
+     - Grande Área, Área Básica, Subárea e Especialidade (via dropdowns sincronizados com o catálogo CAPES/CNPq)
+     - Tipo Documental (Livro, Artigo, Tese, etc.)
+
+3. **Rastreabilidade no Front Matter YAML do Companion:**
+   - Gravar explicitamente no front matter do arquivo `.md` um bloco de auditoria de revisão manual indicando quais campos foram alterados pelo usuário:
+     ```yaml
+     revisao_manual:
+       editado_manualmente: true
+       revisado_em: "2026-11-11T16:00:00Z"
+       campos_alterados:
+         - "area_basica"
+         - "subarea"
+         - "ano"
+         - "authors"
+     ```
+
+4. **Materialização Seletiva na Árvore:**
+   - Ao concluir as edições, fornecer o botão de ação **"Organizar Itens Revisados na Árvore"**:
+     - **Itens Elegíveis:** Documentos que receberam área básica, subárea e metadados mínimos suficientes são movidos automaticamente de `revisao_manual/` para sua pasta definitiva `/Destino/<area_basica>/<subarea>/<tipo>/`, renomeados para o padrão canônico (`Autor - Título - Ano.pdf`), junto com seu companion `.md` atualizado, e integrados ao `manifest.json`.
+     - **Itens Incompletos:** Documentos que não possuem informações suficientes permanecem com segurança em `revisao_manual/`.
+
+5. **Relatório de Desfecho da Triagem:**
+   - Ao término do processo de materialização, exibir modal/notificação detalhando:
+     - *"X documentos foram promovidos e organizados na árvore temática com sucesso."*
+     - *"Y documentos continuam na pasta de Revisão Manual por informações pendentes."*
+
+---
+
+## ⚙️ Refinamentos da Tela de Preferências e Gestão de Chaves (Sprint v1.2.1+)
+
+### [BUG-PREF-01] Menu de Contexto e Semântica de Janela nas Preferências
+- **Prioridade:** Média (Ergonomia e Padrão macOS)
+- **Status:** Registrado no Backlog
+- **Data do Registro:** 2026-11-12
+- **Origem:** Feedback de Uso (Dario)
+- **Responsáveis:** Prisma (UX/UI) & Atlas (Foundation)
+- **Escopo:** `src/tomus/gui/widgets/preferences_dialog.py`
+- **Descrição:**
+  1. Revisar o menu de contexto na tela de Preferências: assegurar que os campos de texto (`QLineEdit`) tenham acesso ao menu nativo de edição do sistema (*Copiar*, *Colar*, *Recortar*, *Selecionar Tudo*), enquanto o fundo do diálogo não exiba menus desnecessários.
+  2. Ajustar as flags de janela no macOS (`Qt.WindowType.Dialog` ou `Qt.WindowType.Sheet`), desabilitando o botão verde de maximização/zoom indevido em caixas de diálogo de ajustes e fixando dimensões adequadas ao design.
+
+---
+
+### [FEAT-AUTH-03] Verificação Ativa de Status da Chave de API antes de Considerá-la Ativa
+- **Prioridade:** Alta (Confiabilidade e Prevenção de Falhas em Lote)
+- **Status:** Registrado no Backlog
+- **Data do Registro:** 2026-11-12
+- **Origem:** Feedback de Uso (Dario)
+- **Responsáveis:** Atlas (Foundation/Bridge) & Forja (Core/LLM)
+- **Escopo:** `src/tomus/gui/bridge.py`, `src/tomus/gui/web/app.js`, `src/tomus/gui/widgets/preferences_dialog.py`
+- **Descrição:**
+  1. Atualmente, a interface marca a chave como "Chave Ativa" apenas checando a presença da string (`bool(api_key)`), sem atestar se ela é funcional.
+  2. Implementar verificação ativa de integridade (*health check ping* de 1 token) via `validateProviderKey()` antes de marcar o badge como verde.
+  3. Se a chave estiver ausente, expirada, inválida (HTTP 401) ou sem créditos (HTTP 403), exibir status específico (*Chave Inválida / Não Autorizada / Sem Créditos*) com aviso visual, impedindo que o usuário inicie um lote grande acreditando que o provedor está pronto.
+
+---
+
+### [FEAT-POOL-02] Interface Gráfica de Múltiplas Chaves por Provedor nas Preferências
+- **Prioridade:** Alta (Usabilidade do Pool Multi-Chave)
+- **Status:** Registrado no Backlog
+- **Data do Registro:** 2026-11-12
+- **Origem:** Feedback de Uso (Dario)
+- **Responsáveis:** Prisma (UX/UI) & Forja (Core)
+- **Escopo:** `src/tomus/gui/widgets/preferences_dialog.py`
+- **Descrição:**
+  1. O motor central (`tomus.core`) já possui suporte a listas de chaves com rotação round-robin em HTTP 429 (`FEAT-POOL-01`). No entanto, o diálogo de Preferências atual só possui um campo simples de texto por provedor.
+  2. Criar componente de UI que permita cadastrar, visualizar e remover múltiplas chaves para cada provedor (ex.: lista dinâmica com botão `+ Adicionar Chave` ou campo multi-linhas expansível).
+  3. Exibir o status individual de cada chave cadastrada no pool (Ativa, Esgotada/Cooldown ou Inválida).
+
+---
+
+### [FEAT-PREF-02] Ordenação Visual e Reordenável da Cadeia de Fallback
+- **Prioridade:** Média (Clareza Operacional)
+- **Status:** Registrado no Backlog
+- **Data do Registro:** 2026-11-12
+- **Origem:** Feedback de Uso (Dario — "Aqui não mostra, efetivamente uma ordem")
+- **Responsáveis:** Prisma (UX/UI)
+- **Escopo:** `src/tomus/gui/widgets/preferences_dialog.py`
+- **Descrição:**
+  1. Na aba "Provedores LLM & Fallback", a seção de fallback atualmente apresenta apenas checkboxes horizontais simples (`[x] groq  [x] nvidia  [x] deepseek`), o que não explicita a ordem nem permite ao usuário personalizar a hierarquia.
+  2. Substituir por uma lista vertical numerada clara:
+     - `1º Fallback: Groq (llama-3.3-70b-versatile)`
+     - `2º Fallback: NVIDIA NIM (llama-3.2-90b)`
+     - `3º Fallback: Anthropic Claude (claude-haiku-5.5)`
+     - `4º Fallback: DeepSeek (deepseek-flash)`
+  3. Disponibilizar controles de reordenação (botões ▲ / ▼ ou drag-and-drop) para que o usuário defina explicitamente qual provedor assume a esteira em caso de contingência.
+
+---
+
+### [FEAT-PREF-03] Restaurar Configurações Padrão do Aplicativo (Reset to Defaults)
+- **Prioridade:** Média (Recuperação de Erros e Ergonomia)
+- **Status:** Concluído / Resolvido (v1.2.0)
+- **Data do Registro:** 2026-11-12
+- **Origem:** Feedback de Uso (Dario)
+- **Responsáveis:** Prisma (UX/UI) & Forja (Core/Config)
+- **Escopo:** `src/tomus/gui/widgets/preferences_dialog.py`, `src/tomus/core/config.py`
+- **Descrição:**
+  1. Adicionado botão "Restaurar Padrões" no rodapé à esquerda do diálogo de Preferências.
+  2. Ao clicar, exibe confirmação modal via `QMessageBox.question` advertindo que as configurações de modelos, fallbacks e pipeline serão redefinidas para os valores padrão de fábrica.
+  3. Ao confirmar, preserva integralmente as chaves de API cadastradas, restaurando apenas os modelos oficiais (`gemini-3.5-flash`), a cadeia de fallback padrão (`groq -> nvidia -> claude -> deepseek`), o limiar de confiança (0.70) e o uso do cache local SQLite. Coberto por teste automatizado `test_preferences_dialog_restore_defaults_preserves_keys`.
+
+---
+
+### [FEAT-POOL-02] Interface Gráfica de Múltiplas Chaves por Provedor nas Preferências
+- **Prioridade:** Alta (Resiliência de Cota, Zero Custos em Lotes Grandes & Alta Disponibilidade)
+- **Status:** Concluído / Resolvido (v1.2.0)
+- **Data do Registro:** 2026-11-11
+- **Origem:** Demanda Estratégica de Produto (Dario)
+- **Responsáveis:** Forja (Core/Config/LLM Dispatcher) & Prisma (UX/UI Modal de Preferências)
+- **Escopo:** `src/tomus/gui/widgets/preferences_dialog.py`, `src/tomus/core/llm.py`
+- **Descrição:**
+  1. O diálogo de Preferências suporta cadastro de múltiplas chaves por provedor separadas por vírgula no campo de credenciais.
+  2. Validação sintática individual para cada chave do pool.
+  3. Feedback visual em tempo real indicando a quantidade de chaves ativas (ex.: `✓ 2 chaves no Pool`).
+  4. O despachante `_resolve_api_key` aceita listas ou strings delimitadas por vírgula. Coberto por testes automatizados em `test_gui_components.py`.
+
+---
+
+### [FEAT-CLIPBOARD-02] Suporte Robusto a Cópia de Citação ABNT com Formatação (Rich Text e Markdown)
+- **Prioridade:** Média / Alta (Produtividade Acadêmica e Fidelidade ABNT)
+- **Status:** Concluído / Resolvido (v1.2.0)
+- **Data do Registro:** 2026-11-12
+- **Origem:** Feedback de Uso (Dario — Confirmação em 12/11 de que a cópia já preserva o negrito no Word e asteriscos no Markdown)
+- **Responsáveis:** Prisma (UX/UI) & Atlas (Foundation)
+- **Escopo:** `src/tomus/gui/web/app.js`, `src/tomus/gui/bridge.py`
+- **Descrição:**
+  1. A injeção na área de transferência alimenta simultaneamente o canal `text/html` (com tag `<strong>` para Word, Docs, Pages) e o canal `text/plain` (com `**Título**` para Markdown, Obsidian, Notion).
+  2. Evita completamente o instanciamento perigoso de `QMimeData` em Python para afastar qualquer crash do coletor de lixo C++/PySide6 (`QMimeDataWrapper::~QMimeDataWrapper()`).
+
+---
+
+### [FEAT-UX-02] Tradução Amigável de Erros de LLM e Rede na Revisão Manual
+- **Prioridade:** Média (Clareza e Anti-AI-Slop na Interface)
+- **Status:** Concluído / Resolvido (v1.2.0)
+- **Data do Registro:** 2026-11-12
+- **Origem:** Feedback de Uso (Dario — Exibição de mensagens brutas de erro HTTP no card de triagem)
+- **Responsáveis:** Prisma (UX/UI) & Forja (Core/LLM)
+- **Escopo:** `src/tomus/core/llm.py`, `src/tomus/gui/web/app.js`
+- **Descrição:**
+  1. Implementada a função `humanize_error_message` em `src/tomus/core/llm.py` e sanitização inteligente `formatTriageError` em `src/tomus/gui/web/app.js`.
+  2. Erros técnicos crus (HTTP 401, 429, 503, 504, timeout) são convertidos em linguagem humana, compreensível e orientada à ação:
+     - **HTTP 401:** *"Chave de API não autorizada ou expirada no provedor {nome}. Por favor, verifique suas credenciais na tela de Preferências."*
+     - **HTTP 429:** *"Cota de requisições por minuto ou limite diário excedido no provedor {nome}."*
+     - **HTTP 503 / 504 / 529:** *"Instabilidade temporária nos servidores no provedor {nome}. Tente novamente mais tarde."*
+     - **Timeout:** *"Tempo limite de resposta esgotado ao consultar o provedor {nome}."*
+  3. Coberto por testes automatizados em `tests/test_security.py`.
+
+---
+
+### [FEAT-AUTH-04] Validação Estrutural e Sintática de Chaves de API nas Preferências
+- **Prioridade:** Alta (Prevenção de Erros de Configuração)
+- **Status:** Concluído / Resolvido (v1.2.0)
+- **Data do Registro:** 2026-11-12
+- **Origem:** Constatação técnica (chave DeepSeek gravada como UUID em vez de iniciar com `sk-`)
+- **Responsáveis:** Atlas (Foundation) & Prisma (UX/UI)
+- **Escopo:** `src/tomus/gui/widgets/preferences_dialog.py`
+- **Descrição:**
+  1. Validação regex em tempo real no evento de digitação/colagem de chaves:
+     - **DeepSeek:** deve iniciar com `sk-` e ter no mínimo 20 caracteres (bloqueia UUIDs avulsos).
+     - **Groq:** deve iniciar com `gsk_`.
+     - **NVIDIA NIM:** deve iniciar com `nvapi-`.
+     - **Anthropic Claude:** deve iniciar com `sk-ant-`.
+     - **Google Gemini:** formato `AIzaSy` ou chave com comprimento mínimo adequado.
+  2. Alerta visual contextual com cor vermelha e mensagem orientativa quando o formato for incompatível. Coberto por testes automatizados em `tests/test_gui_components.py`.
 
 
 

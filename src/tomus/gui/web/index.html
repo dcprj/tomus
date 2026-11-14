@@ -50,11 +50,10 @@
           <div class="select-wrapper">
             <select id="modelSelect" class="select-pill">
               <option value="gemini">Gemini (gemini-3.5-flash)</option>
-              <option value="groq">Groq (llama-3.3-70b-versatile)</option>
-              <option value="nvidia">NVIDIA NIM (nemotron-3.5)</option>
+              <option value="groq">Groq (openai/gpt-oss-120b)</option>
+              <option value="nvidia">NVIDIA NIM (llama-3.2-90b)</option>
+              <option value="claude">Anthropic Claude (claude-haiku-5.5)</option>
               <option value="deepseek">DeepSeek (deepseek-flash)</option>
-              <option value="claude">Anthropic Claude</option>
-              <option value="github">GitHub Models (gpt-4o)</option>
             </select>
           </div>
         </div>
@@ -105,7 +104,7 @@
     <main class="main-content">
       
       <!-- LEFT SIDEBAR: FILTROS & TAXONOMIA -->
-      <aside class="sidebar card">
+      <aside class="sidebar card" id="sidebarPanel">
         <div class="sidebar-section">
           <div class="section-title">FILTROS & TAXONOMIA</div>
           <div class="section-subtitle">VISÃO DE STATUS</div>
@@ -148,6 +147,9 @@
         </div>
       </aside>
 
+      <!-- Divisor redimensionável entre barra lateral e tabela -->
+      <div class="resizer" id="sidebarResizer" title="Arraste para redimensionar a barra lateral"></div>
+
       <!-- CENTER PANEL: SEARCH & TABLE -->
       <section class="table-panel card">
         <!-- Search bar -->
@@ -177,13 +179,13 @@
           <table class="doc-table" id="docTable">
             <thead>
               <tr>
-                <th class="col-status">Status</th>
-                <th class="col-title">Título / Arquivo</th>
-                <th class="col-authors">Autor(es)</th>
-                <th class="col-year">Ano</th>
-                <th class="col-area">Grande Área / Área Básica</th>
-                <th class="col-type">Tipo</th>
-                <th class="col-confidence">Confiança</th>
+                <th class="col-status" data-col="status">Status<div class="th-resizer"></div></th>
+                <th class="col-title" data-col="title">Título / Arquivo<div class="th-resizer"></div></th>
+                <th class="col-authors" data-col="authors">Autor(es)<div class="th-resizer"></div></th>
+                <th class="col-year" data-col="year">Ano<div class="th-resizer"></div></th>
+                <th class="col-area" data-col="area">Área Básica / Subárea<div class="th-resizer"></div></th>
+                <th class="col-type" data-col="type">Tipo<div class="th-resizer"></div></th>
+                <th class="col-confidence" data-col="confidence">Confiança<div class="th-resizer"></div></th>
               </tr>
             </thead>
             <tbody id="docTableBody">
@@ -195,6 +197,9 @@
           </div>
         </div>
       </section>
+
+      <!-- Divisor redimensionável entre tabela e inspetor -->
+      <div class="resizer" id="tableResizer" title="Arraste para redimensionar o painel de detalhes"></div>
 
       <!-- RIGHT PANEL: INSPECTOR -->
       <aside class="inspector card" id="inspectorPanel">
@@ -248,12 +253,12 @@
             <form class="triage-form" id="triageForm" onsubmit="return false;">
               <div class="form-row">
                 <div class="form-col">
-                  <label class="form-label">Grande Área</label>
-                  <select class="form-select" id="triageGrandeArea"></select>
-                </div>
-                <div class="form-col">
                   <label class="form-label">Área Básica</label>
                   <select class="form-select" id="triageAreaBasica"></select>
+                </div>
+                <div class="form-col">
+                  <label class="form-label">Área Específica (Subárea)</label>
+                  <input type="text" class="form-input" id="triageSubarea" placeholder="Ex: Psicofarmacologia, Psicanálise..." autocomplete="off">
                 </div>
               </div>
 
@@ -304,6 +309,8 @@
             <dl class="kv-grid">
               <dt>Grande Área</dt><dd id="kvGrandeArea">—</dd>
               <dt>Área Básica</dt><dd id="kvAreaBasica">—</dd>
+              <dt>Subárea</dt><dd id="kvSubarea">—</dd>
+              <dt>Especialidade</dt><dd id="kvEspecialidade">—</dd>
               <dt>Tipo</dt><dd id="kvTipo">—</dd>
               <dt>Confiança</dt><dd id="kvConfianca">—</dd>
               <dt>Origem</dt><dd class="mono-truncate" id="kvOrigem" title="">—</dd>
@@ -343,6 +350,10 @@
         <span class="status-item" id="countIndicator">0 / 0 processados</span>
         <span class="status-sep">|</span>
         <span class="status-item" id="remainingIndicator">Restam: 0</span>
+        <span class="status-sep">|</span>
+        <span class="status-item" id="avgTimeIndicator">média por arquivo: —</span>
+        <span class="status-sep">|</span>
+        <span class="status-item" id="etaIndicator">Total estimado: —</span>
       </div>
 
       <div class="status-spacer"></div>
@@ -421,7 +432,7 @@
             <div class="about-brand-info">
               <div class="about-brand-title">
                 <span class="brand-name">Tomus</span>
-                <span class="badge-pill badge-primary">v1.1.2</span>
+                <span class="badge-pill badge-primary">v1.2.0</span>
               </div>
             </div>
           </div>

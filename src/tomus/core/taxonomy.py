@@ -32,6 +32,8 @@ def _find_taxonomy_file() -> Path:
 
 _TAXONOMY_PATH = _find_taxonomy_file()
 
+TAXONOMY_VERSION = "capes-cnpq-v2"
+
 _taxonomy_cache: Optional[dict] = None
 
 
@@ -102,3 +104,37 @@ def format_taxonomy_for_prompt() -> str:
         areas_str = "; ".join(areas_basicas)
         lines.append(f"- {grande_area}: {areas_str}")
     return "\n".join(lines)
+
+
+def get_subareas() -> list[str]:
+    """Retornar lista de Subáreas válidas (vazia se não houver no catálogo)."""
+    return []
+
+
+def get_especialidades(subarea: str | None = None) -> list[str]:
+    """Retornar lista de Especialidades válidas (vazia se não houver no catálogo)."""
+    return []
+
+
+def validate_or_repair_subarea_especialidade(
+    subarea: str,
+    especialidade: str,
+) -> Optional[tuple[str, str]]:
+    """Validar ou reparar o par (subarea, especialidade).
+
+    Como o catálogo CAPES/CNPq oficial não define subáreas e especialidades
+    fixas, qualquer valor não-vazio é considerado válido. Retorna None se
+    ambos forem vazios ou nulos.
+    """
+    subarea = (subarea or "").strip()
+    especialidade = (especialidade or "").strip()
+
+    if not subarea and not especialidade:
+        return None
+
+    if not subarea:
+        subarea = "Não especificada"
+    if not especialidade:
+        especialidade = "Não especificada"
+
+    return (subarea, especialidade)

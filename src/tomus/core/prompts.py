@@ -56,7 +56,11 @@ def build_system_prompt() -> str:
         "1. Responda SOMENTE em JSON válido estritamente no esquema solicitado.\n"
         "2. 'grande_area' e 'area_basica' devem pertencer ao catálogo fechado "
         "CAPES/CNPq fornecido no contexto; não invente categorias.\n"
-        "3. 'tipo' deve ser exatamente um dos cinco valores: Livro, "
+        "3. 'subarea' é a subárea dentro da Área Básica (ex: 'Psicologia Clínica' "
+        "dentro de Psicologia). Use 'Não especificada' se não houver subárea clara.\n"
+        "4. 'especialidade' é a especialidade dentro da subárea (ex: \"Psicologia Hospitalar\" "
+        "dentro de Psicologia Clínica). Use 'Não especificada' se não houver.\n"
+        "5. 'tipo' deve ser exatamente um dos cinco valores: Livro, "
         "Revista Científica, Artigo, Tese_Dissertacao ou Outros.\n"
         "4. 'authors' deve ser uma lista de strings no formato 'Sobrenome, Nome'. Se desconhecido ou institucional, use ['Autor Desconhecido'].\n"
         "5. 'title' deve ser o título principal da obra/documento em português ou idioma original.\n"
@@ -77,6 +81,8 @@ def build_system_prompt() -> str:
         "{\n"
         '  "grande_area": "string (exata da tabela CAPES)",\n'
         '  "area_basica": "string (exata da tabela CAPES)",\n'
+        '  "subarea": "string (subárea dentro da área básica ou \"Não especificada\")",\n'
+        '  "especialidade": "string (especialidade dentro da subárea ou \"Não especificada\")",\n'
         '  "tipo": "Livro | Revista Científica | Artigo | Tese_Dissertacao | Outros",\n'
         '  "authors": ["Sobrenome, Nome"],\n'
         '  "title": "string (título completo)",\n'

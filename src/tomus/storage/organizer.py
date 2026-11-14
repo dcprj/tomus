@@ -1,7 +1,7 @@
 """Materializador de diretórios da biblioteca (Item 21).
 
 Organiza arquivos aprovados em
-<TARGET_DIR>/<Grande Área>/<Área Básica>/<Tipo>/<nome_formatado>.pdf e
+<TARGET_DIR>/<Área Básica>/<Subárea>/<Tipo>/<nome_formatado>.pdf e
 arquivos de baixa confiança/erro em
 <TARGET_DIR>/revisao_manual/<source_path.name> (preservando o nome original).
 
@@ -81,19 +81,14 @@ def _resolve_collision(
         if planned_hash == src_hash:
             return filename, ProcessStatus.DUPLICATE_SKIPPED.value
 
-    if not dest_path.exists() and (
-        planned_destinations is None or dest_path not in planned_destinations
-    ):
+    if not dest_path.exists():
         return filename, ""
 
-    dst_hash = ""
-    if dest_path.exists():
-        try:
-            dst_hash = _compute_sha256(dest_path)
-        except OSError:
-            dst_hash = ""
-    elif planned_destinations is not None and dest_path in planned_destinations:
-        dst_hash = planned_destinations[dest_path]
+    # Verificar no disco se o arquivo já existe com o mesmo hash.
+    try:
+        dst_hash = _compute_sha256(dest_path)
+    except OSError:
+        dst_hash = ""
 
     if dst_hash and dst_hash == src_hash:
         return filename, ProcessStatus.DUPLICATE_SKIPPED.value
@@ -105,22 +100,12 @@ def _resolve_collision(
     while True:
         candidate = f"{stem} ({counter}){suffix}"
         candidate_path = dest_dir / candidate
-        # Verificar tanto no disco quanto nos planejados.
-        disk_exists = candidate_path.exists()
-        planned_hash = None
-        if planned_destinations is not None:
-            planned_hash = planned_destinations.get(candidate_path)
-        if not disk_exists and planned_hash is None:
+        if not candidate_path.exists():
             return candidate, ""
-        # Se já existe no disco ou foi planejado, verificar se é duplicata.
-        candidate_hash = None
-        if disk_exists:
-            try:
-                candidate_hash = _compute_sha256(candidate_path)
-            except OSError:
-                pass
-        if candidate_hash is None and planned_hash is not None:
-            candidate_hash = planned_hash
+        try:
+            candidate_hash = _compute_sha256(candidate_path)
+        except OSError:
+            candidate_hash = ""
         if candidate_hash == src_hash:
             return candidate, ProcessStatus.DUPLICATE_SKIPPED.value
         counter += 1
@@ -198,6 +183,8 @@ class LibraryOrganizer:
         source_path: Path,
         grande_area: str,
         area_basica: str,
+        subarea: str,
+        especialidade: str,
         tipo: str,
         filename: str,
         sha256: str,
@@ -206,7 +193,9 @@ class LibraryOrganizer:
         duplicate: bool = False,
     ) -> FileManifestEntry:
         """Registrar um arquivo organizado na árvore temática."""
-        dest_dir = self.target_dir / grande_area / area_basica / tipo
+        """Registrar um arquivo organizado na árvore temática."""
+        subarea_clean = (subarea or "").strip() or "Geral"
+        dest_dir = self.target_dir / area_basica / subarea_clean / tipo
         nome_final, colisao_status = _resolve_collision(
             dest_dir,
             filename,

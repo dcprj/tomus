@@ -80,7 +80,7 @@ class LLMConfig(BaseSettings):
         description="Provedor de classificação padrão (MVP implementa 'gemini').",
     )
     fallback_chain: list[str] = Field(
-        default_factory=lambda: ["groq", "nvidia", "deepseek"],
+        default_factory=lambda: ["groq", "nvidia", "claude", "deepseek"],
         description="Cadeia de fallback de provedores quando o padrão falha.",
     )
     model: str = Field(
@@ -98,17 +98,21 @@ class ApiKeysConfig(BaseSettings):
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
-    gemini_api_key: str = Field(
-        default="",
-        validation_alias=AliasChoices("gemini_api_key", "TOMUS_GEMINI_API_KEY", "GEMINI_API_KEY"),
-        description="Chave de API do provedor de LLM (Gemini).",
-    )
-    google_books_api_key: str = Field(
+    gemini_api_key: str | list[str] = Field(
         default="",
         validation_alias=AliasChoices(
-            "google_books_api_key", "TOMUS_GOOGLE_BOOKS_API_KEY", "GOOGLE_BOOKS_API_KEY"
+            "gemini_api_keys", "gemini_api_key",
+            "TOMUS_GEMINI_API_KEYS", "GEMINI_API_KEY",
         ),
-        description="Chave de API do Google Books.",
+        description="Chave(s) de API do provedor de LLM (Gemini).",
+    )
+    google_books_api_key: str | list[str] = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "google_books_api_keys", "google_books_api_key",
+            "TOMUS_GOOGLE_BOOKS_API_KEYS", "GOOGLE_BOOKS_API_KEY",
+        ),
+        description="Chave(s) de API do Google Books.",
     )
     openalex_polite_email: str = Field(
         default="",
@@ -117,41 +121,48 @@ class ApiKeysConfig(BaseSettings):
         ),
         description="E-mail opcional para uso do Polite Pool do OpenAlex.",
     )
-    nvidia_api_key: str = Field(
+    nvidia_api_key: str | list[str] = Field(
         default="",
         validation_alias=AliasChoices(
-            "nvidia_api_key", "TOMUS_NVIDIA_API_KEY", "NVIDIA_API_KEY"
+            "nvidia_api_keys", "nvidia_api_key",
+            "TOMUS_NVIDIA_API_KEYS", "NVIDIA_API_KEY",
         ),
-        description="Chave de API da NVIDIA (NVIDIA NIM / build.nvidia.com).",
+        description="Chave(s) de API da NVIDIA (NVIDIA NIM / build.nvidia.com).",
     )
-    deepseek_api_key: str = Field(
+    deepseek_api_key: str | list[str] = Field(
         default="",
         validation_alias=AliasChoices(
-            "deepseek_api_key", "TOMUS_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY"
+            "deepseek_api_keys", "deepseek_api_key",
+            "TOMUS_DEEPSEEK_API_KEYS", "DEEPSEEK_API_KEY",
         ),
-        description="Chave de API do DeepSeek.",
+        description="Chave(s) de API do DeepSeek.",
     )
-    claude_api_key: str = Field(
+    claude_api_key: str | list[str] = Field(
         default="",
         validation_alias=AliasChoices(
-            "claude_api_key", "TOMUS_CLAUDE_API_KEY", "CLAUDE_API_KEY", "ANTHROPIC_API_KEY"
+            "claude_api_keys", "claude_api_key",
+            "TOMUS_CLAUDE_API_KEYS", "CLAUDE_API_KEY", "ANTHROPIC_API_KEY",
         ),
-        description="Chave de API da Anthropic Claude.",
+        description="Chave(s) de API da Anthropic Claude.",
     )
-    groq_api_key: str = Field(
+    groq_api_key: str | list[str] = Field(
         default="",
         validation_alias=AliasChoices(
-            "groq_api_key", "TOMUS_GROQ_API_KEY", "GROQ_API_KEY"
+            "groq_api_keys", "groq_api_key",
+            "TOMUS_GROQ_API_KEYS", "GROQ_API_KEY",
         ),
-        description="Chave de API da Groq.",
+        description="Chave(s) de API da Groq.",
     )
-    github_token: str = Field(
-        default="",
-        validation_alias=AliasChoices(
-            "github_token", "TOMUS_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"
-        ),
-        description="Token de acesso do GitHub (API REST).",
-    )
+
+    @field_validator("gemini_api_key", "google_books_api_key", "nvidia_api_key",
+                     "deepseek_api_key", "claude_api_key", "groq_api_key",
+                     mode="before")
+    @classmethod
+    def _resolve_api_key(cls, value: str | list[str] | None) -> str:
+        """Preserva múltiplas chaves (se lista, junta com vírgula) para suporte ao pool."""
+        if isinstance(value, list):
+            return ", ".join(value) if value else ""
+        return value or ""
 
 
 class AppConfig(BaseSettings):
@@ -183,8 +194,8 @@ class AppConfig(BaseSettings):
         global_toml = GlobalTomlSettingsSource(settings_cls)
         return (
             init_settings,
-            env_settings,
             local_toml,
+            env_settings,
             global_toml,
         )
 
@@ -197,7 +208,6 @@ _ENV_KEY_MAP: dict[str, tuple[str, ...]] = {
     "deepseek_api_key": ("TOMUS_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY"),
     "claude_api_key": ("TOMUS_CLAUDE_API_KEY", "CLAUDE_API_KEY", "ANTHROPIC_API_KEY"),
     "groq_api_key": ("TOMUS_GROQ_API_KEY", "GROQ_API_KEY"),
-    "github_token": ("TOMUS_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"),
 }
 
 
@@ -223,10 +233,14 @@ class FilteredTomlSettingsSource(TomlConfigSettingsSource):
 
     @staticmethod
     def _filter_env_overrides(data: dict[str, Any]) -> dict[str, Any]:
-        if "api_keys" in data and isinstance(data["api_keys"], dict):
+        if "api_keys" not in data:
+            data["api_keys"] = {}
+        if isinstance(data["api_keys"], dict):
             for field, env_vars in _ENV_KEY_MAP.items():
-                if any(os.environ.get(ev) for ev in env_vars):
-                    data["api_keys"].pop(field, None)
+                for env_var in env_vars:
+                    valor = os.environ.get(env_var)
+                    if valor:
+                        data["api_keys"][field] = valor
         return data
 
     @staticmethod
@@ -295,7 +309,7 @@ provider = "gemini"
 # Alias para provider (retrocompatibilidade)
 default_provider = "gemini"
 # Cadeia de fallback de provedores quando o padrão falha
-fallback_chain = ["groq", "nvidia", "deepseek"]
+fallback_chain = ["groq", "nvidia", "claude", "deepseek"]
 # Modelo padrão do provedor
 model = "gemini-3.5-flash"
 
@@ -304,10 +318,10 @@ model = "gemini-3.5-flash"
 #model = "gemini-3.5-flash"
 
 #[llm.providers.groq]
-#model = "openai/gpt-oss-20b"
+#model = "llama-3.3-70b-versatile"
 
 #[llm.providers.nvidia]
-#model = "nvidia/nemotron-3.5-lightning-30b-a3b"
+#model = "meta/llama-3.2-90b-vision-instruct"
 
 #[llm.providers.deepseek]
 #model = "deepseek-flash"
@@ -326,8 +340,6 @@ deepseek_api_key = ""
 claude_api_key = ""
 # Chave de API da Groq
 groq_api_key = ""
-# Token de acesso do GitHub (também aceita GITHUB_TOKEN / GH_TOKEN via env)
-github_token = ""
 """
 
 

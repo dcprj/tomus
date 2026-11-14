@@ -60,38 +60,46 @@ class TomusMainWindow(QMainWindow):
         self.setMinimumSize(*_MIN_SIZE)
         self.resize(*_DEFAULT_SIZE)
 
-        # Configurar WebEngineView com página de logging personalizada
-        self.web_page = TomusWebPage(self)
-        self.web_page._verbose = verbose
-        self.web_view = QWebEngineView(self)
-        self.web_view.setPage(self.web_page)
-        self.setCentralWidget(self.web_view)
-
-        # Configurar QWebChannel e Ponte Python <-> JS
-        self.channel = QWebChannel(self.web_page)
         self.bridge = WebBridge(self._config, parent_widget=self, parent=self)
         if self._source_dir:
             self.bridge.source_dir = str(self._source_dir)
         if self._target_dir:
             self.bridge.target_dir = str(self._target_dir)
 
-        self.channel.registerObject("backend", self.bridge)
-        self.web_page.setWebChannel(self.channel)
+        # Configurar WebEngineView com página de logging personalizada e fallback defensivo
+        try:
+            self.web_page = TomusWebPage(self)
+            self.web_page._verbose = verbose
+            self.web_view = QWebEngineView(self)
+            self.web_view.setPage(self.web_page)
+            self.web_view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+            self.setCentralWidget(self.web_view)
 
-        # Carregar interface HTML5 (compatível com desenvolvimento local e bundle PyInstaller)
-        if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-            meipass = Path(sys._MEIPASS)
-            candidates = [
-                meipass / "tomus" / "gui" / "web",
-                meipass / "web",
-                Path(__file__).parent / "web",
-            ]
-            web_dir = next((p for p in candidates if p.exists()), candidates[0])
-        else:
-            web_dir = Path(__file__).parent / "web"
+            # Configurar QWebChannel e Ponte Python <-> JS
+            self.channel = QWebChannel(self.web_page)
+            self.channel.registerObject("backend", self.bridge)
+            self.web_page.setWebChannel(self.channel)
 
-        index_file = web_dir / "index.html"
-        self.web_view.load(QUrl.fromLocalFile(str(index_file.resolve())))
+            # Carregar interface HTML5 (compatível com desenvolvimento local e bundle PyInstaller)
+            if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+                meipass = Path(sys._MEIPASS)
+                candidates = [
+                    meipass / "tomus" / "gui" / "web",
+                    meipass / "web",
+                    Path(__file__).parent / "web",
+                ]
+                web_dir = next((p for p in candidates if p.exists()), candidates[0])
+            else:
+                web_dir = Path(__file__).parent / "web"
+
+            index_file = web_dir / "index.html"
+            self.web_view.load(QUrl.fromLocalFile(str(index_file.resolve())))
+        except Exception:
+            # Fallback seguro para ambientes headless ou sem suporte a Chromium
+            self.web_page = None
+            self.web_view = QWidget(self)
+            self.setCentralWidget(self.web_view)
+            self.channel = None
 
         self.setAcceptDrops(True)
 

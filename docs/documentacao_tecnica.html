@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Documentação Técnica e Arquitetura do Tomus — Especificação de Engenharia, Stack Tecnológica, Decisões de Arquitetura e Modelagem de Dados.">
+  <title>Documentação Técnica &amp; Arquitetura — Tomus</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="site_assets/style.css">
+  <link rel="icon" type="image/png" href="site_assets/tomus_emblem.png">
+
+  <style>
+    .doc-page {
+      padding: 120px 0 80px;
+      background: var(--bg-page);
+      color: var(--text-main);
+    }
+    .doc-container {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    .doc-header {
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border-medium);
+    }
+    .doc-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: rgba(2, 132, 199, 0.08);
+      color: var(--cobalt-600);
+      border: 1px solid rgba(2, 132, 199, 0.2);
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .doc-title {
+      font-size: 38px;
+      line-height: 1.2;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--navy-950);
+      margin-bottom: 16px;
+    }
+    .doc-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .doc-content h2 {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--navy-900);
+      margin: 48px 0 20px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .doc-content h3 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--navy-800);
+      margin: 28px 0 14px;
+    }
+    .doc-content p {
+      font-size: 16px;
+      line-height: 1.7;
+      color: #374151;
+      margin-bottom: 18px;
+    }
+    .doc-content ul, .doc-content ol {
+      margin: 0 0 20px 24px;
+      color: #374151;
+      line-height: 1.7;
+    }
+    .doc-content li {
+      margin-bottom: 8px;
+    }
+    .doc-content strong {
+      color: var(--navy-950);
+    }
+    .doc-content code {
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      background: rgba(11, 25, 44, 0.05);
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: var(--navy-900);
+      border: 1px solid rgba(11, 25, 44, 0.08);
+    }
+    .doc-content pre {
+      background: #0b192c;
+      color: #f8fafc;
+      padding: 20px;
+      border-radius: 12px;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 14px;
+      line-height: 1.6;
+      margin: 20px 0 28px;
+      box-shadow: 0 8px 24px rgba(11, 25, 44, 0.12);
+    }
+    .doc-content pre code {
+      background: transparent;
+      padding: 0;
+      border: none;
+      color: inherit;
+    }
+    .doc-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 24px 0 32px;
+      font-size: 14px;
+      background: #ffffff;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(11, 25, 44, 0.04);
+      border: 1px solid var(--border-medium);
+    }
+    .doc-table th, .doc-table td {
+      padding: 14px 18px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .doc-table th {
+      background: #f1f5f9;
+      font-weight: 700;
+      color: var(--navy-900);
+    }
+    .doc-table tr:hover td {
+      background: #f8fafc;
+    }
+    .doc-callout {
+      background: #ffffff;
+      border-left: 4px solid var(--cobalt-500);
+      padding: 20px 24px;
+      border-radius: 0 10px 10px 0;
+      margin: 28px 0;
+      box-shadow: 0 4px 16px rgba(11, 25, 44, 0.04);
+      border: 1px solid var(--border-subtle);
+      border-left-width: 4px;
+    }
+    .mermaid-box {
+      background: #ffffff;
+      padding: 36px 24px;
+      border-radius: 14px;
+      border: 1px solid var(--border-medium);
+      margin: 32px 0;
+      box-shadow: 0 4px 20px rgba(11, 25, 44, 0.05);
+      overflow-x: auto;
+      text-align: center;
+    }
+    .mermaid-box .mermaid {
+      display: inline-block;
+      width: 100%;
+      min-width: 680px;
+    }
+    .mermaid-box svg {
+      width: 100% !important;
+      max-width: 820px !important;
+      height: auto !important;
+      font-size: 15px !important;
+      display: block;
+      margin: 0 auto;
+    }
+  </style>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        fontFamily: "'Plus Jakarta Sans', -apple-system, sans-serif",
+        fontSize: '14px',
+        primaryColor: '#e0f2fe',
+        primaryTextColor: '#0b192c',
+        primaryBorderColor: '#0284c7',
+        lineColor: '#0284c7',
+        secondaryColor: '#f1f5f9',
+        secondaryTextColor: '#0f172a',
+        secondaryBorderColor: '#94a3b8',
+        tertiaryColor: '#ffffff',
+        clusterBkg: '#f8fafc',
+        clusterBorder: '#cbd5e1',
+        edgeLabelBackground: '#ffffff'
+      },
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        curve: 'basis',
+        nodeSpacing: 40,
+        rankSpacing: 40
+      }
+    });
+  </script>
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <header class="navbar" id="navbar">
+    <div class="nav-container">
+      <a href="index.html" class="nav-brand" aria-label="Tomus Início">
+        <img src="site_assets/tomus_emblem.png" alt="Tomus Emblema" class="nav-emblem">
+        <span class="nav-brand-title">TOMUS</span>
+      </a>
+
+      <nav class="nav-menu" id="navMenu">
+        <ul class="nav-list">
+          <li><a href="index.html" class="nav-link">Página Inicial</a></li>
+          <li><a href="manual_do_usuario.html" class="nav-link">Manual do Usuário</a></li>
+          <li><a href="documentacao_tecnica.html" class="nav-link active">Documentação Técnica</a></li>
+          <li><a href="https://github.com/dcprj/tomus" class="nav-link" target="_blank" rel="noopener">GitHub</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="index.html#download" class="btn btn-primary btn-sm">
+          <span>Baixar .dmg</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="doc-page">
+    <div class="doc-container">
+      <header class="doc-header">
+        <div class="doc-badge">Especificação de Engenharia v1.2.0</div>
+        <h1 class="doc-title">Documentação Técnica e Arquitetura do Tomus</h1>
+        <div class="doc-meta">
+          <span><strong>Autores:</strong> Dario Pinheiro e Equipe Tomus</span>
+          <span>•</span>
+          <span><strong>Licença:</strong> MIT License (Código Aberto)</span>
+          <span>•</span>
+          <span><strong>Status:</strong> Homologado</span>
+        </div>
+      </header>
+
+      <article class="doc-content">
+        <h2>1. Visão Geral e Filosofia Arquitetural</h2>
+        <p>O <strong>Tomus</strong> é uma aplicação desktop de alta fidelidade desenvolvida primordialmente para macOS (com suporte arquitetural multiplataforma em camadas desacopladas), concebida para sanar o problema da entropia documental em acervos científicos e acadêmicos.</p>
+        <p>A grande maioria dos pesquisadores e instituições acumula centenas de arquivos PDF com denominações crípticas (e.g. <code>download.pdf</code>, <code>artigo_final_v2.pdf</code>). O Tomus atua como uma esteira autônoma de engenharia da informação, combinando extração textual híbrida (PyMuPDF + Apple Vision OCR), resolução de identificadores bibliográficos (DOI e ISBN), taxonomia oficial de áreas do conhecimento <strong>CAPES/CNPq</strong> e modelos de linguagem com pool multi-chave e fallback em cascata.</p>
+
+        <div class="doc-callout">
+          <strong>Princípios Inegociáveis do Tomus:</strong>
+          <ul>
+            <li><strong>Soberania de Dados &amp; Zero-Telemetry:</strong> Os arquivos PDF jamais saem do computador do pesquisador. O Tomus não possui servidores em nuvem, bancos remotos nem telemetria analítica.</li>
+            <li><strong>Arquitetura BYOK (Bring Your Own Key):</strong> Comunicação direta cliente-provedor via conexões TLS 1.3 criptografadas, sem qualquer proxy proprietário.</li>
+            <li><strong>Determinismo &amp; Idempotência:</strong> O mesmo arquivo processado duas vezes gera exatamente o mesmo destino e citação, reutilizando o cache local SQLite indexado por SHA-256.</li>
+            <li><strong>Segurança Estrita de Sistema de Arquivos:</strong> Bloqueio formal de Path Traversal e proteção contra colisões e sobrescritas acidentais de arquivos.</li>
+          </ul>
+        </div>
+
+        <h2>2. Stack Tecnológica Completa</h2>
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th>Componente</th>
+              <th>Tecnologia / Biblioteca</th>
+              <th>Função no Sistema</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Linguagem &amp; Runtime</strong></td>
+              <td>Python 3.12+ (CPython)</td>
+              <td>Motor central com tipagem estrita moderna e alta performance.</td>
+            </tr>
+            <tr>
+              <td><strong>Shell Desktop</strong></td>
+              <td><code>PySide6</code> (Qt for Python 6.8+)</td>
+              <td>Janelas nativas macOS, ciclo de vida de app, menus globais e multithreading via <code>QThread</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Bancada Visual</strong></td>
+              <td><code>QWebEngineView</code> (Chromium)</td>
+              <td>Interface reativa sem AI-slop, aceleração de GPU e layout CSS Grid com densidade editorial.</td>
+            </tr>
+            <tr>
+              <td><strong>Ponte IPC</strong></td>
+              <td><code>QWebChannel</code></td>
+              <td>Canal assíncrono seguro entre Python e JavaScript (sem portas HTTP locais abertas).</td>
+            </tr>
+            <tr>
+              <td><strong>Extração Vetorial</strong></td>
+              <td><code>PyMuPDF</code> (<code>fitz</code> 1.25+) + <code>pdfplumber</code></td>
+              <td>Parser de documentos PDF veloz, extração de texto vetorial e metadados embutidos.</td>
+            </tr>
+            <tr>
+              <td><strong>OCR Local no macOS</strong></td>
+              <td>Apple Vision (<code>VNRecognizeTextRequest</code>)</td>
+              <td>Reconhecimento de texto em scans acelerado pela Neural Engine dos chips Apple Silicon.</td>
+            </tr>
+            <tr>
+              <td><strong>Validação de Schemas</strong></td>
+              <td><code>pydantic</code> v2.10+</td>
+              <td>Validação em alta velocidade (Rust core) para sanitização das respostas JSON dos modelos.</td>
+            </tr>
+            <tr>
+              <td><strong>Cache Local</strong></td>
+              <td><code>sqlite3</code> (stdlib)</td>
+              <td>Cache de extração e classificação indexado por hash SHA-256 em <code>~/.cache/tomus/cache.db</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>Cliente de Rede</strong></td>
+              <td><code>httpx</code> com HTTP/2 e TLS 1.3</td>
+              <td>Requisições diretas aos provedores de IA, CrossRef (DOI) e Google Books (ISBN).</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>3. Arquitetura de Camadas e Módulos</h2>
+        <div class="mermaid-box">
+          <div class="mermaid">
+flowchart TD
+    subgraph L1 ["1. Camada de Apresentação Desktop (macOS)"]
+        direction LR
+        MW["TomusMainWindow<br><b>(Shell Nativo Qt)</b>"]
+        WV["QWebEngineView<br><b>(Chromium GPU 60fps)</b>"]
+        WB["WebBridge<br><b>(QWebChannel IPC)</b>"]
+        MW --> WV
+        WV <--> WB
+    end
+
+    subgraph L2 ["2. Camada de Orquestração & Motor Central (Core)"]
+        direction LR
+        Worker["Worker Thread<br><b>(Assíncrono QThread)</b>"]
+        Pipe["Pipeline Orchestrator<br><b>(Esteira de 5 Estágios)</b>"]
+        Tax["Taxonomia CAPES<br><b>(4 Níveis Oficiais)</b>"]
+        Cache["Cache SQLite<br><b>(Hash SHA-256)</b>"]
+        Worker --> Pipe
+        Pipe --> Tax
+        Pipe --> Cache
+    end
+
+    subgraph L3 ["3. Camada de Ingestão, Visão & Inteligência Artificial"]
+        direction LR
+        Extract["PyMuPDF / pdfplumber<br><b>(Texto Vetorial)</b>"]
+        Vision["Apple Vision OCR<br><b>(Hardware Nativo)</b>"]
+        ID["Identificadores<br><b>(DOI & ISBN)</b>"]
+        LLM["Motor Multi-Provedor<br><b>(Pool & Fallback)</b>"]
+        Extract ~~~ Vision
+        ID ~~~ LLM
+    end
+
+    subgraph L4 ["4. Camada de Armazenamento & Sistema de Arquivos"]
+        direction LR
+        Org["LibraryOrganizer<br><b>(Cópia / Mover Atômico)</b>"]
+        Comp["Companion Metadata<br><b>(.tomus.json & .bib)</b>"]
+        Org --> Comp
+    end
+
+    L1 ==> L2
+    L2 ==> L3
+    L2 ==> L4
+          </div>
+        </div>
+
+        <h2>4. O Pipeline de Processamento (Esteira de Documentos)</h2>
+        <p>A esteira de catalogação executa as seguintes etapas determinísticas para cada arquivo:</p>
+        <ol>
+          <li><strong>Varredura e Detecção de Extensões:</strong> O scanner descobre PDFs e ignora arquivos espúrios como <code>.webloc</code> ou arquivos de sistema <code>.DS_Store</code>.</li>
+          <li><strong>Extração de Texto Vetorial:</strong> Amostragem das primeiras páginas via PyMuPDF.</li>
+          <li><strong>OCR Acelerado por Hardware:</strong> Se a amostragem indicar ausência de camada de texto (documento escaneado), o Tomus aciona o Apple Vision OCR nativo no macOS.</li>
+          <li><strong>Radar de Identificadores (DOI / ISBN):</strong> Busca por expressões regulares de DOI e ISBN com validação de checksum e consulta automática às APIs oficiais (CrossRef e Google Books).</li>
+          <li><strong>Consulta ao Cache SHA-256:</strong> Se o hash do texto já foi classificado anteriormente, o resultado é recuperado em menos de 1 milissegundo.</li>
+          <li><strong>Inferência Semântica via LLM:</strong> Se não estiver em cache, o Tomus consulta o pool de modelos de inteligência artificial com injeção estruturada da taxonomia CAPES.</li>
+          <li><strong>Operação Atômica de Disco:</strong> O arquivo é copiado ou movido para a pasta correta (<code>Grande Área / Área Básica / Subárea</code>), renomeado no padrão <code>SOBRENOME_ANO_TITULO.pdf</code> e acompanhado de seu arquivo de metadados <code>.tomus.json</code>.</li>
+        </ol>
+
+        <h2>5. Motor de IA: Pool Multi-Chave e Cascata de Fallback</h2>
+        <p>Para mitigar limites de requisições por minuto e cotas gratuitas (erro HTTP <code>429 Too Many Requests</code>), o Tomus implementa rotação automática round-robin de múltiplas chaves e cascata de contingência.</p>
+        <div class="mermaid-box">
+          <div class="mermaid">
+flowchart TD
+    Start(["Início da Classificação do Documento"]) --> GetKey["1. Obter chave ativa do pool do provedor primário"]
+    GetKey --> CallAPI["2. Executar requisição semântica via TLS 1.3"]
+    
+    CallAPI --> CheckResp{"Resposta HTTP da API?"}
+    
+    CheckResp -- "HTTP 200 (Sucesso)" --> ParseJSON["3. Validar JSON com Schema Pydantic"]
+    ParseJSON --> ReturnMeta(["Metadados Validados e Aprovados"])
+    
+    CheckResp -- "HTTP 429 (Cota Excedida)" --> CheckPool{"Há outra chave no pool<br>do mesmo provedor?"}
+    
+    CheckPool -- "Sim" --> RotateKey["Girar Round-Robin para a próxima chave"]
+    RotateKey --> CallAPI
+    
+    CheckPool -- "Não (Pool Saturado)" --> CheckFallback{"Há próximo provedor na<br>fallback_chain?"}
+    
+    CheckFallback -- "Sim (Groq / NVIDIA / Claude / DeepSeek)" --> SwitchProvider["Migrar para o provedor reserva imediato"]
+    SwitchProvider --> CallAPI
+    
+    CheckFallback -- "Não (Todos Saturados)" --> MarkManual["Marcar Documento para Revisão Manual"]
+    MarkManual --> EndManual(["Documento preservado em revisao_manual/"])
+          </div>
+        </div>
+
+        <h3>Provedores Homologados na Versão 1.2.0</h3>
+        <ul>
+          <li><strong>Google Gemini:</strong> Modelo <code>gemini-3.5-flash</code> (Provedor primário padrão, alta janela de contexto).</li>
+          <li><strong>Groq:</strong> Modelo <code>llama-3.3-70b-versatile</code> (1º Fallback gratuito, 1.000 requisições/dia, latência ultrabaixa).</li>
+          <li><strong>NVIDIA NIM:</strong> Modelo <code>meta/llama-3.2-90b-vision-instruct</code> (Modelo avançado open-weights com créditos de experimentação).</li>
+          <li><strong>Anthropic Claude:</strong> Modelo <code>claude-haiku-5-5</code> (Precisão bibliográfica extrema, suporte a blocos thinking/text).</li>
+          <li><strong>DeepSeek:</strong> Modelo <code>deepseek-flash</code> (Excelente custo-benefício e rapidez).</li>
+        </ul>
+
+        <h2>6. ABNT NBR 6023 Normativa</h2>
+        <p>A formatação de referências do Tomus segue com exatidão a norma brasileira <strong>ABNT NBR 6023</strong>:</p>
+        <ul>
+          <li><strong>Autores:</strong> Sobrenome em caixa alta, prenome em caracteres normais. <em>Sem negrito</em>, conforme estipulado pela norma.</li>
+          <li><strong>Livros / Monografias:</strong> Título em <strong>negrito puro</strong> (<code>&lt;strong&gt;</code>); subtítulo após dois pontos em caracteres normais.</li>
+          <li><strong>Periódicos / Artigos:</strong> Título do artigo normal; <strong>nome da revista em negrito puro</strong>.</li>
+          <li><strong>Edição:</strong> Sanitização contra duplicações, assegurando saídas canônicas como <code>2. ed.</code> ou <code>3. ed.</code>.</li>
+        </ul>
+
+        <h2>7. Segurança de I/O e Isolamento no macOS</h2>
+        <p>O Tomus adota a função <code>_is_safe_path()</code> para validar rigorosamente todas as operações de abertura de PDFs e revelação no Finder. Qualquer tentativa de Path Traversal (e.g. <code>../../</code>) que aponte para fora das pastas autorizadas ou que tente tocar em diretórios confidenciais (como <code>~/.ssh</code> ou <code>~/.aws</code>) é abortada preventivamente.</p>
+        <p>Além disso, o menu de contexto padrão do navegador (<em>Back, Reload, View Source</em>) foi desativado no <code>QWebEngineView</code> para garantir uma experiência de software desktop sólida, profissional e sem anomalias visuais.</p>
+      </article>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-container">
+      <div class="footer-brand">
+        <div class="footer-logo-row">
+          <img src="site_assets/tomus_emblem.png" alt="Tomus" class="footer-logo">
+          <span class="footer-brand-name">Tomus</span>
+        </div>
+        <p class="footer-desc">Bancada de catalogação científica e organizador acadêmico de PDFs para macOS.</p>
+        <p class="footer-license">Código Aberto sob licença <a href="https://github.com/dcprj/tomus/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a>.</p>
+      </div>
+      <div class="footer-nav">
+        <div class="footer-col">
+          <span class="footer-col-title">Documentação</span>
+          <a href="manual_do_usuario.html">Manual do Usuário</a>
+          <a href="documentacao_tecnica.html">Documentação Técnica</a>
+          <a href="index.html#metodologia">Metodologia CAPES</a>
+        </div>
+        <div class="footer-col">
+          <span class="footer-col-title">Projeto</span>
+          <a href="https://github.com/dcprj/tomus" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/dcprj/tomus/releases" target="_blank" rel="noopener">Releases</a>
+          <a href="index.html#apoie">Apoie via Pix</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <div class="footer-copy">&copy; 2026 Tomus Contributors and Maintainers.</div>
+    </div>
+  </footer>
+
+</body>
+</html>

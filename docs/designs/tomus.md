@@ -97,10 +97,10 @@ flowchart TD
 * **Protocolo `LLMProvider`, Provedores Suportados e `FallbackLLMDispatcher`:**
   * O motor define o protocolo `LLMProvider` (retornando `ClassificationResult` com `provider_name` e `model_name` efetivos) e implementa 6 adaptadores de produção:
     1. `gemini` (`GeminiProvider` via `google-genai`, modelo padrão `gemini-3.5-flash` com fallback interno em HTTP 404 para `gemini-3.1-flash-lite`);
-    2. `groq` (`GroqProvider` via `httpx`, modelo padrão `openai/gpt-oss-20b`);
-    3. `nvidia` (`NvidiaProvider` via `httpx`, modelo padrão `nvidia/nemotron-3.5-lightning-30b-a3b`, `max_tokens=4096` e extração de fallback via `reasoning_content`);
+    2. `groq` (`GroqProvider` via `httpx`, modelo padrão `openai/gpt-oss-120b`);
+    3. `nvidia` (`NvidiaProvider` via `httpx`, modelo padrão `meta/llama-3.2-90b-vision-instruct`, `max_tokens=4096` e extração de fallback via `reasoning_content`);
     4. `deepseek` (`DeepSeekProvider` via `httpx`, modelo padrão `deepseek-flash`);
-    5. `claude` (`ClaudeProvider` via `httpx`, modelo padrão `claude-3-5-haiku-20241022`);
+    5. `claude` (`ClaudeProvider` via `httpx`, modelo padrão `claude-haiku-5-5`);
     6. `github` (`GitHubModelsProvider` via `httpx`, modelo padrão `gpt-4o`).
   * A fábrica `create_provider_chain` monta o `FallbackLLMDispatcher` colocando o provedor solicitado como primário e encadeando os demais provedores configurados em `fallback_chain = ["groq", "nvidia", "deepseek"]` que possuam chave de API válida.
   * O prompt de sistema (`build_system_prompt`) inclui o schema JSON explícito completo com todos os 9 campos obrigatórios (`[SCH-01]`), garantindo a mesma precisão estrutural em provedores OpenAI-compatíveis e no Gemini. O payload contextual trunca `sampled_text` em no máximo **15.000 caracteres**, preservando `cip_text` integralmente.

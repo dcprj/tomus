@@ -105,3 +105,32 @@ def test_is_safe_path_bloqueia_travessia_e_pastas_sensíveis(tmp_path: Path):
     # Bloqueio de tentativa de path traversal com ..
     traversal_path = source_dir / ".." / ".." / "etc" / "passwd"
     assert _is_safe_path(traversal_path, [source_dir, target_dir]) is False
+
+
+def test_humanize_error_message_amigavel():
+    from tomus.core.llm import humanize_error_message
+
+    # 401 DeepSeek com URL crua
+    err_401 = "Client error '401 Unauthorized' for url 'https://api.deepseek.com/v1/chat/completions'"
+    msg_401 = humanize_error_message(err_401)
+    assert "não autorizada ou expirada" in msg_401
+    assert "DeepSeek" in msg_401
+    assert "Preferências" in msg_401
+
+    # 429 Groq
+    err_429 = "Error 429 Too Many Requests: Rate limit reached for groq model"
+    msg_429 = humanize_error_message(err_429)
+    assert "Cota de requisições" in msg_429
+    assert "Groq" in msg_429
+
+    # 503 NVIDIA
+    err_503 = "HTTP 503 Service Unavailable for nvapi-endpoint"
+    msg_503 = humanize_error_message(err_503)
+    assert "Instabilidade temporária" in msg_503
+    assert "NVIDIA" in msg_503
+
+    # Timeout genérico
+    err_timeout = "httpx.ConnectTimeout: Connection timed out"
+    msg_timeout = humanize_error_message(err_timeout)
+    assert "Tempo limite de resposta esgotado" in msg_timeout
+

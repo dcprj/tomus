@@ -87,21 +87,30 @@ def format_abnt_reference(classification: dict[str, Any]) -> str:
     * Artigo: BULAMAH, Lucas Charafeddine; KUPERMANN, Daniel. A dupla volta da subjetivação em Winnicott. **Tempo Psicanalítico**, Rio de Janeiro, v. 54.1, p. 134-155, 2022. Disponível em: https://doi.org/...
     """
     authors = classification.get("authors") or []
-    title = (classification.get("title") or "").strip()
-    subtitle = (classification.get("subtitle") or "").strip()
-    year = classification.get("year")
-    edition = classification.get("edition")
-    city = classification.get("city")
-    publisher = classification.get("publisher")
-    journal_name = classification.get("journal_name")
+    title = (classification.get("titulo") or classification.get("title") or "").strip()
+    subtitle = (classification.get("subtitulo") or classification.get("subtitle") or "").strip()
+    year = classification.get("ano") or classification.get("year")
+    edition = classification.get("edicao") or classification.get("edition")
+    city = classification.get("cidade") or classification.get("city")
+    publisher = classification.get("editora") or classification.get("publisher")
+    journal_name = classification.get("periodico") or classification.get("journal_name")
     volume = classification.get("volume")
-    number = classification.get("number")
-    pages = classification.get("pages")
+    number = classification.get("numero") or classification.get("number")
+    pages = classification.get("paginas") or classification.get("pages")
     doi = classification.get("doi")
     isbn = classification.get("isbn")
     tipo = str(classification.get("tipo") or "")
 
     autores_texto = format_abnt_authors(authors).strip().rstrip(".")
+
+    # Título nunca pode ficar vazio: fallback para "Sem título"
+    if not title:
+        title = "Sem título"
+    title = title.strip()
+
+    partes: list[str] = []
+    if autores_texto:
+        partes.append(autores_texto)
 
     partes: list[str] = []
     if autores_texto:
@@ -196,18 +205,20 @@ def generate_companion_markdown(
     Inclui front matter YAML completo e corpo com título, referência ABNT e metadados.
     """
     authors = classification.get("authors") or []
-    title = classification.get("title") or ""
-    subtitle = classification.get("subtitle") or ""
-    year = classification.get("year")
-    publisher = classification.get("publisher")
-    city = classification.get("city")
-    edition = classification.get("edition")
-    journal_name = classification.get("journal_name")
+    title = classification.get("titulo") or classification.get("title") or ""
+    subtitle = classification.get("subtitulo") or classification.get("subtitle") or ""
+    year = classification.get("ano") or classification.get("year")
+    publisher = classification.get("editora") or classification.get("publisher")
+    city = classification.get("cidade") or classification.get("city")
+    edition = classification.get("edicao") or classification.get("edition")
+    journal_name = classification.get("periodico") or classification.get("journal_name")
     volume = classification.get("volume")
-    number = classification.get("number")
-    pages = classification.get("pages")
+    number = classification.get("numero") or classification.get("number")
+    pages = classification.get("paginas") or classification.get("pages")
     grande_area = classification.get("grande_area", "")
     area_basica = classification.get("area_basica", "")
+    subarea = classification.get("subarea", "")
+    especialidade = classification.get("especialidade", "")
     tipo = classification.get("tipo", "")
     doi = classification.get("doi")
     isbn = classification.get("isbn")
@@ -217,44 +228,46 @@ def generate_companion_markdown(
     organized_at = now.strftime("%Y-%m-%d %H:%M:%S")
     data_amigavel = now.strftime("%d/%m/%Y às %H:%M:%S")
 
-    # Front matter YAML.
+    # Front matter YAML (chaves em PT-BR com os 4 níveis da taxonomia CAPES/CNPq).
     lines: list[str] = []
     lines.append("---")
-    lines.append(f"title: {title!r}")
+    lines.append(f"titulo: {title!r}")
     if subtitle:
-        lines.append(f"subtitle: {subtitle!r}")
+        lines.append(f"subtitulo: {subtitle!r}")
     if authors:
-        lines.append("authors:")
+        lines.append("autores:")
         for a in authors:
             lines.append(f"  - {a!r}")
     if year is not None:
-        lines.append(f"year: {year}")
+        lines.append(f"ano: {year}")
     if publisher:
-        lines.append(f"publisher: {publisher!r}")
+        lines.append(f"editora: {publisher!r}")
     if city:
-        lines.append(f"city: {city!r}")
+        lines.append(f"cidade: {city!r}")
     if edition:
-        lines.append(f"edition: {edition!r}")
+        lines.append(f"edicao: {edition!r}")
     if journal_name:
-        lines.append(f"journal_name: {journal_name!r}")
+        lines.append(f"periodico: {journal_name!r}")
     if volume:
         lines.append(f"volume: {str(volume)!r}")
     if number:
-        lines.append(f"number: {str(number)!r}")
+        lines.append(f"numero: {str(number)!r}")
     if pages:
-        lines.append(f"pages: {str(pages)!r}")
+        lines.append(f"paginas: {str(pages)!r}")
     if doi:
         lines.append(f"doi: {doi!r}")
     if isbn:
         lines.append(f"isbn: {isbn!r}")
     lines.append(f"grande_area: {grande_area!r}")
     lines.append(f"area_basica: {area_basica!r}")
+    lines.append(f"subarea: {subarea!r}")
+    lines.append(f"especialidade: {especialidade!r}")
     lines.append(f"tipo: {tipo!r}")
     lines.append(f"sha256: {sha256}")
-    lines.append(f"confidence_score: {confidence_score}")
-    lines.append(f"used_ocr: {str(used_ocr).lower()}")
-    lines.append(f"source_file: {source_path.name}")
-    lines.append(f"organized_at: {organized_at!r}")
+    lines.append(f"indice_confianca: {confidence_score}")
+    lines.append(f"utilizou_ocr: {str(used_ocr).lower()}")
+    lines.append(f"arquivo_origem: {source_path.name!r}")
+    lines.append(f"organizado_em: {organized_at!r}")
     lines.append("---")
     lines.append("")
 
@@ -268,7 +281,7 @@ def generate_companion_markdown(
     lines.append("")
     lines.append("## Metadados do Arquivo")
     lines.append("")
-    lines.append(f"- **Área Temática:** {grande_area} / {area_basica}")
+    lines.append(f"- **Área Temática:** {grande_area} / {area_basica} / {subarea} / {especialidade}")
     lines.append(f"- **Tipo de Documento:** {tipo}")
     if journal_name:
         lines.append(f"- **Periódico / Revista:** {journal_name}")

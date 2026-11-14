@@ -170,9 +170,11 @@ class ManualTriageBox(QFrame):
         tax = QHBoxLayout()
         tax.setSpacing(8)
         self.cmb_grande = QComboBox()
-        self.cmb_grande.setFixedWidth(150)
+        self.cmb_grande.setFixedWidth(130)
         self.cmb_area = QComboBox()
-        self.cmb_area.setFixedWidth(150)
+        self.cmb_area.setFixedWidth(130)
+        self.edit_subarea = QLineEdit()
+        self.edit_subarea.setPlaceholderText("Área Específica (Subárea)")
         self.cmb_tipo = QComboBox()
         self.cmb_tipo.setFixedWidth(110)
         self.cmb_grande.currentIndexChanged.connect(self._on_grande_changed)
@@ -180,6 +182,8 @@ class ManualTriageBox(QFrame):
         tax.addWidget(self.cmb_grande)
         tax.addWidget(QLabel("Área Básica:"))
         tax.addWidget(self.cmb_area)
+        tax.addWidget(QLabel("Subárea:"))
+        tax.addWidget(self.edit_subarea)
         tax.addWidget(QLabel("Tipo:"))
         tax.addWidget(self.cmb_tipo)
         tax.addStretch(1)
@@ -255,6 +259,7 @@ class ManualTriageBox(QFrame):
         year: int | None = None,
         grande_area: str = "",
         area_basica: str = "",
+        subarea: str = "",
         tipo: str = "",
     ) -> None:
         self.edit_title.setText(title)
@@ -264,6 +269,7 @@ class ManualTriageBox(QFrame):
             self.cmb_grande.setCurrentText(grande_area)
         if area_basica:
             self.cmb_area.setCurrentText(area_basica)
+        self.edit_subarea.setText(subarea)
         if tipo:
             self.cmb_tipo.setCurrentText(tipo)
 

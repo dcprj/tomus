@@ -1,5 +1,12 @@
 """Testes unitários para o WebBridge e MainWindow baseada em WebEngine."""
 
+import os
+import sys
+
+# Garantir offscreen e desativação de sandbox ANTES de qualquer import do PySide6
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
+
 import json
 from pathlib import Path
 
@@ -65,11 +72,11 @@ def test_web_bridge_check_provider_key():
     cfg.api_keys.claude_api_key = "sk-ant-test-key"
     assert bridge.checkProviderKey("claude") is True
 
-    cfg.api_keys.github_token = ""
-    assert bridge.checkProviderKey("github") is False
+    cfg.api_keys.groq_api_key = ""
+    assert bridge.checkProviderKey("groq") is False
 
-    cfg.api_keys.github_token = "ghp_test"
-    assert bridge.checkProviderKey("github") is True
+    cfg.api_keys.groq_api_key = "gsk_test"
+    assert bridge.checkProviderKey("groq") is True
 
 
 def test_web_bridge_cache_module_accessible():
@@ -121,7 +128,12 @@ def test_preferences_dialog_save_and_reactivity(tmp_path, monkeypatch):
     # Alterar provedor e modelo
     dlg.cmb_primary.setCurrentText("groq")
     dlg.edit_model.setText("llama-3.3-70b-versatile")
-    dlg.chk_nvidia.setChecked(False)
+    # Remover nvidia da cadeia de fallback (segundo item)
+    model = dlg.fallback_model
+    for i in range(model.rowCount()):
+        if model.item(i).text() == "nvidia":
+            model.takeRow(i)
+            break
 
     dlg._save()
 
@@ -139,7 +151,16 @@ def test_preferences_dialog_save_and_reactivity(tmp_path, monkeypatch):
     dlg.close()
 
 
-def test_main_window_web_view_instancia():
+def test_main_window_web_view_instancia(monkeypatch):
+    from unittest.mock import MagicMock
+    from PySide6.QtWidgets import QWidget
+
+    # Mock para QWebEngineView e TomusWebPage no teste para evitar crash de
+    # HIServices / WindowServer em ambientes headless ou de automação.
+    mock_view_instance = MagicMock(spec=QWidget)
+    monkeypatch.setattr("tomus.gui.main_window.QWebEngineView", lambda parent=None: mock_view_instance)
+    monkeypatch.setattr("tomus.gui.main_window.TomusWebPage", MagicMock)
+
     qapp = get_qapp()
     cfg = AppConfig()
     win = TomusMainWindow(cfg, source_dir="/tmp/origem", target_dir="/tmp/destino")
@@ -164,3 +185,133 @@ def test_web_bridge_pipeline_event_with_destination_and_sha256():
     dumped = ev.model_dump()
     assert dumped["destination_path"] == "/tmp/destino/Ciências Humanas/Sociologia/Artigo/doc.pdf"
     assert dumped["sha256"].startswith("abc1234")
+
+
+# --------------------------------------------------------------------------- #
+# Testes obrigatórios: _is_safe_path com strings e openPdf/revealPath
+# --------------------------------------------------------------------------- #
+def test_is_safe_path_com_strings_e_varios_caminhos():
+    """_is_safe_path deve aceitar strings (incluindo vazias) e Path, sem lançar AttributeError."""
+    from tomus.gui.bridge import _is_safe_path
+
+    roots = ["", "/Users/dario/Desktop", Path.home(), Path("/tmp"), ""]
+
+    # Caminhos válidos dentro das raízes
+    assert _is_safe_path("/Users/dario/Desktop/documento.pdf", roots) is True
+    assert _is_safe_path(Path("/tmp/arquivo.pdf"), roots) is True
+    assert _is_safe_path(str(Path.home() / "documento.pdf"), roots) is True
+
+    # Caminhos fora das raízes (sistema)
+    assert _is_safe_path("/etc/passwd", roots) is False
+    assert _is_safe_path("/var/log/syslog", roots) is False
+    assert _is_safe_path("/usr/bin/bash", roots) is False
+
+    # Caminho protegido dentro de uma raiz permitida (ex: .ssh)
+    assert _is_safe_path("/Users/dario/.ssh/id_rsa", roots) is False
+    assert _is_safe_path("/Users/dario/.config/something", roots) is False
+
+    # Caminho com subpasta normal (não protegida)
+    assert _is_safe_path("/Users/dario/Desktop/@BIBLIOTECA_ORGANIZADA/livro.pdf", roots) is True
+
+
+def test_openPdf_com_strings_em_source_target(tmp_path, monkeypatch):
+    """openPdf deve funcionar quando source_dir e target_dir são strings (inclusive vazias)."""
+    import subprocess
+    from tomus.gui.bridge import WebBridge
+
+    cfg = AppConfig()
+    bridge = WebBridge(cfg)
+    bridge.source_dir = ""  # string vazia
+    bridge.target_dir = str(tmp_path / "destino")
+    (tmp_path / "destino").mkdir(parents=True, exist_ok=True)
+
+    pdf_path = tmp_path / "destino" / "livro_teste.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 fake pdf content")
+
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd: cmd)
+    bridge.openPdf(str(pdf_path))  # não deve lançar AttributeError
+
+
+def test_revealPath_com_strings_em_source_target(tmp_path, monkeypatch):
+    """revealPath deve funcionar quando source_dir e target_dir são strings."""
+    import subprocess
+    from tomus.gui.bridge import WebBridge
+
+    cfg = AppConfig()
+    bridge = WebBridge(cfg)
+    bridge.source_dir = str(tmp_path / "origem")
+    bridge.target_dir = ""  # string vazia
+    (tmp_path / "origem").mkdir(parents=True, exist_ok=True)
+
+    arquivo_path = tmp_path / "origem" / "arquivo_teste.pdf"
+    arquivo_path.write_bytes(b"%PDF-1.4 fake pdf content")
+
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd: cmd)
+    bridge.revealPath(str(arquivo_path))  # não deve lançar AttributeError
+
+
+def test_web_assets_syntax_integrity():
+    """Garante que app.js e os assets do frontend não contêm erros de sintaxe JS."""
+    import shutil
+    import subprocess
+    from pathlib import Path
+
+    app_js = Path(__file__).parent.parent / "src" / "tomus" / "gui" / "web" / "app.js"
+    assert app_js.exists(), "app.js deve existir"
+
+    node_bin = shutil.which("node")
+    if node_bin:
+        res = subprocess.run([node_bin, "-c", str(app_js)], capture_output=True, text=True)
+        assert res.returncode == 0, f"Erro de sintaxe em app.js:\n{res.stderr}"
+
+
+def test_approve_manual_triage_com_subarea_e_auto_grande_area(tmp_path):
+    """Garante que aprovação manual aceita subárea específica e resolve grande_area automaticamente."""
+    from tomus.gui.bridge import WebBridge
+
+    cfg = AppConfig()
+    target_dir = tmp_path / "target_biblioteca"
+    target_dir.mkdir(parents=True)
+
+    source_pdf = tmp_path / "Psicofarmacologia.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4 dummy content for triage")
+
+    bridge = WebBridge(cfg)
+    bridge.target_dir = str(target_dir)
+
+    events_captured = []
+    bridge.pipelineEvent.connect(lambda ev_json: events_captured.append(json.loads(ev_json)))
+
+    triage_payload = {
+        "source_path": str(source_pdf),
+        "area_basica": "Psicologia",
+        "subarea": "Psicofarmacologia",
+        "tipo": "Livro",
+        "title": "Psicofarmacologia",
+        "subtitle": "Bases e Prática",
+        "authors": ["Menezes, Jacqueline"],
+        "year": 2017,
+    }
+
+    ok = bridge.approveManualTriage(json.dumps(triage_payload))
+    assert ok is True
+
+    # Verificar se foi salvo no caminho correto: target / Psicologia / Psicofarmacologia / Livro / ...
+    expected_dir = target_dir / "Psicologia" / "Psicofarmacologia" / "Livro"
+    assert expected_dir.exists(), f"Diretório temático com subárea não foi criado: {expected_dir}"
+    pdf_files = list(expected_dir.glob("*.pdf"))
+    assert len(pdf_files) == 1
+    assert "Menezes" in pdf_files[0].name or "Psicofarmacologia" in pdf_files[0].name
+
+    # Verificar que companion .md foi criado
+    assert pdf_files[0].with_suffix(".md").exists()
+
+    # Verificar evento emitido
+    assert len(events_captured) == 1
+    ev = events_captured[0]
+    assert ev["status"] == "organized"
+    assert ev["classification"]["grande_area"] == "Ciências Humanas"
+    assert ev["classification"]["area_basica"] == "Psicologia"
+    assert ev["classification"]["subarea"] == "Psicofarmacologia"
+
+

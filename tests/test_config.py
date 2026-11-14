@@ -107,7 +107,7 @@ def test_llm_config_default_provider_alias(tmp_path, monkeypatch):
 [llm]
 default_provider = "nvidia"
 model = "nemotron-3.5-super-vl-120b-a12b"
-fallback_chain = ["groq", "nvidia", "deepseek"]
+fallback_chain = ["groq", "nvidia", "claude", "deepseek"]
 
 [api_keys]
 gemini_api_key = ""
@@ -122,7 +122,7 @@ claude_api_key = ""
     config = AppConfig()
     assert config.llm.provider == "nvidia"
     # default_provider é um validation_alias: mapeia para provider na leitura do TOML
-    assert config.llm.fallback_chain == ["groq", "nvidia", "deepseek"]
+    assert config.llm.fallback_chain == ["groq", "nvidia", "claude", "deepseek"]
     assert config.llm.model == "nemotron-3.5-super-vl-120b-a12b"
 
 
@@ -135,7 +135,7 @@ def test_llm_config_providers_dict(tmp_path, monkeypatch):
 [llm]
 provider = "gemini"
 model = "gemini-3.5-flash"
-fallback_chain = ["groq", "nvidia", "deepseek"]
+fallback_chain = ["groq", "nvidia", "claude", "deepseek"]
 
 [llm.providers.deepseek]
 model = "deepseek-flash"
@@ -217,6 +217,6 @@ def test_llm_config_valores_padrao():
     config = LLMConfig()
     assert config.provider == "gemini"
     # default_provider é um validation_alias: acessível apenas na leitura do TOML/env
-    assert config.fallback_chain == ["groq", "nvidia", "deepseek"]
+    assert config.fallback_chain == ["groq", "nvidia", "claude", "deepseek"]
     assert config.model == "gemini-3.5-flash"
     assert config.providers == {}

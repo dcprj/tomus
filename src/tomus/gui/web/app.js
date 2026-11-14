@@ -19,6 +19,7 @@
     activeFilter: 'all',
     searchQuery: '',
     activeAreaFilter: null,
+    batchStartTime: null,
   };
 
   // --- Elementos do DOM ---
@@ -55,9 +56,11 @@
     btnClearSearch: document.getElementById('btnClearSearch'),
     docTableBody: document.getElementById('docTableBody'),
     tableEmptyState: document.getElementById('tableEmptyState'),
+    tablePanel: document.querySelector('.table-panel'),
 
     // Inspector
     inspectorEmpty: document.getElementById('inspectorEmpty'),
+    inspectorPanel: document.getElementById('inspectorPanel'),
     inspectorContent: document.getElementById('inspectorContent'),
     inspStatusBadge: document.getElementById('inspStatusBadge'),
     inspStatusIcon: document.getElementById('inspStatusIcon'),
@@ -69,6 +72,7 @@
     inspTriageReason: document.getElementById('inspTriageReason'),
     triageGrandeArea: document.getElementById('triageGrandeArea'),
     triageAreaBasica: document.getElementById('triageAreaBasica'),
+    triageSubarea: document.getElementById('triageSubarea'),
     triageTitle: document.getElementById('triageTitle'),
     triageSubtitle: document.getElementById('triageSubtitle'),
     triageAuthors: document.getElementById('triageAuthors'),
@@ -77,6 +81,8 @@
     btnApproveTriage: document.getElementById('btnApproveTriage'),
     kvGrandeArea: document.getElementById('kvGrandeArea'),
     kvAreaBasica: document.getElementById('kvAreaBasica'),
+    kvSubarea: document.getElementById('kvSubarea'),
+    kvEspecialidade: document.getElementById('kvEspecialidade'),
     kvTipo: document.getElementById('kvTipo'),
     kvConfianca: document.getElementById('kvConfianca'),
     kvOrigem: document.getElementById('kvOrigem'),
@@ -91,6 +97,8 @@
     stageIndicator: document.getElementById('stageIndicator'),
     countIndicator: document.getElementById('countIndicator'),
     remainingIndicator: document.getElementById('remainingIndicator'),
+    avgTimeIndicator: document.getElementById('avgTimeIndicator'),
+    etaIndicator: document.getElementById('etaIndicator'),
     qualityMetric: document.getElementById('qualityMetric'),
 
     // Completion banner
@@ -129,12 +137,20 @@
     "Ciências Humanas": ["Psicologia", "Sociologia", "Educação", "História", "Filosofia", "Geografia", "Antropologia", "Ciência Política"],
     "Linguística, Letras e Artes": ["Letras", "Linguística", "Artes", "Música"],
     "Ciências Sociais Aplicadas": ["Direito", "Administração", "Economia", "Comunicação", "Ciência da Informação", "Arquitetura e Urbanismo"],
-    "Ciências da Saúde": ["Medicina", "Saúde Coletiva", "Enfermagem", "Farmácia", "Odontologia"],
-    "Ciências Exatas e da Terra": ["Ciência da Computação", "Matemática", "Física", "Química", "Geociências"],
+    "Ciências da Saúde": ["Medicina", "Saúde Coletiva", "Enfermagem", "Farmácia", "Odontologia", "Fisioterapia", "Nutrição"],
+    "Ciências Exatas e da Terra": ["Ciência da Computação", "Matemática", "Física", "Química", "Geociências", "Estatística"],
     "Engenharias": ["Engenharia de Produção", "Engenharia Elétrica", "Engenharia Civil", "Engenharia Mecânica"],
-    "Ciências Biológicas": ["Biologia Geral", "Genética", "Ecologia", "Fisiologia"],
+    "Ciências Biológicas": ["Biologia Geral", "Genética", "Ecologia", "Fisiologia", "Bioquímica", "Microbiologia"],
+    "Ciências Agrárias": ["Agronomia", "Medicina Veterinária", "Zootecnia", "Recursos Naturais"],
     "Outros": ["Outros"]
   };
+
+  const AREA_TO_GRANDE_AREA = {};
+  for (const [ga, basicas] of Object.entries(CAPES_TAXONOMY)) {
+    for (const b of basicas) {
+      AREA_TO_GRANDE_AREA[b] = ga;
+    }
+  }
 
   // --- Inicialização do QWebChannel ---
   let backend = null;
@@ -189,13 +205,47 @@
       const ev = typeof eventJson === 'string' ? JSON.parse(eventJson) : eventJson;
       if (!ev) return;
 
-      // Atualizar barra de progresso inferior
+      // Atualizar barra de progresso e métricas do rodapé
       if (ev.total_files && ev.completed_files !== undefined) {
         const pct = Math.round((ev.completed_files / ev.total_files) * 100);
         el.progressBarFill.style.width = pct + '%';
         el.progressPct.textContent = pct + '%';
         el.countIndicator.textContent = ev.completed_files + ' / ' + ev.total_files + ' processados';
-        el.remainingIndicator.textContent = 'Restam: ' + (ev.total_files - ev.completed_files);
+        const remaining = ev.total_files - ev.completed_files;
+        el.remainingIndicator.textContent = 'Restam: ' + remaining;
+
+        // Cálculo dinâmico das métricas (média por arquivo e total estimado)
+        if (state.batchStartTime && ev.completed_files > 0) {
+          const elapsedSec = Math.max(1, (Date.now() - state.batchStartTime) / 1000);
+          const avgSec = elapsedSec / ev.completed_files;
+
+          // Formatar média por arquivo
+          let avgStr = '';
+          if (avgSec >= 60) {
+            avgStr = Math.round(avgSec / 60) + ' min';
+          } else {
+            avgStr = (avgSec < 10 ? avgSec.toFixed(1) : Math.round(avgSec)) + ' s';
+          }
+          if (el.avgTimeIndicator) el.avgTimeIndicator.textContent = 'média por arquivo: ' + avgStr;
+
+          // Formatar total estimado restante
+          if (remaining > 0) {
+            const remSec = Math.round(avgSec * remaining);
+            let etaStr = '';
+            if (remSec >= 3600) {
+              const h = Math.floor(remSec / 3600);
+              const m = Math.round((remSec % 3600) / 60);
+              etaStr = h + ' h e ' + m + ' min';
+            } else if (remSec >= 60) {
+              etaStr = Math.round(remSec / 60) + ' min';
+            } else {
+              etaStr = remSec + ' s';
+            }
+            if (el.etaIndicator) el.etaIndicator.textContent = 'Total estimado: ' + etaStr;
+          } else {
+            if (el.etaIndicator) el.etaIndicator.textContent = 'Total estimado: Concluindo...';
+          }
+        }
       }
       if (ev.stage) {
         el.stageIndicator.textContent = 'Estágio: ' + formatStageName(ev.stage);
@@ -233,6 +283,24 @@
       el.progressPct.textContent = '100%';
       el.stageIndicator.textContent = 'Estágio: Concluído';
 
+      // Rodapé correto ao concluir: X / X processados e Restam: 0
+      const total = summary.total_scanned || 0;
+      el.countIndicator.textContent = total + ' / ' + total + ' processados';
+      el.remainingIndicator.textContent = 'Restam: 0';
+
+      if (state.batchStartTime) {
+        const totalElapsedSec = Math.max(1, (Date.now() - state.batchStartTime) / 1000);
+        let totStr = '';
+        if (totalElapsedSec >= 3600) {
+          totStr = Math.floor(totalElapsedSec / 3600) + ' h e ' + Math.round((totalElapsedSec % 3600) / 60) + ' min';
+        } else if (totalElapsedSec >= 60) {
+          totStr = Math.round(totalElapsedSec / 60) + ' min';
+        } else {
+          totStr = Math.round(totalElapsedSec) + ' s';
+        }
+        if (el.etaIndicator) el.etaIndicator.textContent = 'Tempo total: ' + totStr;
+      }
+
       // Métrica de qualidade
       if (summary.manual_review_ratio !== undefined) {
         const ratioPct = (summary.manual_review_ratio * 100).toFixed(1);
@@ -266,9 +334,46 @@
     }
   }
 
+  // --- Som Suave de Conclusão de Lote (Web Audio API nativo) ---
+  function playCompletionSound() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+
+      // Primeiro tom suave (acorde elegante: C5 523Hz -> E5 659Hz)
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(523.25, now);
+      gain1.gain.setValueAtTime(0.08, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.35);
+
+      // Segundo tom harmônico
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(659.25, now + 0.12);
+      gain2.gain.setValueAtTime(0.08, now + 0.12);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.12);
+      osc2.stop(now + 0.55);
+    } catch (_) {
+      // Falha silenciosa se áudio estiver desabilitado no ambiente
+    }
+  }
+
   // --- Modal Popup de Conclusão ---
   function openCompletionModal(summary) {
     if (!el.completionModal) return;
+    playCompletionSound();
 
     const org = summary.organized_count || 0;
     const rev = summary.manual_review_count || 0;
@@ -364,6 +469,8 @@
         year: null,
         grande_area: '',
         area_basica: '',
+        subarea: '',
+        especialidade: '',
         tipo: '',
         confidence: 0,
         used_ocr: false,
@@ -385,6 +492,8 @@
       item.year = cls.year !== undefined ? cls.year : item.year;
       item.grande_area = cls.grande_area || item.grande_area;
       item.area_basica = cls.area_basica || item.area_basica;
+      item.subarea = cls.subarea || item.subarea || '';
+      item.especialidade = cls.especialidade || item.especialidade || '';
       item.tipo = cls.tipo || item.tipo;
       item.confidence = cls.confidence_score !== undefined ? cls.confidence_score : item.confidence;
       item.used_ocr = cls.used_ocr !== undefined ? cls.used_ocr : item.used_ocr;
@@ -448,35 +557,41 @@
   function updateTaxonomyTree() {
     const tree = {};
     for (const it of state.items) {
-      if (!it.grande_area) continue;
-      if (!tree[it.grande_area]) tree[it.grande_area] = {};
-      const area = it.area_basica || 'Geral';
-      if (!tree[it.grande_area][area]) tree[it.grande_area][area] = 0;
-      tree[it.grande_area][area]++;
+      const area = it.area_basica || it.grande_area;
+      if (!area) continue;
+      const sub = it.subarea || 'Geral';
+      if (!tree[area]) tree[area] = {};
+      if (!tree[area][sub]) tree[area][sub] = 0;
+      tree[area][sub]++;
     }
 
-    const gAreas = Object.keys(tree).sort();
-    if (gAreas.length === 0) {
+    const areas = Object.keys(tree).sort();
+    if (areas.length === 0) {
       el.capesTree.innerHTML = '<div class="tree-empty">Nenhuma área classificada ainda</div>';
       return;
     }
 
     let html = '';
-    for (const ga of gAreas) {
-      const isSelected = state.activeAreaFilter === ga;
+    for (const ab of areas) {
+      const abTotal = Object.values(tree[ab]).reduce((a, b) => a + b, 0);
+      const isAbSelected = state.activeAreaFilter === ab;
       html += `<div class="tree-node">
-        <div class="tree-header ${isSelected ? 'selected' : ''}" data-area="${escapeHtml(ga)}">
+        <div class="tree-header ${isAbSelected ? 'selected' : ''}" data-area="${escapeHtml(ab)}" data-level="area_basica">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-          <strong>${escapeHtml(ga)}</strong>
+          <strong>${escapeHtml(ab)}</strong>
+          <span class="count-pill badge-gray">${abTotal}</span>
         </div>
         <div class="tree-children">`;
 
-      for (const [ab, count] of Object.entries(tree[ga])) {
-        const isAbSelected = state.activeAreaFilter === ab;
-        html += `<div class="tree-header ${isAbSelected ? 'selected' : ''}" data-area="${escapeHtml(ab)}">
-          <span style="color: var(--text-muted);">&bull;</span>
-          <span>${escapeHtml(ab)}</span>
-          <span class="count-pill badge-gray" style="margin-left: auto;">${count}</span>
+      const subs = tree[ab];
+      for (const sub of Object.keys(subs).sort()) {
+        const isSubSelected = state.activeAreaFilter === sub;
+        html += `<div class="tree-subnode">
+          <div class="tree-header ${isSubSelected ? 'selected' : ''}" data-area="${escapeHtml(sub)}" data-level="subarea">
+            <span style="color: var(--text-muted);">&bull;</span>
+            <span>${escapeHtml(sub)}</span>
+            <span class="count-pill badge-gray">${subs[sub]}</span>
+          </div>
         </div>`;
       }
       html += `</div></div>`;
@@ -509,7 +624,7 @@
       if (filter !== 'all' && item.status !== filter) return false;
 
       // Filtro da árvore CAPES
-      if (areaFilter && item.grande_area !== areaFilter && item.area_basica !== areaFilter) return false;
+      if (areaFilter && item.grande_area !== areaFilter && item.area_basica !== areaFilter && item.subarea !== areaFilter) return false;
 
       // Filtro de busca textual
       if (query) {
@@ -544,7 +659,7 @@
       const displayTitle = it.title || getFilename(it.source_path);
       const authorsStr = (it.authors && it.authors.length > 0) ? it.authors.join('; ') : '—';
       const yearStr = it.year ? String(it.year) : 's.d.';
-      const areaStr = it.grande_area ? (it.grande_area + (it.area_basica ? ' › ' + it.area_basica : '')) : '—';
+      const areaStr = it.area_basica ? (it.area_basica + (it.subarea ? ' › ' + it.subarea : '')) : (it.grande_area || '—');
       const typeStr = it.tipo || '—';
       const confStr = it.confidence ? it.confidence.toFixed(2) : '—';
 
@@ -661,6 +776,8 @@
     // Metadados CAPES/CNPq
     el.kvGrandeArea.textContent = item.grande_area || '—';
     el.kvAreaBasica.textContent = item.area_basica || '—';
+    el.kvSubarea.textContent = item.subarea || '—';
+    el.kvEspecialidade.textContent = item.especialidade || '—';
     el.kvTipo.textContent = item.tipo || '—';
     el.kvConfianca.textContent = item.confidence ? `${(item.confidence * 100).toFixed(0)}%` : '—';
     el.kvOrigem.textContent = getFilename(item.source_path);
@@ -681,15 +798,62 @@
   }
 
   // --- Formulário de Triagem Manual ---
+  function formatTriageError(rawMessage) {
+    if (!rawMessage) return 'Encaminhado para validação humana.';
+    const raw = String(rawMessage);
+    const msg = raw.toLowerCase();
+
+    // Detectar provedor de IA envolvido
+    let prov = '';
+    if (msg.includes('deepseek')) prov = 'DeepSeek';
+    else if (msg.includes('groq')) prov = 'Groq';
+    else if (msg.includes('nvidia') || msg.includes('nvapi')) prov = 'NVIDIA';
+    else if (msg.includes('claude') || msg.includes('anthropic')) prov = 'Claude';
+    else if (msg.includes('gemini') || msg.includes('google')) prov = 'Gemini';
+
+    const provSuffix = prov ? ` no provedor ${prov}` : '';
+
+    if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('não autorizada')) {
+      return `Chave de API não autorizada ou expirada${provSuffix}. Por favor, verifique suas credenciais na tela de Preferências.`;
+    }
+    if (msg.includes('429') || msg.includes('resource_exhausted') || msg.includes('quota') || msg.includes('rate limit')) {
+      return `Cota de requisições por minuto ou limite diário excedido${provSuffix}.`;
+    }
+    if (msg.includes('503') || msg.includes('502') || msg.includes('504') || msg.includes('529') || msg.includes('service unavailable')) {
+      return `Instabilidade temporária nos servidores${provSuffix}. Tente novamente mais tarde.`;
+    }
+    if (msg.includes('timeout') || msg.includes('timed out') || msg.includes('tempo limite')) {
+      return `Tempo limite de resposta esgotado ao consultar o provedor${prov ? ' ' + prov : ''}.`;
+    }
+    if (msg.includes('parse') || msg.includes('json') || msg.includes('inválido') || msg.includes('inválida')) {
+      return `Resposta em formato inesperado retornada pela IA${provSuffix}. Não foi possível interpretar a classificação.`;
+    }
+    return raw;
+  }
+
   function populateTriageForm(item) {
-    el.inspTriageReason.textContent = item.error_message || item.reasoning || 'Encaminhado para validação humana.';
+    el.inspTriageReason.textContent = formatTriageError(item.error_message || item.reasoning) || 'Encaminhado para validação humana.';
 
-    // Popular Grande Área
-    el.triageGrandeArea.innerHTML = Object.keys(CAPES_TAXONOMY)
-      .map(ga => `<option value="${ga}" ${ga === item.grande_area ? 'selected' : ''}>${ga}</option>`)
-      .join('');
+    // Popular Área Básica com optgroups por Grande Área
+    let abOptions = '';
+    for (const [ga, basicas] of Object.entries(CAPES_TAXONOMY)) {
+      abOptions += `<optgroup label="${ga}">`;
+      for (const ab of basicas) {
+        const isSel = (ab === item.area_basica) ? 'selected' : '';
+        abOptions += `<option value="${ab}" ${isSel}>${ab}</option>`;
+      }
+      abOptions += `</optgroup>`;
+    }
+    el.triageAreaBasica.innerHTML = abOptions;
+    if (item.area_basica) {
+      el.triageAreaBasica.value = item.area_basica;
+    }
 
-    updateTriageAreaBasica();
+    // Popular Área Específica (Subárea)
+    const initialSubarea = (item.subarea && item.subarea !== 'Geral') ? item.subarea : '';
+    if (el.triageSubarea) {
+      el.triageSubarea.value = initialSubarea;
+    }
 
     el.triageTitle.value = item.title || getFilename(item.source_path).replace(/\.pdf$/i, '');
     el.triageSubtitle.value = item.subtitle || '';
@@ -698,20 +862,20 @@
     if (item.tipo) el.triageTipo.value = item.tipo;
   }
 
-  function updateTriageAreaBasica() {
-    const selectedGa = el.triageGrandeArea.value;
-    const areas = CAPES_TAXONOMY[selectedGa] || ['Outros'];
-    el.triageAreaBasica.innerHTML = areas.map(ab => `<option value="${ab}">${ab}</option>`).join('');
-  }
-
-  el.triageGrandeArea.addEventListener('change', updateTriageAreaBasica);
-
   el.btnApproveTriage.addEventListener('click', () => {
     if (!state.selectedPath) return;
+    const item = state.items.find(i => i.source_path === state.selectedPath);
+    const selectedAreaBasica = el.triageAreaBasica ? el.triageAreaBasica.value : (item ? item.area_basica : 'Outros');
+    const resolvedGrandeArea = AREA_TO_GRANDE_AREA[selectedAreaBasica] || (item ? item.grande_area : 'Outros');
+    const subareaVal = (el.triageSubarea && el.triageSubarea.value.trim()) || (item && item.subarea && item.subarea !== 'Geral' ? item.subarea : 'Geral');
+
     const triageData = {
       source_path: state.selectedPath,
-      grande_area: el.triageGrandeArea.value,
-      area_basica: el.triageAreaBasica.value,
+      destination_path: item ? item.destination_path : null,
+      sha256: item ? item.sha256 : '',
+      grande_area: resolvedGrandeArea,
+      area_basica: selectedAreaBasica,
+      subarea: subareaVal,
       tipo: el.triageTipo.value,
       title: el.triageTitle.value.trim(),
       subtitle: el.triageSubtitle.value.trim(),
@@ -721,7 +885,11 @@
 
     if (backend && backend.approveManualTriage) {
       backend.approveManualTriage(JSON.stringify(triageData)).then(res => {
-        console.log('Triagem manual aprovada com sucesso!', res);
+        if (!res) {
+          alert('Não foi possível materializar o item na biblioteca. Verifique se a pasta de destino está acessível e se os campos taxonômicos são válidos.');
+        } else {
+          console.log('Triagem manual aprovada e materializada com sucesso!');
+        }
       });
     } else {
       // Simulação local
@@ -764,7 +932,11 @@
     const authors = formatAbntAuthors(item.authors);
     const title = (item.title || getFilename(item.source_path)).trim();
     const subtitle = item.subtitle ? `: ${item.subtitle.trim()}` : '';
-    const edition = item.edition ? `${String(item.edition).replace(/\.+$/, '')}. ed.` : '';
+    let edition = '';
+    if (item.edition) {
+      let edStr = String(item.edition).trim().replace(/\b(?:ed|edicao|edição)\.?$/i, '').trim().replace(/\.+$/, '');
+      if (edStr) edition = `${edStr}. ed.`;
+    }
     const city = item.city || '';
     const publisher = item.publisher || '';
     const journalName = item.journal_name || '';
@@ -782,15 +954,16 @@
 
     let parts = [];
     if (authors) {
-      parts.push(`<strong>${escapeHtml(authors)}</strong>`);
+      // ABNT NBR 6023: Autores em texto normal (sobrenome em caixa alta, sem negrito)
+      parts.push(escapeHtml(authors));
     }
 
     if (tipo === 'Artigo' && journalName) {
-      // Artigo: Título normal, Periódico em negrito
+      // Artigo: Título normal, Periódico em negrito puro
       const artTitle = `${escapeHtml(title)}${escapeHtml(subtitle)}`;
       parts.push(artTitle);
 
-      let jParts = [`<em><strong>${escapeHtml(journalName)}</strong></em>`];
+      let jParts = [`<strong>${escapeHtml(journalName)}</strong>`];
       if (city) jParts.push(escapeHtml(city));
       if (volume) {
         const vStr = String(volume).toLowerCase().startsWith('v.') ? volume : `v. ${volume}`;
@@ -807,8 +980,8 @@
       jParts.push(escapeHtml(year));
       parts.push(jParts.join(', '));
     } else {
-      // Livro ou Outros: Título em negrito
-      const bookTitle = `<em><strong>${escapeHtml(title)}</strong></em>${escapeHtml(subtitle)}`;
+      // Livro ou Outros: Título principal em negrito puro, subtítulo normal
+      const bookTitle = `<strong>${escapeHtml(title)}</strong>${escapeHtml(subtitle)}`;
       parts.push(bookTitle);
 
       if (edition) parts.push(escapeHtml(edition));
@@ -843,13 +1016,91 @@
     return citation;
   }
 
+  function fallbackCopyText(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    ta.style.top = '-9999px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+      document.execCommand('copy');
+    } catch (_) {}
+    document.body.removeChild(ta);
+  }
+
+  function convertCitationHtmlToMarkdown(html) {
+    if (!html) return '';
+    return html
+      .replace(/<strong>(.*?)<\/strong>/gi, '**$1**')
+      .replace(/<b>(.*?)<\/b>/gi, '**$1**')
+      .replace(/<a\s+href="([^"]+)"[^>]*>(.*?)<\/a>/gi, '$1')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .trim();
+  }
+
   el.btnCopyCitation.addEventListener('click', () => {
-    const text = el.inspAbntCitation.innerText;
-    navigator.clipboard.writeText(text).then(() => {
+    const htmlText = el.inspAbntCitation.innerHTML;
+    const markdownText = convertCitationHtmlToMarkdown(htmlText) || el.inspAbntCitation.innerText;
+
+    function showCopied() {
       const orig = el.btnCopyCitation.innerHTML;
-      el.btnCopyCitation.innerHTML = '✔ Copiado!';
+      el.btnCopyCitation.innerHTML = '✔ Copiado com Formatação!';
       setTimeout(() => { el.btnCopyCitation.innerHTML = orig; }, 1800);
-    });
+    }
+
+    // Tentar cópia com formatação HTML nativa e Markdown via evento 'copy'
+    let copied = false;
+    const onCopy = function (e) {
+      e.clipboardData.setData('text/html', `<!DOCTYPE html><html><body>${htmlText}</body></html>`);
+      e.clipboardData.setData('text/plain', markdownText);
+      e.preventDefault();
+      copied = true;
+    };
+    document.addEventListener('copy', onCopy);
+    try {
+      document.execCommand('copy');
+    } catch (_) {}
+    document.removeEventListener('copy', onCopy);
+
+    if (copied) {
+      showCopied();
+      return;
+    }
+
+    // Fallback: Clipboard API do navegador
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      const blobText = new Blob([markdownText], { type: 'text/plain' });
+      const blobHtml = new Blob([`<html><body>${htmlText}</body></html>`], { type: 'text/html' });
+      const item = new ClipboardItem({
+        'text/plain': blobText,
+        'text/html': blobHtml,
+      });
+      navigator.clipboard.write([item]).then(showCopied).catch(() => {
+        if (backend && backend.copyToClipboard) {
+          backend.copyToClipboard(markdownText);
+        } else {
+          fallbackCopyText(markdownText);
+        }
+        showCopied();
+      });
+      return;
+    }
+
+    // Fallback seguro: backend Python (com sintaxe Markdown para preservar negrito em texto puro)
+    if (backend && backend.copyToClipboard) {
+      backend.copyToClipboard(markdownText);
+    } else {
+      fallbackCopyText(markdownText);
+    }
+    showCopied();
   });
 
   // --- Controles de Operação & Ações ---
@@ -878,9 +1129,24 @@
   }
 
   function updateKeyBadge(hasKey) {
+    if (backend && backend.getProviderKeyStatus && state.provider) {
+      backend.getProviderKeyStatus(state.provider).then(function(status) {
+        if (status === 'valid') {
+          el.keyBadge.className = 'badge-pill badge-key-active';
+          el.keyBadgeText.textContent = 'Chave Configurada';
+        } else if (status === 'invalid') {
+          el.keyBadge.className = 'badge-pill badge-key-error';
+          el.keyBadgeText.textContent = 'Chave com Formato Inválido';
+        } else {
+          el.keyBadge.className = 'badge-pill badge-key-simulated';
+          el.keyBadgeText.textContent = 'Sem chave (Modo Simulado)';
+        }
+      });
+      return;
+    }
     if (hasKey) {
       el.keyBadge.className = 'badge-pill badge-key-active';
-      el.keyBadgeText.textContent = 'Chave Ativa';
+      el.keyBadgeText.textContent = 'Chave Configurada';
     } else {
       el.keyBadge.className = 'badge-pill badge-key-simulated';
       el.keyBadgeText.textContent = 'Sem chave (Modo Simulado)';
@@ -933,6 +1199,9 @@
       }
 
       state.isRunning = true;
+      state.batchStartTime = Date.now();
+      if (el.avgTimeIndicator) el.avgTimeIndicator.textContent = 'média por arquivo: Calculando...';
+      if (el.etaIndicator) el.etaIndicator.textContent = 'Total estimado: Calculando...';
       state.items = []; // Limpar lote anterior
       state.selectedPath = null;
       closeCompletionModal();
@@ -962,11 +1231,25 @@
       el.btnOrganize.className = 'btn btn-danger';
       el.organizeLabel.textContent = 'Interromper Lote';
       el.organizeIcon.innerHTML = '<rect x="6" y="6" width="12" height="12"></rect>';
+      setBatchControlsDisabled(true);
     } else {
       el.btnOrganize.className = 'btn btn-primary';
       el.organizeLabel.textContent = 'Organizar Acervo';
       el.organizeIcon.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+      setBatchControlsDisabled(false);
     }
+  }
+
+  function setBatchControlsDisabled(disabled) {
+    if (el.modelSelect) el.modelSelect.disabled = disabled;
+    if (el.btnBrowseSource) el.btnBrowseSource.disabled = disabled;
+    if (el.btnBrowseTarget) el.btnBrowseTarget.disabled = disabled;
+    if (el.btnModeCopy) el.btnModeCopy.disabled = disabled;
+    if (el.btnModeMove) el.btnModeMove.disabled = disabled;
+    if (el.chkRecursive) el.chkRecursive.disabled = disabled;
+    if (el.chkDryRun) el.chkDryRun.disabled = disabled;
+    if (el.btnPreferences) el.btnPreferences.disabled = disabled;
+    if (el.btnCache) el.btnCache.disabled = disabled;
   }
 
   // Botões de Rodapé do Inspetor (Priorizando o arquivo e pasta de destino)
@@ -998,12 +1281,22 @@
     if (backend && backend.openCacheDialog) backend.openCacheDialog();
   });
 
-  // Filtros da Barra Lateral
+  // Desativar menu de contexto de navegador (Back, Reload, View Source)
+  document.addEventListener('contextmenu', e => {
+    if (!['INPUT', 'TEXTAREA'].includes(e.target.tagName)) {
+      e.preventDefault();
+    }
+  });
+
+  // Filtros da Barra Lateral (Precedência sobre a árvore CAPES e reset global)
   el.filterList.querySelectorAll('.filter-item').forEach(item => {
     item.addEventListener('click', () => {
       el.filterList.querySelectorAll('.filter-item').forEach(i => i.classList.remove('active'));
       item.classList.add('active');
       state.activeFilter = item.getAttribute('data-filter');
+      // Precedência de status: limpa qualquer filtro ativo de subárvore CAPES para evitar combinações vazias
+      state.activeAreaFilter = null;
+      updateTaxonomyTree();
       renderTable();
     });
   });
@@ -1043,6 +1336,11 @@
     el.remainingIndicator.textContent = 'Restam: 0';
     el.qualityMetric.className = 'quality-metric badge-gray';
     el.qualityMetric.textContent = 'Revisão Manual: 0,0%';
+
+    // Reset indicadores de tempo
+    if (el.avgTimeIndicator) el.avgTimeIndicator.textContent = '—';
+    if (el.etaIndicator) el.etaIndicator.textContent = '—';
+    state.batchStartTime = null;
 
     // Reset filtros na barra lateral
     el.filterList.querySelectorAll('.filter-item').forEach(i => i.classList.remove('active'));
@@ -1146,6 +1444,159 @@
       }
     });
   });
+
+  // --- Redimensionadores de Painéis (Splitters Laterais) ---
+  const mainContent = document.querySelector('.main-content');
+  const sidebarPanel = document.getElementById('sidebarPanel');
+  const inspectorPanel = document.getElementById('inspectorPanel');
+  const sidebarResizer = document.getElementById('sidebarResizer');
+  const tableResizer = document.getElementById('tableResizer');
+
+  let currentSidebarWidth = 260;
+  let currentInspectorWidth = 370;
+
+  function updateMainGrid() {
+    if (mainContent) {
+      mainContent.style.gridTemplateColumns = `${currentSidebarWidth}px 8px 1fr 8px ${currentInspectorWidth}px`;
+    }
+  }
+
+  // Splitter 1: Barra Lateral (Esquerda)
+  if (sidebarResizer && sidebarPanel && mainContent) {
+    let isDragging = false;
+    let startX = 0;
+    let startWidth = currentSidebarWidth;
+
+    sidebarResizer.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      startX = e.clientX;
+      startWidth = sidebarPanel.getBoundingClientRect().width;
+      sidebarResizer.classList.add('is-dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - startX; // arrastar para direita expande a barra lateral
+      currentSidebarWidth = Math.max(180, Math.min(500, startWidth + dx));
+      updateMainGrid();
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      sidebarResizer.classList.remove('is-dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    });
+  }
+
+  // Splitter 2: Painel de Inspeção (Direita)
+  if (tableResizer && inspectorPanel && mainContent) {
+    let isDragging = false;
+    let startX = 0;
+    let startWidth = currentInspectorWidth;
+
+    tableResizer.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      startX = e.clientX;
+      startWidth = inspectorPanel.getBoundingClientRect().width;
+      tableResizer.classList.add('is-dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = startX - e.clientX; // arrastar para esquerda expande o painel direito
+      currentInspectorWidth = Math.max(280, Math.min(680, startWidth + dx));
+      updateMainGrid();
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (!isDragging) return;
+      isDragging = false;
+      tableResizer.classList.remove('is-dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    });
+  }
+
+  // --- Redimensionadores de Colunas da Tabela ---
+  function initTableColumnResizers() {
+    const table = document.getElementById('docTable');
+    if (!table) return;
+    const ths = table.querySelectorAll('th');
+
+    ths.forEach(th => {
+      const resizer = th.querySelector('.th-resizer');
+      if (!resizer) return;
+
+      let isResizing = false;
+      let startX = 0;
+      let startWidth = 0;
+
+      resizer.addEventListener('mousedown', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        isResizing = true;
+        startX = e.clientX;
+
+        // Congelar larguras atuais em px de todas as colunas antes de alterar qualquer estilo
+        const currentWidths = Array.from(ths).map(h => h.getBoundingClientRect().width);
+        let totalInitialWidth = 0;
+        ths.forEach((h, idx) => {
+          const w = currentWidths[idx];
+          totalInitialWidth += w;
+          const wPx = `${w}px`;
+          h.style.width = wPx;
+          h.style.minWidth = wPx;
+          h.style.maxWidth = wPx;
+        });
+
+        startWidth = th.getBoundingClientRect().width;
+        table.style.minWidth = '0';
+        table.style.width = `${totalInitialWidth}px`;
+
+        resizer.classList.add('is-resizing');
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+
+        function onMouseMove(moveEvent) {
+          if (!isResizing) return;
+          const diffX = moveEvent.clientX - startX;
+          const newWidth = Math.max(36, startWidth + diffX);
+          const newWidthPx = `${newWidth}px`;
+          th.style.width = newWidthPx;
+          th.style.minWidth = newWidthPx;
+          th.style.maxWidth = newWidthPx;
+
+          let totalWidth = 0;
+          ths.forEach(h => {
+            totalWidth += parseFloat(h.style.width) || h.getBoundingClientRect().width;
+          });
+          table.style.minWidth = '0';
+          table.style.width = `${totalWidth}px`;
+        }
+
+        function onMouseUp() {
+          if (!isResizing) return;
+          isResizing = false;
+          resizer.classList.remove('is-resizing');
+          document.body.style.cursor = '';
+          document.body.style.userSelect = '';
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+        }
+
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+      });
+    });
+  }
+
+  initTableColumnResizers();
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {

@@ -41,10 +41,28 @@ GENERIC_TITLE_CONFIDENCE_CAP = 0.50
 CONFIDENCE_MIN = 0.70
 
 
+def _resolve_api_key(api_key: str | list[str]) -> str:
+    """Resolver a chave de API: se for lista, usar o primeiro elemento."""
+    if isinstance(api_key, list):
+        return api_key[0] if api_key else ""
+    return api_key or ""
+
+
+def _resolve_api_keys(api_key: str | list[str] | None) -> list[str]:
+    """Resolver múltiplas chaves de API (pool): retorna lista de tokens individuais."""
+    if not api_key:
+        return []
+    if isinstance(api_key, list):
+        keys: list[str] = []
+        for item in api_key:
+            keys.extend([k.strip() for k in str(item).split(",") if k.strip()])
+        return keys
+    if isinstance(api_key, str) and api_key.strip():
+        return [k.strip() for k in api_key.split(",") if k.strip()]
+    return []
+
+
 def _sanitize_error_message(message: str) -> str:
-    """Mascarar chaves de API e tokens em mensagens de erro antes de exibi-las."""
-    if not message:
-        return message
     # Mascarar padrões conhecidos de chaves de API.
     import re as _re
     text = _re.sub(
@@ -67,20 +85,56 @@ def _sanitize_error_message(message: str) -> str:
     return text
 
 
+def humanize_error_message(message: str) -> str:
+    """Traduz mensagens técnicas de erro HTTP/LLM para linguagem clara e amigável (FEAT-UX-02)."""
+    clean = _sanitize_error_message(message)
+    lower = clean.lower()
+
+    prov = ""
+    if "deepseek" in lower:
+        prov = "DeepSeek"
+    elif "groq" in lower:
+        prov = "Groq"
+    elif "nvidia" in lower or "nvapi" in lower:
+        prov = "NVIDIA"
+    elif "claude" in lower or "anthropic" in lower:
+        prov = "Claude"
+    elif "gemini" in lower or "google" in lower:
+        prov = "Gemini"
+
+    prov_str = f" no provedor {prov}" if prov else ""
+
+    if "401" in lower or "unauthorized" in lower or "não autorizada" in lower:
+        return f"Chave de API não autorizada ou expirada{prov_str}. Por favor, verifique suas credenciais na tela de Preferências."
+    if "429" in lower or "resource_exhausted" in lower or "quota" in lower or "rate limit" in lower:
+        return f"Cota de requisições por minuto ou limite diário excedido{prov_str}."
+    if any(code in lower for code in ("503", "502", "504", "529", "service unavailable")):
+        return f"Instabilidade temporária nos servidores{prov_str}. Tente novamente mais tarde."
+    if "timeout" in lower or "timed out" in lower or "tempo limite" in lower:
+        return f"Tempo limite de resposta esgotado ao consultar o provedor{f' {prov}' if prov else ''}."
+
+    return clean
+
+
 def _alphanumeric_count(text: str) -> int:
     """Contar caracteres alfanuméricos úteis em um texto."""
     return sum(1 for ch in text if ch.isalnum())
 
 
 def _is_retryable_http(exc: BaseException) -> bool:
-    """Verificar se uma exceção do google-genai é um erro HTTP retryable (429/503)."""
+    """Verificar se uma exceção do google-genai é um erro HTTP retryable (429/503 ou timeout de rede)."""
+    if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
+        return True
+    import socket
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return True
     code = getattr(exc, "code", None)
     if code is None:
         response = getattr(exc, "response", None)
         if response is not None:
             code = getattr(response, "status_code", None)
     try:
-        return int(code) in (429, 503)
+        return int(code) in (429, 503, 504)
     except (TypeError, ValueError):
         return False
 
@@ -130,6 +184,8 @@ class ClassificationResult:
     year: int | None
     confidence_score: float
     reasoning: str
+    subarea: str = ""
+    especialidade: str = ""
     used_ocr: bool = False
     provider_name: str = ""
     model_name: str = ""
@@ -187,10 +243,21 @@ def _finalize_classification(
     """Aplicar validação/reparo CAPES e trava determinística de título genérico."""
     reparado = validate_or_repair_pair(output.grande_area, output.area_basica)
     tipo_str = output.tipo.value if hasattr(output.tipo, "value") else str(output.tipo)
+
+    # Subarea e especialidade: garantir que nunca fiquem vazios.
+    subarea = (output.subarea or "").strip()
+    especialidade = (output.especialidade or "").strip()
+    if not subarea or subarea.lower() in ("não especificada", "nao especificada", "none", "null", ""):
+        subarea = "Geral"
+    if not especialidade or especialidade.lower() in ("não especificada", "nao especificada", "none", "null", ""):
+        especialidade = "Geral"
+
     if reparado is None:
         return ClassificationResult(
             grande_area=output.grande_area,
             area_basica=output.area_basica,
+            subarea=subarea,
+            especialidade=especialidade,
             tipo=tipo_str,
             authors=list(output.authors),
             title=output.title,
@@ -225,6 +292,8 @@ def _finalize_classification(
     return ClassificationResult(
         grande_area=grande_area,
         area_basica=area_basica,
+        subarea=subarea,
+        especialidade=especialidade,
         tipo=tipo_str,
         authors=list(output.authors),
         title=title,
@@ -274,11 +343,17 @@ class GeminiProvider:
         from google.genai import Client
         from google.genai import types as genai_types
 
-        self._client = Client(api_key=api_key)
+        # Configurar timeout explícito de 45 segundos para evitar que conexões travadas
+        # bloqueiem o worker indefinidamente.
+        http_options = genai_types.HttpOptions(
+            timeout=45_000,
+            client_args={"timeout": 45.0},
+        )
+        self._client = Client(api_key=api_key, http_options=http_options)
         self._model = model
         self._max_sampled_chars = max_sampled_chars
         self._types = genai_types
-        self._fallback_models = ["gemini-3.5-flash", "gemini-3.1-flash-lite"]
+        self._fallback_models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
 
     def _is_404(self, exc: BaseException) -> bool:
         """Verificar se uma exceção do google-genai é um erro HTTP 404 (NOT_FOUND)."""
@@ -377,6 +452,8 @@ class MockLLMProvider:
         self._result = result or ClassificationResult(
             grande_area="Ciências Humanas",
             area_basica="Psicologia",
+            subarea="Psicologia Clínica",
+            especialidade="Psicoterapia Cognitivo-Comportamental",
             tipo="Livro",
             authors=["Silva, João"],
             title="Título de teste",
@@ -402,7 +479,7 @@ class NvidiaProvider:
     def __init__(
         self,
         api_key: str,
-        model: str = "nvidia/nemotron-3.5-lightning-30b-a3b",
+        model: str = "meta/llama-3.2-90b-vision-instruct",
         base_url: str = "https://integrate.api.nvidia.com/v1",
         max_sampled_chars: int = 15_000,
     ) -> None:
@@ -626,7 +703,7 @@ class ClaudeProvider:
     def __init__(
         self,
         api_key: str,
-        model: str = "claude-3-5-haiku-20241022",
+        model: str = "claude-haiku-5-5",
         base_url: str = "https://api.anthropic.com/v1",
         max_sampled_chars: int = 15_000,
     ) -> None:
@@ -660,7 +737,12 @@ class ClaudeProvider:
         resp = self._client.post("/messages", json=payload)
         resp.raise_for_status()
         data = resp.json()
-        return data["content"][0]["text"]
+        content_blocks = data.get("content", [])
+        texts = [b.get("text", "") for b in content_blocks if b.get("type") == "text"]
+        content = "".join(texts)
+        if not content:
+            raise ValueError("Resposta do LLM Claude veio vazia")
+        return content
 
     def classify(
         self,
@@ -729,7 +811,7 @@ class GroqProvider:
     def __init__(
         self,
         api_key: str,
-        model: str = "openai/gpt-oss-20b",
+        model: str = "openai/gpt-oss-120b",
         base_url: str = "https://api.groq.com/openai/v1",
         max_sampled_chars: int = 15_000,
     ) -> None:
@@ -830,119 +912,6 @@ class GroqProvider:
             output = LLMClassificationOutput.model_validate(json.loads(json_text))
 
         return _finalize_classification(output, used_ocr, "groq", self._model)
-
-
-class GitHubModelsProvider:
-    """Provedor GitHub Models usando httpx diretamente.
-
-    Chama a API GitHub Models em POST /chat/completions e aplica travas
-    determinísticas de confiança idênticas às dos demais provedores.
-    """
-
-    def __init__(
-        self,
-        api_key: str,
-        model: str = "gpt-4o",
-        base_url: str = "https://models.github.ai/inference",
-        max_sampled_chars: int = 15_000,
-    ) -> None:
-        self._client = httpx.Client(
-            base_url=base_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=60.0,
-        )
-        self._model = model
-        self._max_sampled_chars = max_sampled_chars
-
-    @retry(
-        retry=retry_if_exception(_is_generic_openai_retryable),
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        reraise=True,
-    )
-    def _call_github_models(self, system_prompt: str, context_payload: str) -> str:
-        """Chamar a API GitHub Models /chat/completions com retry em 429/503."""
-        payload = {
-            "model": self._model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt
-                    + "\n\nResponda APENAS com um objeto JSON válido estritamente no schema solicitado, sem marcação markdown adicional.",
-                },
-                {"role": "user", "content": context_payload},
-            ],
-            "temperature": 0.1,
-            "max_tokens": 2048,
-            "response_format": {"type": "json_object"},
-        }
-        resp = self._client.post("/chat/completions", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        choice = data.get("choices", [{}])[0]
-        content = choice.get("message", {}).get("content")
-        if not content or not str(content).strip():
-            raise ValueError("Resposta do LLM GitHub Models veio vazia")
-        return str(content)
-
-    def classify(
-        self,
-        sampled_text: str,
-        cip_text: str,
-        external_metadata: ExternalMetadata | None,
-        used_ocr: bool = False,
-    ) -> ClassificationResult:
-        """Classificar via GitHub Models aplicando travas determinísticas de confiança."""
-        useful_chars = _alphanumeric_count(sampled_text) + _alphanumeric_count(cip_text)
-        has_external = external_metadata is not None and bool(
-            external_metadata.title or external_metadata.authors
-        )
-        if useful_chars < MIN_USEFUL_CHARS and not has_external:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=(
-                    "Texto alfanumérico útil inferior a 50 caracteres e sem "
-                    "metadados externos; classificação não realizada."
-                ),
-                used_ocr=used_ocr,
-            )
-
-        system_prompt = build_system_prompt()
-        context_payload = build_context_payload(sampled_text, cip_text, external_metadata)
-
-        try:
-            content = self._call_github_models(system_prompt, context_payload)
-        except Exception as exc:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=f"Falha na chamada ao LLM GitHub Models: {_sanitize_error_message(str(exc))}",
-                used_ocr=used_ocr,
-            )
-
-        json_text = _strip_markdown_json(content)
-        try:
-            output = LLMClassificationOutput.model_validate_json(json_text)
-        except Exception:
-            output = LLMClassificationOutput.model_validate(json.loads(json_text))
-
-        return _finalize_classification(output, used_ocr, "github", self._model)
 
 
 # --------------------------------------------------------------------------- #
@@ -1051,7 +1020,7 @@ class FallbackLLMDispatcher:
 
             # Sucesso: preenche provider/model efetivos se ausentes e retorna.
             if not resultado.provider_name:
-                resultado.provider_name = nome
+                resultado.provider_name = nome.split(" (")[0]
             if not resultado.model_name:
                 resultado.model_name = str(getattr(provedor, "_model", ""))
             return resultado
@@ -1093,25 +1062,25 @@ def create_provider_chain(
     Se o primário não tiver chave, o primeiro com chave válida torna-se o
     primário efetivo.
 
-    Suporta: "gemini", "nvidia", "deepseek", "claude", "groq", "github".
+    Suporta: "gemini", "nvidia", "deepseek", "claude", "groq".
     """
     provedores_disponiveis: dict[str, dict[str, Any]] = {
         "gemini": {
             "classe": GeminiProvider,
             "chave": config.api_keys.gemini_api_key,
             "modelo_padrao": "gemini-3.5-flash",
-            "chave_env": ("TOMUS_GEMINI_API_KEY", "GEMINI_API_KEY"),
+            "chave_env": ("BIBLIOTEC_GEMINI_API_KEY", "GEMINI_API_KEY"),
         },
         "groq": {
             "classe": GroqProvider,
             "chave": config.api_keys.groq_api_key,
-            "modelo_padrao": "openai/gpt-oss-20b",
+            "modelo_padrao": "openai/gpt-oss-120b",
             "chave_env": ("TOMUS_GROQ_API_KEY", "GROQ_API_KEY"),
         },
         "nvidia": {
             "classe": NvidiaProvider,
             "chave": config.api_keys.nvidia_api_key,
-            "modelo_padrao": "nvidia/nemotron-3.5-lightning-30b-a3b",
+            "modelo_padrao": "meta/llama-3.2-90b-vision-instruct",
             "chave_env": ("TOMUS_NVIDIA_API_KEY", "NVIDIA_API_KEY"),
         },
         "deepseek": {
@@ -1123,31 +1092,25 @@ def create_provider_chain(
         "claude": {
             "classe": ClaudeProvider,
             "chave": config.api_keys.claude_api_key,
-            "modelo_padrao": "claude-3-5-haiku-20241022",
+            "modelo_padrao": "claude-haiku-5-5",
             "chave_env": (
                 "TOMUS_CLAUDE_API_KEY",
                 "CLAUDE_API_KEY",
                 "ANTHROPIC_API_KEY",
             ),
         },
-        "github": {
-            "classe": GitHubModelsProvider,
-            "chave": config.api_keys.github_token,
-            "modelo_padrao": "gpt-4o",
-            "chave_env": ("TOMUS_GITHUB_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"),
-        },
     }
 
-    def _resolver_chave(nome_provedor: str, cli_key: str | None) -> str | None:
-        """Resolver a chave de API: CLI > env > config."""
+    def _resolver_chaves(nome_provedor: str, cli_key: str | None) -> list[str]:
+        """Resolver as chaves de API: CLI > env > config (suporta pool de múltiplas chaves)."""
         if cli_key:
-            return cli_key
+            return _resolve_api_keys(cli_key)
         info = provedores_disponiveis[nome_provedor]
         for env_var in info["chave_env"]:
             valor = os.environ.get(env_var, "")
             if valor:
-                return valor
-        return info["chave"] or None
+                return _resolve_api_keys(valor)
+        return _resolve_api_keys(info["chave"])
 
     def _resolver_modelo(nome_provedor: str, cli_model_val: str | None) -> str:
         """Resolver o modelo: CLI > [llm.providers.<nome>].model > config.llm.model > padrão."""
@@ -1175,12 +1138,14 @@ def create_provider_chain(
         if nome in nomes_vistos:
             return
         info = provedores_disponiveis[nome]
-        chave = _resolver_chave(nome, cli_api_key if usar_cli_key else None)
-        if not chave:
+        chaves = _resolver_chaves(nome, cli_api_key if usar_cli_key else None)
+        if not chaves:
             return  # sem chave: não adicionar
         modelo = _resolver_modelo(nome, cli_model if usar_cli_model else None)
-        instancia = info["classe"](api_key=chave, model=modelo)
-        cadeia.append((nome, instancia))
+        for idx, chave in enumerate(chaves):
+            instancia = info["classe"](api_key=chave, model=modelo)
+            rotulo = nome if idx == 0 else f"{nome} (pool chave {idx + 1})"
+            cadeia.append((rotulo, instancia))
         nomes_vistos.add(nome)
 
     # Primeiro: o provedor solicitado pelo usuário (se tiver chave).
@@ -1197,7 +1162,7 @@ def create_provider_chain(
 
     # Se o solicitado não teve chave, garantir pelo menos um com chave.
     if not cadeia:
-        for nome in ("gemini", "nvidia", "deepseek", "claude", "groq", "github"):
+        for nome in ("gemini", "nvidia", "deepseek", "claude", "groq"):
             _adicionar_provedor(nome, usar_cli_key=False, usar_cli_model=False)
             if cadeia:
                 break
@@ -1206,7 +1171,7 @@ def create_provider_chain(
         raise ValueError(
             "Nenhum provedor de LLM tem chave de API configurada. "
             "Defina gemini_api_key, nvidia_api_key, deepseek_api_key, "
-            "claude_api_key, groq_api_key ou github_token no config.toml "
+            "claude_api_key, groq_api_key no config.toml "
             "ou variáveis de ambiente."
         )
 

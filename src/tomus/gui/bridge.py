@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, QUrl, Signal, Slot
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from tomus.core.config import AppConfig
@@ -50,7 +50,7 @@ _SYSTEM_ROOTS = (
 )
 
 
-def _is_safe_path(p: Path, allowed_roots: list[Path]) -> bool:
+def _is_safe_path(p: Path | str, allowed_roots: list[Path | str]) -> bool:
     """Verificar se o caminho resolvido está dentro de raízes permitidas.
 
     Bloqueia expressamente dotfiles, diretórios sensíveis (.ssh, .gnupg, .aws,
@@ -58,15 +58,19 @@ def _is_safe_path(p: Path, allowed_roots: list[Path]) -> bool:
     com '..'.
     """
     try:
-        resolved = p.resolve(strict=False)
-    except (OSError, ValueError):
+        p_path = Path(p) if isinstance(p, str) else p
+        resolved = p_path.resolve(strict=False)
+    except (OSError, ValueError, TypeError, AttributeError):
         return False
 
     # Verificar containment nas raízes permitidas.
     for root in allowed_roots:
+        if not root or (isinstance(root, str) and not root.strip()):
+            continue
         try:
-            root_resolved = root.resolve(strict=False)
-        except (OSError, ValueError):
+            root_path = Path(root) if isinstance(root, str) else root
+            root_resolved = root_path.resolve(strict=False)
+        except (OSError, ValueError, TypeError, AttributeError):
             continue
         try:
             resolved.relative_to(root_resolved)
@@ -107,6 +111,8 @@ class WebBridge(QObject):
     sourceChanged = Signal(str)
     targetChanged = Signal(str)
     keyStatusChanged = Signal(bool)
+    keyValidationResult = Signal(str)
+    keyValidationResult = Signal(str)
 
     def __init__(
         self,
@@ -126,51 +132,66 @@ class WebBridge(QObject):
     # Estado inicial & Validação de Chaves
     # ------------------------------------------------------------------ #
 
-    @Slot(str, result=bool)
-    def checkProviderKey(self, provider: str) -> bool:
-        """Verifica se o provedor especificado possui chave configurada (TOML ou ENV)."""
+    @Slot(str, result=str)
+    def getProviderKeyStatus(self, provider: str) -> str:
+        """Retorna o status da chave do provedor: 'valid', 'invalid' ou 'missing'."""
         import os
+        from tomus.core.key_validator import validate_key_syntax
 
         prov = (provider or "").strip().lower()
+        key = ""
         if prov == "gemini":
-            return bool(
+            key = (
                 self.config.api_keys.gemini_api_key
                 or os.getenv("TOMUS_GEMINI_API_KEY")
                 or os.getenv("GEMINI_API_KEY")
+                or os.getenv("BIBLIOTEC_GEMINI_API_KEY")
+                or ""
             )
         elif prov == "groq":
-            return bool(
+            key = (
                 self.config.api_keys.groq_api_key
                 or os.getenv("TOMUS_GROQ_API_KEY")
                 or os.getenv("GROQ_API_KEY")
+                or ""
             )
         elif prov == "nvidia":
-            return bool(
+            key = (
                 self.config.api_keys.nvidia_api_key
                 or os.getenv("TOMUS_NVIDIA_API_KEY")
                 or os.getenv("NVIDIA_API_KEY")
+                or ""
             )
         elif prov == "deepseek":
-            return bool(
+            key = (
                 self.config.api_keys.deepseek_api_key
                 or os.getenv("TOMUS_DEEPSEEK_API_KEY")
                 or os.getenv("DEEPSEEK_API_KEY")
+                or ""
             )
         elif prov == "claude":
-            return bool(
+            key = (
                 self.config.api_keys.claude_api_key
                 or os.getenv("TOMUS_CLAUDE_API_KEY")
                 or os.getenv("CLAUDE_API_KEY")
                 or os.getenv("ANTHROPIC_API_KEY")
+                or ""
             )
-        elif prov == "github":
-            return bool(
-                self.config.api_keys.github_token
-                or os.getenv("TOMUS_GITHUB_TOKEN")
-                or os.getenv("GITHUB_TOKEN")
-                or os.getenv("GH_TOKEN")
-            )
-        return False
+
+        if isinstance(key, list):
+            key = key[0] if key else ""
+        key = str(key).strip()
+        if not key:
+            return "missing"
+
+        first_token = key.split(",")[0].strip()
+        ok, _ = validate_key_syntax(prov, first_token)
+        return "valid" if ok else "invalid"
+
+    @Slot(str, result=bool)
+    def checkProviderKey(self, provider: str) -> bool:
+        """Verifica se o provedor especificado possui chave configurada e sintaticamente válida."""
+        return self.getProviderKeyStatus(provider) == "valid"
 
     @Slot(result=str)
     def getInitialState(self) -> str:
@@ -240,11 +261,10 @@ class WebBridge(QObject):
 
         model_defaults = {
             "gemini": "gemini-3.5-flash",
-            "groq": "llama-3.3-70b-versatile",
-            "nvidia": "nvidia/llama-3.1-nemotron-70b-instruct",
+            "groq": "openai/gpt-oss-120b",
+            "nvidia": "meta/llama-3.2-90b-vision-instruct",
             "deepseek": "deepseek-flash",
-            "claude": "claude-3-5-sonnet-latest",
-            "github": "gpt-4o",
+            "claude": "claude-haiku-5-5",
         }
         if provider_name in model_defaults:
             cfg.llm.model = model_defaults[provider_name]
@@ -334,10 +354,212 @@ class WebBridge(QObject):
         p = Path(path)
         if not p.exists():
             return
-        if not _is_safe_path(p, [self.source_dir, self.target_dir, Path.home()]):
+        roots = [
+            Path(d) for d in (self.source_dir, self.target_dir) if d and str(d).strip()
+        ] + [Path.home()] + list(_USER_SAFE_DIRS)
+        if not _is_safe_path(p, roots):
             _logger.warning("rejeitado openPdf em caminho não seguro: %s", path)
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(p.resolve())))
+        p_resolved = p.resolve()
+        if sys.platform == "darwin":
+            # Abrir 100% infalível no leitor padrão do macOS via 'open'.
+            subprocess.Popen(["open", str(p_resolved)])
+        else:
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(p_resolved)))
+
+    @Slot(str, str, result=str)
+    def validateProviderKey(self, provider: str, key: str) -> str:
+        """Validar uma chave de provedor via chamada real à API (dry-run de 1 token).
+
+        Retorna JSON: {'valid': True/False, 'error': ''/'mensagem clara'}.
+        """
+        from tomus.core.key_validator import validate_provider_key_live
+
+        prov = (provider or "").strip().lower()
+        key = (key or "").strip()
+        if not key:
+            result = _json.dumps({"valid": False, "error": "Chave não informada"})
+            self.keyValidationResult.emit(result)
+            return result
+
+        ok, msg = validate_provider_key_live(prov, key)
+        result = _json.dumps({"valid": ok, "error": "" if ok else msg})
+        self.keyValidationResult.emit(result)
+        return result
+
+    def _validate_gemini(self, api_key: str) -> str:
+        """Validar chave Gemini fazendo uma chamada mínima à API."""
+        import httpx
+        import json as _json
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    params={"key": api_key},
+                )
+                if resp.status_code == 200:
+                    return _json.dumps({"valid": True, "error": ""})
+                elif resp.status_code in (400, 403):
+                    return _json.dumps(
+                        {"valid": False, "error": "Chave Gemini inválida ou não autorizada"}
+                    )
+                else:
+                    return _json.dumps(
+                        {
+                            "valid": False,
+                            "error": f"Erro HTTP {resp.status_code} validando chave Gemini",
+                        }
+                    )
+        except httpx.ConnectError:
+            return _json.dumps(
+                {"valid": False, "error": "Não foi possível conectar à API do Gemini"}
+            )
+        except httpx.TimeoutException:
+            return _json.dumps(
+                {"valid": False, "error": "Timeout ao validar chave Gemini"}
+            )
+        except Exception as exc:
+            return _json.dumps({"valid": False, "error": str(exc)})
+
+    def _validate_groq(self, api_key: str) -> str:
+        """Validar chave Groq fazendo uma chamada mínima à API."""
+        import httpx
+        import json as _json
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.get(
+                    "https://api.groq.com/openai/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                if resp.status_code == 200:
+                    return _json.dumps({"valid": True, "error": ""})
+                elif resp.status_code == 401:
+                    return _json.dumps(
+                        {"valid": False, "error": "Chave Groq inválida ou não autorizada"}
+                    )
+                else:
+                    return _json.dumps(
+                        {
+                            "valid": False,
+                            "error": f"Erro HTTP {resp.status_code} validando chave Groq",
+                        }
+                    )
+        except httpx.ConnectError:
+            return _json.dumps({"valid": False, "error": "Não foi possível conectar à API do Groq"})
+        except httpx.TimeoutException:
+            return _json.dumps({"valid": False, "error": "Timeout ao validar chave Groq"})
+        except Exception as exc:
+            return _json.dumps({"valid": False, "error": str(exc)})
+
+    def _validate_nvidia(self, api_key: str) -> str:
+        """Validar chave NVIDIA NIM fazendo uma chamada mínima à API."""
+        import httpx
+        import json as _json
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.get(
+                    "https://integrate.api.nvidia.com/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                if resp.status_code == 200:
+                    return _json.dumps({"valid": True, "error": ""})
+                elif resp.status_code == 401:
+                    return _json.dumps(
+                        {
+                            "valid": False,
+                            "error": "Chave NVIDIA NIM inválida ou não autorizada",
+                        }
+                    )
+                else:
+                    return _json.dumps(
+                        {
+                            "valid": False,
+                            "error": f"Erro HTTP {resp.status_code} validando chave NVIDIA",
+                        }
+                    )
+        except httpx.ConnectError:
+            return _json.dumps(
+                {"valid": False, "error": "Não foi possível conectar à API da NVIDIA NIM"}
+            )
+        except httpx.TimeoutException:
+            return _json.dumps({"valid": False, "error": "Timeout ao validar chave NVIDIA NIM"})
+        except Exception as exc:
+            return _json.dumps({"valid": False, "error": str(exc)})
+
+    def _validate_deepseek(self, api_key: str) -> str:
+        """Validar chave DeepSeek fazendo uma chamada mínima à API."""
+        import httpx
+        import json as _json
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.get(
+                    "https://api.deepseek.com/v1/models",
+                    headers={"Authorization": f"Bearer {api_key}"},
+                )
+                if resp.status_code == 200:
+                    return _json.dumps({"valid": True, "error": ""})
+                elif resp.status_code == 401:
+                    return _json.dumps(
+                        {"valid": False, "error": "Chave DeepSeek inválida ou não autorizada"}
+                    )
+                else:
+                    return _json.dumps(
+                        {
+                            "valid": False,
+                            "error": f"Erro HTTP {resp.status_code} validando chave DeepSeek",
+                        }
+                    )
+        except httpx.ConnectError:
+            return _json.dumps(
+                {"valid": False, "error": "Não foi possível conectar à API da DeepSeek"}
+            )
+        except httpx.TimeoutException:
+            return _json.dumps({"valid": False, "error": "Timeout ao validar chave DeepSeek"})
+        except Exception as exc:
+            return _json.dumps({"valid": False, "error": str(exc)})
+
+    def _validate_claude(self, api_key: str) -> str:
+        """Validar chave Anthropic Claude fazendo uma chamada mínima à API."""
+        import httpx
+        import json as _json
+
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.get(
+                    "https://api.anthropic.com/v1/models",
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "anthropic-version": "2023-06-01",
+                    },
+                )
+                if resp.status_code == 200:
+                    return _json.dumps({"valid": True, "error": ""})
+                elif resp.status_code == 401:
+                    return _json.dumps(
+                        {
+                            "valid": False,
+                            "error": "Chave Anthropic Claude inválida ou não autorizada",
+                        }
+                    )
+                else:
+                    return _json.dumps(
+                        {
+                            "valid": False,
+                            "error": f"Erro HTTP {resp.status_code} validando chave Claude",
+                        }
+                    )
+        except httpx.ConnectError:
+            return _json.dumps(
+                {"valid": False, "error": "Não foi possível conectar à API da Anthropic Claude"}
+            )
+        except httpx.TimeoutException:
+            return _json.dumps({"valid": False, "error": "Timeout ao validar chave Claude"})
+        except Exception as exc:
+            return _json.dumps({"valid": False, "error": str(exc)})
 
     @Slot(str)
     def revealPath(self, path: str) -> None:
@@ -346,17 +568,34 @@ class WebBridge(QObject):
         p = Path(path)
         if not p.exists():
             return
-        if not _is_safe_path(p, [self.source_dir, self.target_dir, Path.home()]):
+        roots = [
+            Path(d) for d in (self.source_dir, self.target_dir) if d and str(d).strip()
+        ] + [Path.home()] + list(_USER_SAFE_DIRS)
+        if not _is_safe_path(p, roots):
             _logger.warning("rejeitado revealPath em caminho não seguro: %s", path)
             return
         p_resolved = p.resolve()
         target = p_resolved if p_resolved.exists() else p_resolved.parent
         if sys.platform == "darwin":
-            subprocess.run(["open", "-R", str(target)])
+            subprocess.Popen(["open", "-R", str(target)])
         elif sys.platform == "win32":
             subprocess.run(["explorer", f"/select,{target}"])
         else:
             subprocess.run(["xdg-open", str(target)])
+
+    @Slot(str)
+    def copyToClipboard(self, text: str) -> None:
+        """Copiar texto para a área de transferência do sistema."""
+        if not text:
+            return
+        try:
+            from PySide6.QtGui import QGuiApplication
+
+            cb = QGuiApplication.clipboard()
+            if cb is not None:
+                cb.setText(text)
+        except Exception as exc:  # pragma: no cover - dependente do ambiente Qt
+            print(f"[WebBridge] Falha ao copiar para área de transferência: {exc}", file=sys.stderr)
 
     @Slot(str)
     def openExternalUrl(self, url: str) -> None:
@@ -372,24 +611,37 @@ class WebBridge(QObject):
     @Slot(str, result=bool)
     def approveManualTriage(self, triage_json: str) -> bool:
         if not self.triage_service:
-            return False
+            target = getattr(self, "target_dir", None) or getattr(self.config.general, "target_dir", None)
+            if target and Path(target).exists():
+                self.triage_service = ManualTriageService(target, self.config)
+            else:
+                return False
         try:
             data = json.loads(triage_json)
             entry = FileManifestEntry(
                 source_path=data["source_path"],
-                destination_path=None,
-                sha256="",
+                destination_path=data.get("destination_path"),
+                sha256=data.get("sha256", ""),
                 status=ProcessStatus.MANUAL_REVIEW,
             )
+            area_basica = (data.get("area_basica") or "Outros").strip()
+            grande_area = data.get("grande_area")
+            if not grande_area or grande_area == "Outros":
+                from tomus.core.taxonomy import _build_area_to_grande_area
+                mapping = _build_area_to_grande_area()
+                grande_area = mapping.get(area_basica, "Outros")
+            subarea = (data.get("subarea") or "").strip() or "Geral"
+
             updated = self.triage_service.approve_and_materialize(
                 entry=entry,
-                grande_area=data["grande_area"],
-                area_basica=data["area_basica"],
+                grande_area=grande_area,
+                area_basica=area_basica,
+                subarea=subarea,
                 tipo=data.get("tipo", "Outros"),
-                title=data["title"],
+                title=data.get("title", ""),
                 subtitle=data.get("subtitle", ""),
-                authors=data.get("authors", []),
-                year=data.get("year"),
+                authors=data.get("authors") or [],
+                year=int(data["year"]) if data.get("year") else None,
             )
             # Notificar o frontend com evento de atualização
             event = PipelineEvent(
@@ -406,6 +658,14 @@ class WebBridge(QObject):
         except Exception as exc:
             print(f"[WebBridge] Erro na triagem manual: {exc}")
             return False
+
+    @Slot(result=str)
+    def undoManualTriage(self) -> str:
+        """Desfazer a última aprovação manual de triagem."""
+        if not self.triage_service:
+            return json.dumps({"success": False, "message": "Serviço de triagem indisponível"})
+        ok, msg = self.triage_service.undo_last_approval()
+        return json.dumps({"success": ok, "message": msg})
 
     # ------------------------------------------------------------------ #
     # Preferências & Cache

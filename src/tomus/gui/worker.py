@@ -41,6 +41,7 @@ from tomus.storage.organizer import (
     MANIFEST_FILENAME,
     RELATORIO_FILENAME,
     REVISAO_DIR,
+    _resolve_collision,
 )
 
 __all__ = ["PipelineWorker", "ManualTriageService"]
@@ -135,6 +136,7 @@ class ManualTriageService(QObject):
         self.target_dir = Path(target_dir).resolve()
         self.config = config
         self.cache = cache or FileCache(enabled=True)
+        self._history: list[tuple[FileManifestEntry, Path, Path]] = []
 
     # ------------------------------------------------------------------ #
     # API pública
@@ -150,6 +152,7 @@ class ManualTriageService(QObject):
         subtitle: str,
         authors: list[str],
         year: int | None,
+        subarea: str = "Geral",
     ) -> FileManifestEntry:
         """Aprovar classificação manual e materializar o item na biblioteca."""
         # Validar/reparar o par CAPES/CNPq.
@@ -168,11 +171,31 @@ class ManualTriageService(QObject):
             year=year,
         )
 
-        sha256 = entry.sha256 or self._compute_sha256(Path(entry.source_path))
+        # Localizar o arquivo físico existente (seja na origem ou já em revisao_manual)
+        source_path = Path(entry.source_path)
+        actual_file_path: Path | None = None
+        if source_path.exists():
+            actual_file_path = source_path
+        elif entry.destination_path and Path(entry.destination_path).exists():
+            actual_file_path = Path(entry.destination_path)
+        else:
+            candidate = self.target_dir / "revisao_manual" / source_path.name
+            if candidate.exists():
+                actual_file_path = candidate
 
+        if actual_file_path is None or not actual_file_path.exists():
+            raise FileNotFoundError(
+                f"Arquivo PDF não encontrado na origem ({source_path}) nem em revisao_manual."
+            )
+
+        sha256 = entry.sha256 or self._compute_sha256(actual_file_path)
+
+        subarea_clean = (subarea or "").strip() or "Geral"
         classification: dict[str, Any] = {
             "grande_area": grande_area,
             "area_basica": area_basica,
+            "subarea": subarea_clean,
+            "especialidade": "Geral",
             "tipo": tipo,
             "authors": authors,
             "title": title,
@@ -182,25 +205,33 @@ class ManualTriageService(QObject):
             "reasoning": "manual_human_review",
         }
 
-        source_path = Path(entry.source_path)
-
         # Destino na árvore temática com resolução de colisão.
-        dest_dir = self.target_dir / grande_area / area_basica / tipo
+        dest_dir = self.target_dir / area_basica / subarea_clean / tipo
         dest_dir.mkdir(parents=True, exist_ok=True)
         nome_final, _colisao = _resolve_collision(
-            dest_dir, filename, source_path, src_sha256=sha256
+            dest_dir, filename, actual_file_path, src_sha256=sha256
         )
         dest_path = dest_dir / nome_final
 
-        # Copiar o PDF (modo seguro: cópia, nunca remoção do original por aqui).
-        shutil.copy2(source_path, dest_path)
+        # Copiar o PDF para o destino temático
+        shutil.copy2(actual_file_path, dest_path)
+
+        # Se o arquivo já estava em revisao_manual, limpar o arquivo obsoleto de lá
+        if actual_file_path.parent == (self.target_dir / "revisao_manual") and actual_file_path != dest_path:
+            try:
+                actual_file_path.unlink()
+                old_companion = actual_file_path.with_suffix(".md")
+                if old_companion.exists():
+                    old_companion.unlink()
+            except Exception:
+                pass
 
         # Arquivo companheiro .md ABNT NBR 6023.
         companion_path = dest_path.with_suffix(".md")
         companion_path.write_text(
             generate_companion_markdown(
                 destination_path=companion_path,
-                source_path=source_path,
+                source_path=actual_file_path,
                 sha256=sha256,
                 classification=classification,
                 used_ocr=bool(entry.used_ocr),
@@ -236,8 +267,39 @@ class ManualTriageService(QObject):
             used_ocr=bool(entry.used_ocr),
             classification=classification,
         )
+        self._history.append((entry, dest_path, companion_path))
         self.triage_completed.emit(entry_out)
         return entry_out
+
+    def undo_last_approval(self) -> tuple[bool, str]:
+        """Desfazer a última aprovação de triagem manual e restaurar o estado."""
+        if not self._history:
+            return False, "Nenhuma aprovação de triagem registrada para desfazer."
+
+        orig_entry, dest_pdf, companion_md = self._history.pop()
+        try:
+            # 1. Restaurar em revisao_manual antes de remover do destino
+            revisao_dir = self.target_dir / REVISAO_DIR
+            revisao_dir.mkdir(parents=True, exist_ok=True)
+            revisao_pdf = revisao_dir / Path(orig_entry.source_path).name
+            if not revisao_pdf.exists() and dest_pdf.exists():
+                shutil.copy2(dest_pdf, revisao_pdf)
+            elif not revisao_pdf.exists() and Path(orig_entry.source_path).exists():
+                shutil.copy2(orig_entry.source_path, revisao_pdf)
+
+            # 2. Remover PDF e .md materializados do destino temático
+            if dest_pdf.exists():
+                dest_pdf.unlink()
+            if companion_md.exists():
+                companion_md.unlink()
+
+            # 3. Remover do cache
+            if orig_entry.sha256:
+                self.cache.delete(orig_entry.sha256)
+
+            return True, f"Aprovação de {Path(orig_entry.source_path).name} desfeita com sucesso."
+        except Exception as exc:
+            return False, f"Falha ao desfazer aprovação: {exc}"
 
     # ------------------------------------------------------------------ #
     # Helpers internos

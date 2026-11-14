@@ -55,6 +55,8 @@ class _BaixaConfiancaProvider:
         return ClassificationResult(
             grande_area="Ciências Humanas",
             area_basica="Psicologia",
+            subarea="Psicologia Clínica",
+            especialidade="Psicoterapia Cognitivo-Comportamental",
             tipo="Livro",
             authors=["Silva, João"],
             title="Título",
@@ -92,7 +94,7 @@ def test_pipeline_organiza_aprovados_em_arvore_tematica(tmp_path: Path):
     assert summary.manual_review_count == 0
 
     esperado = (
-        target / "Ciências Humanas" / "Psicologia" / "Livro"
+        target / "Psicologia" / "Psicologia Clínica" / "Livro"
         / "Silva, João - Título de teste - 2020.pdf"
     )
     assert esperado.exists(), f"arquivo não encontrado em {esperado}"
