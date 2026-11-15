@@ -354,7 +354,7 @@ flowchart TD
     subgraph L4 ["4. Camada de Armazenamento & Sistema de Arquivos"]
         direction LR
         Org["LibraryOrganizer<br><b>(Cópia / Mover Atômico)</b>"]
-        Comp["Companion Metadata<br><b>(.tomus.json & .bib)</b>"]
+        Comp["Companion Metadata<br><b>(.md YAML + ABNT NBR 6023)</b>"]
         Org --> Comp
     end
 
@@ -373,7 +373,9 @@ flowchart TD
           <li><strong>Radar de Identificadores (DOI / ISBN):</strong> Busca por expressões regulares de DOI e ISBN com validação de checksum e consulta automática às APIs oficiais (CrossRef e Google Books).</li>
           <li><strong>Consulta ao Cache SHA-256:</strong> Se o hash do texto já foi classificado anteriormente, o resultado é recuperado em menos de 1 milissegundo.</li>
           <li><strong>Inferência Semântica via LLM:</strong> Se não estiver em cache, o Tomus consulta o pool de modelos de inteligência artificial com injeção estruturada da taxonomia CAPES.</li>
-          <li><strong>Operação Atômica de Disco:</strong> O arquivo é copiado ou movido para a pasta correta (<code>Grande Área / Área Básica / Subárea</code>), renomeado no padrão <code>SOBRENOME_ANO_TITULO.pdf</code> e acompanhado de seu arquivo de metadados <code>.tomus.json</code>.</li>
+          <li><strong>Classificação Controlada CAPES/CNPq:</strong> A função <code>normalize_and_resolve_taxonomy()</code> consolida sinônimos em vocabulário controlado de subáreas e resolve desambiguações semânticas (como Psicologia Clínica vs. Psicanálise).</li>
+          <li><strong>Deduplicação em 3 Camadas &amp; Controle de Obsolescência (<code>LibraryIndex</code>):</strong> Avalia <strong>L1_SHA256</strong> (hash global entre subáreas), <strong>L2_DOI/ISBN/ISSN</strong> (identificadores normalizados) e <strong>L3_FINGERPRINT</strong> (impressão digital bibliográfica), protegidos pelas <strong>Guardas Estruturais G1</strong> (volumes, partes, público-alvo), <strong>G2</strong> (proporção de páginas &ge; 0,25 contra capítulos soltos) e <strong>G3</strong> (subtítulos disjuntos em títulos curtos). Mesma edição vai para <code>duplicatas/</code>; edições antigas superadas vão para <code>obsoletos/</code>, inclusive via substituição reversa segura validada por <code>_is_within()</code>.</li>
+          <li><strong>Operação Atômica de Disco:</strong> O arquivo é copiado ou movido para a pasta correta (<code>Área Básica / Subárea / Tipo</code>), renomeado no padrão <code>Autor - Título - Ano.pdf</code> e acompanhado de seu arquivo companheiro <code>.md</code> (front matter YAML + ABNT NBR 6023).</li>
         </ol>
 
         <h2>5. Motor de IA: Pool Multi-Chave e Cascata de Fallback</h2>
@@ -416,7 +418,7 @@ flowchart TD
         <h2>6. ABNT NBR 6023 Normativa</h2>
         <p>A formatação de referências do Tomus segue com exatidão a norma brasileira <strong>ABNT NBR 6023</strong>:</p>
         <ul>
-          <li><strong>Autores:</strong> Sobrenome em caixa alta, prenome em caracteres normais. <em>Sem negrito</em>, conforme estipulado pela norma.</li>
+          <li><strong>Autores:</strong> Sobrenome em caixa alta, prenome em caracteres normais (ou instituição por extenso em caixa alta e formato <code>BRASIL. Órgão</code> para autoria institucional). <em>Sem negrito</em>, conforme estipulado pela norma.</li>
           <li><strong>Livros / Monografias:</strong> Título em <strong>negrito puro</strong> (<code>&lt;strong&gt;</code>); subtítulo após dois pontos em caracteres normais.</li>
           <li><strong>Periódicos / Artigos:</strong> Título do artigo normal; <strong>nome da revista em negrito puro</strong>.</li>
           <li><strong>Edição:</strong> Sanitização contra duplicações, assegurando saídas canônicas como <code>2. ed.</code> ou <code>3. ed.</code>.</li>

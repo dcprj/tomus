@@ -14,8 +14,17 @@ O **Tomus** é uma aplicação desktop acadêmica livre e gratuita projetada par
 Ele organiza seus documentos diretamente em seu computador conforme a taxonomia oficial de áreas do conhecimento da **CAPES/CNPq** e gera arquivos de metadados complementares (`.md`) com fichamento e referências completas estritamente formatadas segundo a norma **ABNT NBR 6023**.
 
 ```
-<Destino>/<Grande Área>/<Área Básica>/<Tipo>/<Autor> - <Título> - <Subtítulo> - <Ano>.pdf
+<Destino>/<Área Básica>/<Subárea>/<Tipo>/<Autor> - <Título> - <Ano>.pdf
+<Destino>/duplicatas/   (exemplares repetidos da mesma edição)
+<Destino>/obsoletos/    (edições antigas superadas por edição mais recente)
+<Destino>/revisao_manual/
 ```
+
+## 🌐 Portal Oficial & Documentação
+
+* **Landing Page Oficial:** [dcprj.github.io/tomus](https://dcprj.github.io/tomus/)
+* **Manual do Usuário:** [Versão Web](https://dcprj.github.io/tomus/manual_do_usuario.html) · [Markdown (`docs/MANUAL_DO_USUARIO.md`)](docs/MANUAL_DO_USUARIO.md)
+* **Documentação Técnica & Arquitetura:** [Versão Web](https://dcprj.github.io/tomus/documentacao_tecnica.html) · [Markdown (`docs/DOCUMENTACAO_TECNICA.md`)](docs/DOCUMENTACAO_TECNICA.md)
 
 ---
 

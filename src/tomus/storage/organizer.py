@@ -1,21 +1,30 @@
-"""Materializador de diretórios da biblioteca (Item 21).
+"""Materializador de diretórios e controle de deduplicação/obsolescência (Item 21).
 
 Organiza arquivos aprovados em
-<TARGET_DIR>/<Área Básica>/<Subárea>/<Tipo>/<nome_formatado>.pdf e
-arquivos de baixa confiança/erro em
-<TARGET_DIR>/revisao_manual/<source_path.name> (preservando o nome original).
+<TARGET_DIR>/<Área Básica>/<Subárea>/<Tipo>/<nome_formatado>.pdf,
+duplicatas da mesma edição em <TARGET_DIR>/duplicatas/,
+edições superadas (mais antigas) em <TARGET_DIR>/obsoletos/, e
+arquivos de baixa confiança/erro em <TARGET_DIR>/revisao_manual/.
 
-Suporta cópia (shutil.copy2) ou movimentação segura, modo dry_run (sem criar
-pastas temáticas nem copiar/mover PDFs), resolução de colisão por SHA-256
-(duplicate_skipped ou sufixo ' (2).pdf') e gravação de manifest.json e
-revisao_manual/relatorio_revisao.md.
+Implementa a classe ``LibraryIndex`` com detecção em 3 camadas:
+  1. SHA-256 global (entre todas as subáreas/pastas) -> duplicatas/
+  2. DOI / ISBN-13 / ISSN normalizados + Guardas G1/G2/G3 -> duplicatas/ ou obsoletos/
+  3. Impressão digital bibliográfica (work_fingerprint) + Guardas G1/G2/G3 -> duplicatas/ ou obsoletos/
+
+Quando uma edição mais recente chega para uma obra já classificada, realiza
+substituição reversa segura (validada por ``_is_within``), movendo a edição
+antiga para ``obsoletos/`` e promovendo a nova para a árvore temática.
 """
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
+import re
 import shutil
+import unicodedata
+from collections import defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,19 +34,552 @@ from tomus.core.models import (
     FileManifestEntry,
     ProcessStatus,
 )
-
+from tomus.core.prompts import extract_first_author_key
+from tomus.extractors.identifiers import (
+    normalize_doi,
+    normalize_isbn,
+    normalize_issn,
+)
 from tomus.storage.companion import (
     generate_companion_markdown,
     generate_duplicate_companion_markdown,
+    generate_obsolete_companion_markdown,
 )
 
 REVISAO_DIR = "revisao_manual"
 DUPLICATAS_DIR = "duplicatas"
+OBSOLETOS_DIR = "obsoletos"
 MANIFEST_FILENAME = "manifest.json"
 RELATORIO_FILENAME = "relatorio_revisao.md"
 COLLISION_SUFFIX = " (2)"
 
+_NON_CANONICAL_DIRS = {REVISAO_DIR, DUPLICATAS_DIR, OBSOLETOS_DIR}
+_FM_RE = re.compile(r"^---\n(.*?)\n---", re.S)
 
+# --------------------------------------------------------------------------- #
+# Constantes e helpers para Guardas G1/G2/G3 e impressão digital (work_fingerprint)
+# --------------------------------------------------------------------------- #
+_STOPWORDS = set(
+    "a o as os um uma uns umas de da do das dos d e em no na nos nas num numa "
+    "para pra por pelo pela pelos pelas com sem sobre entre ao aos à às the of "
+    "and in on for to an la le les el los las del des du un une und der die das ein eine y".split()
+)
+
+_GENERIC_SUBTITLE_WORDS = set(
+    "obras escolhidas obras completas edicao revista ampliada atualizada "
+    "introducao estudo estudos teoria pratica aplicacoes volume vol livro parte".split()
+)
+
+_ROMAN_NUMERALS = {
+    "i": 1, "ii": 2, "iii": 3, "iv": 4, "v": 5, "vi": 6, "vii": 7, "viii": 8,
+    "ix": 9, "x": 10, "xi": 11, "xii": 12, "xiii": 13, "xiv": 14, "xv": 15,
+    "xvi": 16, "xvii": 17, "xviii": 18, "xix": 19, "xx": 20, "xxi": 21,
+    "xxii": 22, "xxiii": 23, "xxiv": 24, "xxv": 25, "xxvi": 26, "xxvii": 27,
+}
+
+_DISC_WORDS = {
+    "vol": "vol", "volume": "vol", "v": "vol", "tomo": "vol", "t": "vol",
+    "parte": "part", "part": "part", "pt": "part",
+    "livro": "livro", "book": "livro", "seminario": "livro", "seminar": "livro", "libro": "livro",
+    "caderno": "part", "modulo": "part",
+}
+
+_DISC_RE = re.compile(
+    r"\b(" + "|".join(sorted(_DISC_WORDS, key=len, reverse=True))
+    + r")(?:(?<=\w\w)\s*[:.-]?\s*|(?:\s*[:.-]\s*|\s+))0*(\d{1,3}|[ivxl]{1,6})\b"
+)
+
+_AUDIENCE_WORDS = {
+    "paciente": "paciente", "pacientes": "paciente",
+    "cliente": "paciente", "clientes": "paciente",
+    "terapeuta": "terapeuta", "terapeutas": "terapeuta", "clinico": "terapeuta",
+    "aluno": "aluno", "estudante": "aluno", "professor": "professor",
+    "exercicios": "exercicios", "workbook": "exercicios",
+    "instrutor": "professor", "facilitador": "professor", "cuidador": "cuidador",
+}
+
+_FILENAME_NOISE_RE = re.compile(
+    r"\b(z library|zlibrary|pdfdrive|libgen|completo|www|pdf|ebook|scan|copia)\b"
+)
+
+_SERIES_PREFIX_RE = re.compile(
+    r"^(obras?\s+completas?|obras?\s+psicologicas?\s+completas?|obras?\s+escolhidas?|"
+    r"o\s+seminario|el\s+seminario|seminario|colecao\s+os\s+pensadores)\b"
+)
+
+_SYNTHETIC_TEST_TITLES = {
+    "titulo de teste",
+    "titulo teste",
+    "livro de teste",
+    "livro teste",
+    "obra de teste",
+    "obra teste",
+}
+
+MIN_PAGE_RATIO = 0.25
+
+
+def _fold_text(value: Any) -> str:
+    """Normalizar texto para comparação (sem acentos, minúsculas, alfanumérico)."""
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    text = text.casefold().replace("&", " e ")
+    text = re.sub(r"\(\s*(?:os?|as?)\s*\)", " ", text)
+    text = re.sub(r"\bpsicologasos\b", "psicologas", text)
+    text = re.sub(r"[^0-9a-z]+", " ", text)
+    return " ".join(text.split())
+
+
+def _is_within(child: Path, parent: Path) -> bool:
+    """Validar que ``child`` está estritamente contido dentro de ``parent``."""
+    try:
+        return child.resolve().is_relative_to(parent.resolve())
+    except OSError:
+        return False
+
+
+def _parse_front_matter_safe(md_path: Path) -> dict[str, Any] | None:
+    """Analisar front matter YAML de um .md companheiro sem usar eval()."""
+    try:
+        raw = md_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = _FM_RE.match(raw)
+    if not match:
+        return None
+
+    data: dict[str, Any] = {}
+    current_key: str | None = None
+    for line in match.group(1).splitlines():
+        if line.startswith("  - ") and current_key:
+            item_raw = line[4:].strip()
+            try:
+                item_val = ast.literal_eval(item_raw)
+            except (ValueError, SyntaxError):
+                item_val = item_raw.strip("'\"")
+            existing = data.setdefault(current_key, [])
+            if isinstance(existing, list):
+                existing.append(item_val)
+            continue
+
+        if ":" in line:
+            k, _, v = line.partition(":")
+            current_key = k.strip()
+            val_raw = v.strip()
+            if not val_raw:
+                continue
+            low = val_raw.lower()
+            if low == "true":
+                data[current_key] = True
+            elif low == "false":
+                data[current_key] = False
+            elif low in ("null", "none"):
+                data[current_key] = None
+            else:
+                try:
+                    data[current_key] = ast.literal_eval(val_raw)
+                except (ValueError, SyntaxError):
+                    data[current_key] = val_raw.strip("'\"")
+    return data
+
+
+def _extract_discriminators(
+    title: str,
+    subtitle: str,
+    orig_filename: str,
+    volume_field: str | None = None,
+    tipo: str = "",
+) -> dict[str, str]:
+    """Extrair discriminadores estruturais (vol, part, livro, aud) para Guarda G1."""
+    out: dict[str, str] = {}
+    for text in (title, subtitle):
+        folded = _fold_text(text)
+        for m in _DISC_RE.finditer(folded):
+            kind, val = _DISC_WORDS[m.group(1)], m.group(2)
+            if val.isdigit():
+                if 1 <= int(val) <= 60:
+                    out.setdefault(kind, str(int(val)))
+            elif val in _ROMAN_NUMERALS:
+                out.setdefault(kind, str(_ROMAN_NUMERALS[val]))
+        for tok in folded.split():
+            if tok in _AUDIENCE_WORDS:
+                out.setdefault("aud", _AUDIENCE_WORDS[tok])
+
+    if tipo in ("Livro", "Outros") and volume_field:
+        vf = _fold_text(str(volume_field))
+        m_num = re.search(r"\b(\d{1,2})\b", vf)
+        if m_num:
+            v_int = int(m_num.group(1))
+            ctx = _fold_text(f"{title} {subtitle} {orig_filename}")
+            if v_int in (1, 2, 3, 4) or any(
+                w in ctx for w in ("vol", "volume", "tomo", "seminario", "obras completas", "oc ")
+            ):
+                out.setdefault("vol", str(v_int))
+        elif vf in _ROMAN_NUMERALS:
+            out.setdefault("vol", str(_ROMAN_NUMERALS[vf]))
+
+    orig_stem = re.sub(r"\(\d+\)$", "", Path(orig_filename or "").stem.strip())
+    f_orig = _FILENAME_NOISE_RE.sub(" ", _fold_text(orig_stem))
+    for m in _DISC_RE.finditer(f_orig):
+        kind, val = _DISC_WORDS[m.group(1)], m.group(2)
+        if val.isdigit() and 1 <= int(val) <= 40:
+            if kind == "livro" and "colecao" in f_orig and "seminario" not in f_orig:
+                continue
+            out.setdefault(kind, str(int(val)))
+        elif val in _ROMAN_NUMERALS:
+            out.setdefault(kind, str(_ROMAN_NUMERALS[val]))
+    for tok in f_orig.split():
+        if tok in _AUDIENCE_WORDS:
+            out.setdefault("aud", _AUDIENCE_WORDS[tok])
+    return out
+
+
+def _build_title_fingerprint(title: str, subtitle: str) -> tuple[str, str, set[str], bool]:
+    """Retornar (main_title_key, full_title_key, subtitle_distinct_tokens, is_weak)."""
+    folded_title = _fold_text(title)
+    if folded_title in _SYNTHETIC_TEST_TITLES:
+        return folded_title, folded_title, set(), True
+
+    t_clean = _DISC_RE.sub(" ", folded_title)
+    t_clean = _SERIES_PREFIX_RE.sub(" ", t_clean).strip()
+    t_tokens = [
+        t for t in t_clean.split()
+        if t not in _STOPWORDS and not re.fullmatch(r"(1[5-9]|20)\d\d", t)
+    ]
+
+    s_clean = _DISC_RE.sub(" ", _fold_text(subtitle))
+    s_clean = _SERIES_PREFIX_RE.sub(" ", s_clean).strip()
+    s_tokens = [
+        t for t in s_clean.split()
+        if t not in _STOPWORDS and not re.fullmatch(r"(1[5-9]|20)\d\d", t)
+    ]
+
+    if not t_tokens and s_tokens:
+        t_tokens = s_tokens
+        s_tokens = []
+
+    main_key = " ".join(t_tokens)
+    full_key = " ".join(t_tokens + [t for t in s_tokens if t not in t_tokens])
+    sub_distinct = set(s_tokens) - set(t_tokens) - _GENERIC_SUBTITLE_WORDS
+    is_weak = len(t_tokens) == 0 or (len(t_tokens) == 1 and len(t_tokens[0]) < 5)
+    return main_key, full_key, sub_distinct, is_weak
+
+
+def _parse_edition(
+    ed_str: str | None,
+    title: str = "",
+    subtitle: str = "",
+    orig_filename: str = "",
+) -> tuple[int | None, int]:
+    """Extrair ``(edition_number, revision_flag)``, ex.: DSM-5 -> (5, 0), DSM-5-TR -> (5, 1)."""
+    combined = _fold_text(f"{title} {subtitle} {orig_filename}")
+    rev = 1 if re.search(r"\bdsm\s*5\s*tr\b|\btexto\s+revisado\b|\brev\b", combined) else 0
+    if ed_str:
+        f_ed = _fold_text(str(ed_str))
+        if f_ed not in ("nao especificada", "none", "null", ""):
+            m = re.search(r"\b(\d{1,2})\b", f_ed)
+            if m and 1 <= int(m.group(1)) <= 50:
+                return int(m.group(1)), rev
+    m_orig = re.search(r"\b(\d{1,2})\s*(?:a|o)?\s*ed(?:icao)?\b", _fold_text(orig_filename))
+    if m_orig and 1 <= int(m_orig.group(1)) <= 50:
+        return int(m_orig.group(1)), rev
+    if re.search(r"\bdsm\s*5\b", combined):
+        return 5, rev
+    return None, rev
+
+
+def _parse_year(y: int | str | None) -> int | None:
+    if y is None:
+        return None
+    m = re.search(r"\b(1[5-9]\d\d|20[0-2]\d)\b", str(y))
+    return int(m.group(1)) if m else None
+
+
+def is_structurally_compatible(
+    a: dict[str, Any],
+    b: dict[str, Any],
+    *,
+    via_identifier: bool = False,
+) -> bool:
+    """Aplicar Guardas G1 (discriminadores), G2 (proporção de páginas) e G3 (subtítulos)."""
+    da, db = a["_disc"], b["_disc"]
+    for k in ("part", "aud", "livro"):
+        if da.get(k) != db.get(k):
+            return False
+
+    if "vol" in da and "vol" in db and da["vol"] != db["vol"]:
+        return False
+    if ("vol" in da) != ("vol" in db):
+        if any(w in _fold_text(a.get("titulo", "")) for w in ("seminario", "obras completas", "colecao")):
+            return False
+
+    pa, pb = a.get("_pages"), b.get("_pages")
+    if pa and pb:
+        if min(pa, pb) / max(pa, pb) < MIN_PAGE_RATIO:
+            return False
+
+    sa, sb = a["_sub_tokens"], b["_sub_tokens"]
+    if sa and sb and sa.isdisjoint(sb) and len(a["_tkey"].split()) <= 3:
+        return False
+
+    if via_identifier:
+        ta = set(a["_tkey"].split())
+        tb = set(b["_tkey"].split())
+        jacc = len(ta & tb) / max(1, len(ta | tb))
+        same_author = bool(a["_akey"] and a["_akey"] == b["_akey"])
+        if jacc < 0.70 and not (same_author and jacc >= 0.50) and a["_fkey"] != b["_fkey"]:
+            return False
+
+    return True
+
+
+def compare_editions(inc: dict[str, Any], can: dict[str, Any]) -> tuple[str, str]:
+    """Comparar duas versões da mesma obra e decidir ``DUPLICATE`` vs ``OBSOLETE``.
+
+    Retorna ``(verdict, winner)``:
+      * ``('DUPLICATE', 'can')``: mesma edição e mesmo ano -> manter canônico, entrante vai para ``duplicatas/``.
+      * ``('OBSOLETE', 'can')``: canônico é mais recente -> entrante vai para ``obsoletos/``.
+      * ``('OBSOLETE', 'inc')``: entrante é mais recente -> substitui canônico e antigo vai para ``obsoletos/``.
+    """
+    yr_inc, yr_can = inc["_year"], can["_year"]
+    ed_inc, rev_inc = inc["_ed"], inc["_rev"]
+    ed_can, rev_can = can["_ed"], can["_rev"]
+
+    if yr_inc is not None and yr_can is not None and yr_inc != yr_can:
+        return ("OBSOLETE", "inc") if yr_inc > yr_can else ("OBSOLETE", "can")
+
+    if ed_inc is not None and ed_can is not None and (ed_inc, rev_inc) != (ed_can, rev_can):
+        return ("OBSOLETE", "inc") if (ed_inc, rev_inc) > (ed_can, rev_can) else ("OBSOLETE", "can")
+
+    if (yr_inc is not None) != (yr_can is not None):
+        return ("OBSOLETE", "inc") if yr_inc is not None else ("OBSOLETE", "can")
+
+    return ("DUPLICATE", "can")
+
+
+def _read_pdf_page_count(pdf_path: Path) -> int | None:
+    """Ler quantidade de páginas de um PDF de forma tolerante a falhas."""
+    try:
+        if not pdf_path.exists():
+            return None
+        import pymupdf
+
+        with pymupdf.open(pdf_path) as doc:
+            return int(doc.page_count)
+    except Exception:
+        return None
+
+
+class LibraryIndex:
+    """Índice em memória da biblioteca para deduplicação e controle de obsolescência."""
+
+    def __init__(self) -> None:
+        self.seen_by_sha: dict[str, dict[str, Any]] = {}
+        self.canon_by_sha: dict[str, dict[str, Any]] = {}
+        self.by_doi: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self.by_isbn: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self.by_issn: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        self.by_work: dict[str, list[dict[str, Any]]] = defaultdict(list)
+
+    @staticmethod
+    def build_record(
+        *,
+        sha256: str,
+        classification: dict[str, Any] | None,
+        source_path: Path,
+        pdf_path: Path,
+        pages: int | None = None,
+        from_same_run: bool = False,
+    ) -> dict[str, Any]:
+        """Construir o registro indexável normalizado de um documento."""
+        cls = classification or {}
+        authors = list(cls.get("authors") or cls.get("autores") or [])
+        title = str(cls.get("titulo") or cls.get("title") or "")
+        subtitle = str(cls.get("subtitulo") or cls.get("subtitle") or "")
+        orig_filename = str(cls.get("arquivo_origem") or source_path.name)
+        edition_raw = cls.get("edicao") or cls.get("edition")
+        year_raw = cls.get("ano") if cls.get("ano") is not None else cls.get("year")
+        tipo = str(cls.get("tipo") or "")
+        volume_field = cls.get("volume")
+
+        akey = extract_first_author_key(authors)
+        tkey, fkey, sub_tokens, is_weak = _build_title_fingerprint(title, subtitle)
+        if not akey and len(tkey.split()) < 3:
+            is_weak = True
+        disc = _extract_discriminators(
+            title=title,
+            subtitle=subtitle,
+            orig_filename=orig_filename,
+            volume_field=str(volume_field) if volume_field is not None else None,
+            tipo=tipo,
+        )
+        ed_num, rev_flag = _parse_edition(edition_raw, title, subtitle, orig_filename)
+        year = _parse_year(year_raw)
+
+        if pages is None and cls.get("paginas_pdf") is not None:
+            try:
+                pages = int(cls["paginas_pdf"])
+            except (TypeError, ValueError):
+                pages = None
+
+        return {
+            "sha256": str(sha256),
+            "titulo": title,
+            "subtitulo": subtitle,
+            "autores": authors,
+            "ano": year,
+            "edicao": edition_raw,
+            "tipo": tipo,
+            "_source_path": str(source_path),
+            "_pdf_path": str(pdf_path),
+            "_md_path": str(pdf_path.with_suffix(".md")),
+            "_akey": akey,
+            "_tkey": tkey,
+            "_fkey": fkey,
+            "_sub_tokens": sub_tokens,
+            "_weak": is_weak,
+            "_disc": disc,
+            "_base_wkey": f"{akey}|{tkey}",
+            "_full_wkey": f"{akey}|{fkey}",
+            "_isbn": normalize_isbn(cls.get("isbn")),
+            "_doi": normalize_doi(cls.get("doi")),
+            "_issn": normalize_issn(cls.get("issn")),
+            "_ed": ed_num,
+            "_rev": rev_flag,
+            "_year": year,
+            "_pages": pages,
+            "_from_same_run": from_same_run,
+        }
+
+    def register_canonical(self, rec: dict[str, Any]) -> None:
+        """Registrar obra como canônica ativa nas 3 camadas do índice."""
+        sha = rec["sha256"]
+        self.seen_by_sha[sha] = rec
+        self.canon_by_sha[sha] = rec
+        if rec["_doi"] and rec not in self.by_doi[rec["_doi"]]:
+            self.by_doi[rec["_doi"]].append(rec)
+        if rec["_isbn"] and rec not in self.by_isbn[rec["_isbn"]]:
+            self.by_isbn[rec["_isbn"]].append(rec)
+        if rec["_issn"] and rec not in self.by_issn[rec["_issn"]]:
+            self.by_issn[rec["_issn"]].append(rec)
+        if not rec["_weak"]:
+            if rec not in self.by_work[rec["_base_wkey"]]:
+                self.by_work[rec["_base_wkey"]].append(rec)
+            if rec["_full_wkey"] != rec["_base_wkey"] and rec not in self.by_work[rec["_full_wkey"]]:
+                self.by_work[rec["_full_wkey"]].append(rec)
+
+    def unregister_canonical(self, rec: dict[str, Any]) -> None:
+        """Remover obra substituída das camadas canônicas (mantém em seen_by_sha)."""
+        self.canon_by_sha.pop(rec["sha256"], None)
+        if rec["_doi"] and rec in self.by_doi[rec["_doi"]]:
+            self.by_doi[rec["_doi"]].remove(rec)
+        if rec["_isbn"] and rec in self.by_isbn[rec["_isbn"]]:
+            self.by_isbn[rec["_isbn"]].remove(rec)
+        if rec["_issn"] and rec in self.by_issn[rec["_issn"]]:
+            self.by_issn[rec["_issn"]].remove(rec)
+        if not rec["_weak"]:
+            if rec in self.by_work[rec["_base_wkey"]]:
+                self.by_work[rec["_base_wkey"]].remove(rec)
+            if rec["_full_wkey"] != rec["_base_wkey"] and rec in self.by_work[rec["_full_wkey"]]:
+                self.by_work[rec["_full_wkey"]].remove(rec)
+
+    def check(
+        self,
+        rec: dict[str, Any],
+    ) -> tuple[str, str | None, dict[str, Any] | None, str | None]:
+        """Avaliar um documento entrante contra o índice nas 3 camadas.
+
+        Retorna ``(verdict, match_layer, matched_canon, winner)`` onde ``verdict`` é
+        ``'CANONICAL'``, ``'DUPLICATE'`` ou ``'OBSOLETE'``.
+        """
+        sha = rec["sha256"]
+        if sha and sha in self.seen_by_sha:
+            matched = self.seen_by_sha[sha]
+            src_raw = rec.get("_source_path") or ""
+            dst_raw = matched.get("_pdf_path") or ""
+            if not (src_raw and dst_raw and _destinations_equal(Path(src_raw), Path(dst_raw))):
+                return "DUPLICATE", "L1_SHA256", matched, "can"
+            return "CANONICAL", None, None, None
+
+        matched_layer: str | None = None
+        matched_canon: dict[str, Any] | None = None
+
+        # Camada 2: DOI / ISBN / ISSN
+        if rec["_doi"] and rec["_doi"] in self.by_doi:
+            for cand in self.by_doi[rec["_doi"]]:
+                if is_structurally_compatible(rec, cand, via_identifier=True):
+                    matched_layer, matched_canon = "L2_DOI", cand
+                    break
+
+        if matched_canon is None and rec["_isbn"] and rec["_isbn"] in self.by_isbn:
+            for cand in self.by_isbn[rec["_isbn"]]:
+                if is_structurally_compatible(rec, cand, via_identifier=True):
+                    matched_layer, matched_canon = "L2_ISBN", cand
+                    break
+
+        if matched_canon is None and rec["_issn"] and rec["_issn"] in self.by_issn:
+            for cand in self.by_issn[rec["_issn"]]:
+                if is_structurally_compatible(rec, cand, via_identifier=True):
+                    matched_layer, matched_canon = "L2_ISSN", cand
+                    break
+
+        # Camada 3: Impressão digital bibliográfica (work_fingerprint)
+        if matched_canon is None and not rec["_weak"]:
+            candidates = list(self.by_work.get(rec["_base_wkey"], []))
+            if rec["_full_wkey"] != rec["_base_wkey"]:
+                for cand in self.by_work.get(rec["_full_wkey"], []):
+                    if cand not in candidates:
+                        candidates.append(cand)
+            for cand in candidates:
+                if is_structurally_compatible(rec, cand, via_identifier=False):
+                    matched_layer, matched_canon = "L3_FINGERPRINT", cand
+                    break
+
+        if matched_canon is not None:
+            verdict, winner = compare_editions(rec, matched_canon)
+            return verdict, matched_layer, matched_canon, winner
+
+        return "CANONICAL", None, None, None
+
+    @classmethod
+    def from_target_dir(cls, target_dir: Path) -> "LibraryIndex":
+        """Inicializar o índice lendo os .md companheiros existentes na árvore temática."""
+        index = cls()
+        if not target_dir.exists():
+            return index
+
+        for md_path in sorted(target_dir.rglob("*.md")):
+            try:
+                rel_parts = md_path.relative_to(target_dir).parts
+            except ValueError:
+                continue
+            if not rel_parts or rel_parts[0] in _NON_CANONICAL_DIRS:
+                continue
+
+            fm = _parse_front_matter_safe(md_path)
+            if not fm or not fm.get("sha256"):
+                continue
+
+            pdf_path = md_path.with_suffix(".pdf")
+            pages = fm.get("paginas_pdf")
+            if pages is None and pdf_path.exists():
+                pages = _read_pdf_page_count(pdf_path)
+
+            rec = cls.build_record(
+                sha256=str(fm["sha256"]),
+                classification=fm,
+                source_path=pdf_path,
+                pdf_path=pdf_path,
+                pages=int(pages) if pages is not None else None,
+                from_same_run=False,
+            )
+            index.register_canonical(rec)
+        return index
+
+
+# --------------------------------------------------------------------------- #
+# Helpers de filesystem
+# --------------------------------------------------------------------------- #
 def _compute_sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -61,53 +603,44 @@ def _resolve_collision(
     planned_destinations: dict[Path, str] | None = None,
     src_sha256: str | None = None,
 ) -> tuple[str, str]:
-    """Resolver colisão de nome no destino.
-
-    Detecta colisões tanto contra arquivos existentes no disco quanto contra
-    arquivos já planejados na mesma execução (``planned_destinations``),
-    permitindo funcionar corretamente em modo --dry-run (nenhum arquivo é
-    escrito no disco).
-
-    Retorna (nome_final, status_extra) onde status_extra é:
-      - 'duplicate_skipped' se já existir arquivo com mesmo SHA-256;
-      - nome com sufixo incremental ' (2).pdf' se o conteúdo for distinto.
-    """
+    """Resolver colisão de nome no destino (disco + execuções em dry-run)."""
     dest_path = dest_dir / filename
     src_hash = src_sha256 if src_sha256 else _compute_sha256(src_path)
 
-    # Verificar contra arquivos já planejados nesta execução (dry-run).
     if planned_destinations is not None and dest_path in planned_destinations:
         planned_hash = planned_destinations[dest_path]
         if planned_hash == src_hash:
             return filename, ProcessStatus.DUPLICATE_SKIPPED.value
 
-    if not dest_path.exists():
+    if not dest_path.exists() and (planned_destinations is None or dest_path not in planned_destinations):
         return filename, ""
 
-    # Verificar no disco se o arquivo já existe com o mesmo hash.
-    try:
-        dst_hash = _compute_sha256(dest_path)
-    except OSError:
-        dst_hash = ""
+    if dest_path.exists():
+        try:
+            dst_hash = _compute_sha256(dest_path)
+        except OSError:
+            dst_hash = ""
+        if dst_hash and dst_hash == src_hash:
+            return filename, ProcessStatus.DUPLICATE_SKIPPED.value
 
-    if dst_hash and dst_hash == src_hash:
-        return filename, ProcessStatus.DUPLICATE_SKIPPED.value
-
-    # Conteúdo distinto: sufixo incremental ' (2).pdf', ' (3).pdf', etc.
     stem = Path(filename).stem
     suffix = Path(filename).suffix
     counter = 2
     while True:
         candidate = f"{stem} ({counter}){suffix}"
         candidate_path = dest_dir / candidate
-        if not candidate_path.exists():
+        planned_has = planned_destinations is not None and candidate_path in planned_destinations
+        if not candidate_path.exists() and not planned_has:
             return candidate, ""
-        try:
-            candidate_hash = _compute_sha256(candidate_path)
-        except OSError:
-            candidate_hash = ""
-        if candidate_hash == src_hash:
+        if planned_has and planned_destinations is not None and planned_destinations[candidate_path] == src_hash:
             return candidate, ProcessStatus.DUPLICATE_SKIPPED.value
+        if candidate_path.exists():
+            try:
+                candidate_hash = _compute_sha256(candidate_path)
+            except OSError:
+                candidate_hash = ""
+            if candidate_hash == src_hash:
+                return candidate, ProcessStatus.DUPLICATE_SKIPPED.value
         counter += 1
 
 
@@ -120,6 +653,7 @@ class LibraryOrganizer:
         *,
         file_operation: str = "copy",
         dry_run: bool = False,
+        index: LibraryIndex | None = None,
     ) -> None:
         self.target_dir = Path(target_dir).resolve()
         self.file_operation = file_operation
@@ -128,15 +662,12 @@ class LibraryOrganizer:
         self._organized_count = 0
         self._manual_review_count = 0
         self._duplicate_skipped_count = 0
+        self._obsolete_count = 0
         self._ignored_non_pdf_count = 0
         self._error_count = 0
-        # Mapeia destination_path -> sha256 para detectar colisões/duplicatas
-        # na mesma execução, inclusive em --dry-run (sem arquivos no disco).
         self._planned_destinations: dict[Path, str] = {}
+        self.index = index if index is not None else LibraryIndex.from_target_dir(self.target_dir)
 
-    # ------------------------------------------------------------------ #
-    # Operações de sistema de arquivos
-    # ------------------------------------------------------------------ #
     def _materialize(
         self,
         source_path: Path,
@@ -144,40 +675,128 @@ class LibraryOrganizer:
         sha256: str,
         status: ProcessStatus,
     ) -> bool:
-        """Copiar/mover o arquivo para o destino (ou apenas registrar no dry-run).
-
-        Retorna True se a operação foi realizada (ou simulada) com sucesso.
-        """
+        """Copiar/mover o arquivo para o destino (ou apenas simular no dry-run)."""
         if self.dry_run:
-            # No dry-run não cria pastas temáticas nem copia/move PDFs.
             return True
 
         destination_path.parent.mkdir(parents=True, exist_ok=True)
-
         if _destinations_equal(source_path, destination_path):
             return True
 
+        shutil.copy2(source_path, destination_path)
         if self.file_operation == "move":
-            # Movimentação segura: copiar e, só então, remover o original.
-            shutil.copy2(source_path, destination_path)
             try:
                 source_path.unlink()
             except OSError:
                 pass
-        else:
-            shutil.copy2(source_path, destination_path)
         return True
 
-    def _materialize_dry(self, source_path: Path, destination_path: Path) -> bool:
-        """Registro sem cópia (usado para duplicatas exatas puladas)."""
+    def _archive_to_special_dir(
+        self,
+        source_path: Path,
+        subdir_name: str,
+        desired_name: str,
+        sha256: str,
+    ) -> Path:
+        """Copiar ou mover um arquivo para ``duplicatas/`` ou ``obsoletos/``."""
+        special_dir = self.target_dir / subdir_name
+        resolved_name, _ = _resolve_collision(
+            special_dir,
+            desired_name,
+            source_path,
+            self._planned_destinations,
+            src_sha256=sha256,
+        )
+        dest_path = special_dir / resolved_name
+        self._planned_destinations[dest_path] = sha256
+
+        if not self.dry_run:
+            special_dir.mkdir(parents=True, exist_ok=True)
+            if not _destinations_equal(source_path, dest_path):
+                shutil.copy2(source_path, dest_path)
+                if self.file_operation == "move":
+                    try:
+                        source_path.unlink()
+                    except OSError:
+                        pass
+        return dest_path
+
+    def _demote_canonical_to_obsolete(
+        self,
+        matched_canon: dict[str, Any],
+        new_canonical_dest: Path,
+        new_canon_record: dict[str, Any],
+        match_layer: str,
+    ) -> None:
+        """Mover exemplar canônico antigo da árvore temática para ``obsoletos/``."""
+        old_pdf_path = Path(matched_canon["_pdf_path"])
+        old_md_path = Path(matched_canon["_md_path"])
+        old_sha = matched_canon["sha256"]
+
+        self.index.unregister_canonical(matched_canon)
+        self.index.register_canonical(new_canon_record)
+
+        obs_dir = self.target_dir / OBSOLETOS_DIR
         if self.dry_run:
-            return True
-        # Duplicata exata: nada a gravar, o arquivo já existe no destino.
-        return True
+            obs_dest = obs_dir / old_pdf_path.name
+            self._planned_destinations[obs_dest] = old_sha
+        else:
+            if not _is_within(old_pdf_path, self.target_dir):
+                raise ValueError(f"Caminho fora do diretório alvo bloqueado: {old_pdf_path}")
 
-    # ------------------------------------------------------------------ #
-    # Entradas de manifesto
-    # ------------------------------------------------------------------ #
+            obs_dir.mkdir(parents=True, exist_ok=True)
+            obs_name, _ = _resolve_collision(
+                obs_dir,
+                old_pdf_path.name,
+                old_pdf_path if old_pdf_path.exists() else new_canonical_dest,
+                self._planned_destinations,
+                src_sha256=old_sha,
+            )
+            obs_dest = obs_dir / obs_name
+            self._planned_destinations[obs_dest] = old_sha
+
+            if old_pdf_path.exists():
+                shutil.move(str(old_pdf_path), str(obs_dest))
+
+            if old_md_path.exists() and _is_within(old_md_path, self.target_dir):
+                try:
+                    old_md_path.unlink()
+                except OSError:
+                    pass
+
+            # Limpar diretório pai caso tenha ficado vazio (mantendo self.target_dir).
+            parent = old_pdf_path.parent
+            while parent != self.target_dir and _is_within(parent, self.target_dir):
+                try:
+                    if not any(parent.iterdir()):
+                        parent.rmdir()
+                        parent = parent.parent
+                    else:
+                        break
+                except OSError:
+                    break
+
+            md_content = generate_obsolete_companion_markdown(
+                obsolete_source=old_pdf_path,
+                canonical_dest=new_canonical_dest,
+                sha256=old_sha,
+                match_layer=match_layer,
+                obsolete_info=matched_canon,
+                canonical_info=new_canon_record,
+                replaced_existing=True,
+            )
+            obs_dest.with_suffix(".md").write_text(md_content, encoding="utf-8")
+
+        self._obsolete_count += 1
+        # Se o canônico antigo foi registrado nesta mesma execução, atualizar sua entrada no manifesto.
+        if matched_canon.get("_from_same_run"):
+            for prev_entry in self.entries:
+                if prev_entry.sha256 == old_sha and prev_entry.status == ProcessStatus.ORGANIZED:
+                    prev_entry.status = ProcessStatus.OBSOLETE
+                    prev_entry.destination_path = str(obs_dest)
+                    self._organized_count = max(0, self._organized_count - 1)
+                    break
+
     def add_organized(
         self,
         source_path: Path,
@@ -192,82 +811,173 @@ class LibraryOrganizer:
         classification: dict[str, Any] | None = None,
         duplicate: bool = False,
     ) -> FileManifestEntry:
-        """Registrar um arquivo organizado na árvore temática."""
-        """Registrar um arquivo organizado na árvore temática."""
+        """Classificar destino e materializar obra, duplicata ou edição obsoleta."""
         subarea_clean = (subarea or "").strip() or "Geral"
         dest_dir = self.target_dir / area_basica / subarea_clean / tipo
-        nome_final, colisao_status = _resolve_collision(
-            dest_dir,
-            filename,
-            source_path,
-            self._planned_destinations,
-            src_sha256=sha256,
+        planned_dest = dest_dir / filename
+
+        cls_enriched = dict(classification or {})
+        cls_enriched.setdefault("grande_area", grande_area)
+        cls_enriched.setdefault("area_basica", area_basica)
+        cls_enriched.setdefault("subarea", subarea_clean)
+        cls_enriched.setdefault("especialidade", especialidade)
+        cls_enriched.setdefault("tipo", tipo)
+        cls_enriched.setdefault("arquivo_origem", source_path.name)
+
+        pages = cls_enriched.get("paginas_pdf")
+        if pages is None and source_path.exists():
+            pages = _read_pdf_page_count(source_path)
+            if pages is not None:
+                cls_enriched["paginas_pdf"] = pages
+
+        rec = LibraryIndex.build_record(
+            sha256=sha256,
+            classification=cls_enriched,
+            source_path=source_path,
+            pdf_path=planned_dest,
+            pages=int(pages) if pages is not None else None,
+            from_same_run=True,
         )
-        destination_path = dest_dir / nome_final
 
-        # Registrar o destino planejado (inclui em dry-run) para detecção de
-        # colisões contra arquivos da mesma execução.
-        self._planned_destinations[destination_path] = sha256
+        verdict, match_layer, matched_canon, winner = self.index.check(rec)
 
-        if colisao_status == ProcessStatus.DUPLICATE_SKIPPED.value:
+        # Fallback por colisão física exata de caminho mesmo para registros fracos
+        if verdict == "CANONICAL":
+            nome_final, colisao_status = _resolve_collision(
+                dest_dir,
+                filename,
+                source_path,
+                self._planned_destinations,
+                src_sha256=sha256,
+            )
+            destination_path = dest_dir / nome_final
+            rec["_pdf_path"] = str(destination_path)
+            rec["_md_path"] = str(destination_path.with_suffix(".md"))
+            if colisao_status == ProcessStatus.DUPLICATE_SKIPPED.value:
+                verdict = "DUPLICATE"
+                match_layer = "L1_SHA256"
+                matched_canon = {"_pdf_path": str(destination_path), "sha256": sha256}
+                winner = "can"
+        else:
+            destination_path = planned_dest
+
+        if verdict == "DUPLICATE" and matched_canon is not None:
             status = ProcessStatus.DUPLICATE_SKIPPED
             self._duplicate_skipped_count += 1
-
-            # Não copiar/mover para a árvore temática: duplicata exata já
-            # existe no destino. Em vez disso, encaminha para a pasta
-            # duplicatas/ (a menos que dry_run).
+            dup_dest_path = self._archive_to_special_dir(
+                source_path, DUPLICATAS_DIR, source_path.name, sha256
+            )
             if not self.dry_run:
-                duplicatas_dir = self.target_dir / DUPLICATAS_DIR
-                duplicatas_dir.mkdir(parents=True, exist_ok=True)
-
-                # Resolver colisão de nomes dentro da pasta duplicatas.
-                dup_dest_path = duplicatas_dir / source_path.name
-                dup_nome_final, _ = _resolve_collision(
-                    duplicatas_dir,
-                    source_path.name,
-                    source_path,
-                    self._planned_destinations,
-                    src_sha256=sha256,
-                )
-                dup_dest_path = duplicatas_dir / dup_nome_final
-                self._planned_destinations[dup_dest_path] = sha256
-
-                if self.file_operation == "move":
-                    # Movimentação segura: copiar e remover o original.
-                    shutil.copy2(source_path, dup_dest_path)
-                    try:
-                        source_path.unlink()
-                    except OSError:
-                        pass
-                else:
-                    shutil.copy2(source_path, dup_dest_path)
-
-                # Gravar .md companheiro da duplicata.
                 md_content = generate_duplicate_companion_markdown(
                     duplicate_source=source_path,
-                    canonical_dest=destination_path,
+                    canonical_dest=Path(matched_canon["_pdf_path"]),
                     sha256=sha256,
+                    match_layer=match_layer or "L1_SHA256",
                 )
-                md_path = dup_dest_path.with_suffix(".md")
-                md_path.write_text(md_content, encoding="utf-8")
-            # No dry_run apenas planeja sem tocar em disco.
-        else:
+                dup_dest_path.with_suffix(".md").write_text(md_content, encoding="utf-8")
+
+            entry = FileManifestEntry(
+                source_path=str(source_path),
+                destination_path=str(dup_dest_path),
+                sha256=sha256,
+                status=status,
+                used_ocr=used_ocr,
+                classification=cls_enriched,
+            )
+            self.entries.append(entry)
+            return entry
+
+        if verdict == "OBSOLETE" and matched_canon is not None and winner == "can":
+            status = ProcessStatus.OBSOLETE
+            self._obsolete_count += 1
+            obs_dest_path = self._archive_to_special_dir(
+                source_path, OBSOLETOS_DIR, filename or source_path.name, sha256
+            )
+            if not self.dry_run:
+                md_content = generate_obsolete_companion_markdown(
+                    obsolete_source=source_path,
+                    canonical_dest=Path(matched_canon["_pdf_path"]),
+                    sha256=sha256,
+                    match_layer=match_layer or "L2_IDENTIFIER",
+                    obsolete_info=rec,
+                    canonical_info=matched_canon,
+                    replaced_existing=False,
+                )
+                obs_dest_path.with_suffix(".md").write_text(md_content, encoding="utf-8")
+
+            entry = FileManifestEntry(
+                source_path=str(source_path),
+                destination_path=str(obs_dest_path),
+                sha256=sha256,
+                status=status,
+                used_ocr=used_ocr,
+                classification=cls_enriched,
+            )
+            self.entries.append(entry)
+            return entry
+
+        if verdict == "OBSOLETE" and matched_canon is not None and winner == "inc":
+            nome_final, _ = _resolve_collision(
+                dest_dir,
+                filename,
+                source_path,
+                self._planned_destinations,
+                src_sha256=sha256,
+            )
+            destination_path = dest_dir / nome_final
+            rec["_pdf_path"] = str(destination_path)
+            rec["_md_path"] = str(destination_path.with_suffix(".md"))
+            self._planned_destinations[destination_path] = sha256
+
             status = ProcessStatus.ORGANIZED
             self._organized_count += 1
             self._materialize(source_path, destination_path, sha256, status)
-            # Gerar arquivo companheiro (.md) apenas quando não for dry_run.
-            if not self.dry_run and classification:
+            if not self.dry_run and cls_enriched:
                 companion_path = destination_path.with_suffix(".md")
                 companion_content = generate_companion_markdown(
                     destination_path=companion_path,
                     source_path=source_path,
                     sha256=sha256,
-                    classification=classification,
+                    classification=cls_enriched,
                     used_ocr=used_ocr,
                 )
-                companion_path.write_text(
-                    companion_content, encoding="utf-8"
-                )
+                companion_path.write_text(companion_content, encoding="utf-8")
+
+            self._demote_canonical_to_obsolete(
+                matched_canon=matched_canon,
+                new_canonical_dest=destination_path,
+                new_canon_record=rec,
+                match_layer=match_layer or "L2_IDENTIFIER",
+            )
+
+            entry = FileManifestEntry(
+                source_path=str(source_path),
+                destination_path=str(destination_path),
+                sha256=sha256,
+                status=status,
+                used_ocr=used_ocr,
+                classification=cls_enriched,
+            )
+            self.entries.append(entry)
+            return entry
+
+        # CANONICAL
+        self._planned_destinations[destination_path] = sha256
+        status = ProcessStatus.ORGANIZED
+        self._organized_count += 1
+        self._materialize(source_path, destination_path, sha256, status)
+        if not self.dry_run and cls_enriched:
+            companion_path = destination_path.with_suffix(".md")
+            companion_content = generate_companion_markdown(
+                destination_path=companion_path,
+                source_path=source_path,
+                sha256=sha256,
+                classification=cls_enriched,
+                used_ocr=used_ocr,
+            )
+            companion_path.write_text(companion_content, encoding="utf-8")
+
+        self.index.register_canonical(rec)
 
         entry = FileManifestEntry(
             source_path=str(source_path),
@@ -275,7 +985,7 @@ class LibraryOrganizer:
             sha256=sha256,
             status=status,
             used_ocr=used_ocr,
-            classification=classification,
+            classification=cls_enriched,
         )
         self.entries.append(entry)
         return entry
@@ -382,9 +1092,6 @@ class LibraryOrganizer:
         self._ignored_non_pdf_count += 1
         return entry
 
-    # ------------------------------------------------------------------ #
-    # Manifesto e relatório
-    # ------------------------------------------------------------------ #
     def build_summary(self, total_scanned: int) -> ExecutionSummary:
         manual_review_ratio = (
             self._manual_review_count / total_scanned if total_scanned else 0.0
@@ -394,6 +1101,7 @@ class LibraryOrganizer:
             organized_count=self._organized_count,
             manual_review_count=self._manual_review_count,
             duplicate_skipped_count=self._duplicate_skipped_count,
+            obsolete_count=self._obsolete_count,
             ignored_non_pdf_count=self._ignored_non_pdf_count,
             error_count=self._error_count,
             manual_review_ratio=manual_review_ratio,
@@ -404,14 +1112,13 @@ class LibraryOrganizer:
     def write_manifest(self, summary: ExecutionSummary) -> Path:
         """Gravar manifest.json no diretório de destino."""
         manifest_path = self.target_dir / MANIFEST_FILENAME
-        if not self.dry_run:
-            manifest_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "total_scanned": summary.total_scanned,
             "organized_count": summary.organized_count,
             "manual_review_count": summary.manual_review_count,
             "duplicate_skipped_count": summary.duplicate_skipped_count,
+            "obsolete_count": summary.obsolete_count,
             "ignored_non_pdf_count": summary.ignored_non_pdf_count,
             "error_count": summary.error_count,
             "manual_review_ratio": round(summary.manual_review_ratio, 4),
@@ -464,7 +1171,6 @@ class LibraryOrganizer:
                 lines.append(f"  - Motivo: {motivo}")
                 lines.append("")
 
-        # Seção de diagnósticos para arquivos não-PDF e atalhos ignorados ([DIAG-06])
         ignorados = [
             e for e in summary.entries if e.status == ProcessStatus.IGNORED_NON_PDF
         ]

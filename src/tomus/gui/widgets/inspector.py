@@ -38,6 +38,7 @@ _SEMANTIC_STATUS_COLORS = {
     ProcessStatus.ORGANIZED: ("#15803D", "#DCFCE7"),
     ProcessStatus.MANUAL_REVIEW: ("#B45309", "#FEF3C7"),
     ProcessStatus.DUPLICATE_SKIPPED: ("#0369A1", "#E0F2FE"),
+    ProcessStatus.OBSOLETE: ("#64748B", "#F1F5F9"),
     ProcessStatus.IGNORED_NON_PDF: ("#64748B", "#F1F5F9"),
     ProcessStatus.ERROR: ("#B91C1C", "#FEE2E2"),
 }
@@ -366,6 +367,8 @@ class DocumentInspectorPanel(QWidget):
             self._show_manual_review(entry)
         elif status == ProcessStatus.DUPLICATE_SKIPPED:
             self._show_duplicate(entry)
+        elif status == ProcessStatus.OBSOLETE:
+            self._show_obsolete(entry)
         elif status == ProcessStatus.IGNORED_NON_PDF:
             self._show_ignored(entry)
 
@@ -524,6 +527,22 @@ class DocumentInspectorPanel(QWidget):
         btn_show.setFixedWidth(170)
         btn_show.setProperty("kind", "outline")
         btn_show.clicked.connect(lambda: self.reveal_requested.emit(entry.source_path))
+        self.content_layout.addWidget(btn_show)
+
+    # --- Modo 3a-bis: Edição obsoleta arquivada ----------------------------- #
+
+    def _show_obsolete(self, entry: FileManifestEntry) -> None:
+        self.content_layout.addWidget(_SectionHeader("EDIÇÃO OBSOLETA ARQUIVADA"))
+        self.content_layout.addWidget(_KVRow("SHA-256", entry.sha256, copyable=True))
+        self.content_layout.addWidget(
+            _KVRow("Caminho", entry.destination_path or "obsoletos/")
+        )
+        btn_show = QPushButton("Mostrar na Pasta")
+        btn_show.setFixedWidth(150)
+        btn_show.setProperty("kind", "outline")
+        btn_show.clicked.connect(
+            lambda: self.reveal_requested.emit(entry.destination_path or entry.source_path)
+        )
         self.content_layout.addWidget(btn_show)
 
     # --- Modo 3b: Não-PDF ignorado ------------------------------------------ #

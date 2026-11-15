@@ -153,6 +153,7 @@ class _DocumentRow:
             ProcessStatus.ORGANIZED.value,
             ProcessStatus.MANUAL_REVIEW.value,
             ProcessStatus.DUPLICATE_SKIPPED.value,
+            ProcessStatus.OBSOLETE.value,
             ProcessStatus.IGNORED_NON_PDF.value,
             ProcessStatus.ERROR.value,
         }
@@ -312,6 +313,7 @@ class DocumentTableModel(QAbstractTableModel):
             ProcessStatus.ORGANIZED.value,
             ProcessStatus.MANUAL_REVIEW.value,
             ProcessStatus.DUPLICATE_SKIPPED.value,
+            ProcessStatus.OBSOLETE.value,
             ProcessStatus.IGNORED_NON_PDF.value,
             ProcessStatus.ERROR.value,
         }:

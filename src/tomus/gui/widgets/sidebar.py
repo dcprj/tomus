@@ -33,6 +33,7 @@ STATUS_FILTERS = [
     (ProcessStatus.ORGANIZED, "Organizados"),
     (ProcessStatus.MANUAL_REVIEW, "Revisão Manual"),
     (ProcessStatus.DUPLICATE_SKIPPED, "Duplicatas"),
+    (ProcessStatus.OBSOLETE, "Obsoletos"),
     (ProcessStatus.IGNORED_NON_PDF, "Ignorados (Não-PDF)"),
     (ProcessStatus.ERROR, "Erros"),
 ]
@@ -43,6 +44,7 @@ _STATUS_BADGE_BG = {
     ProcessStatus.ORGANIZED: "#DCFCE7",
     ProcessStatus.MANUAL_REVIEW: "#FEF3C7",
     ProcessStatus.DUPLICATE_SKIPPED: "#E0F2FE",
+    ProcessStatus.OBSOLETE: "#F1F5F9",
     ProcessStatus.IGNORED_NON_PDF: "#F1F5F9",
     ProcessStatus.ERROR: "#FEE2E2",
 }
@@ -51,6 +53,7 @@ _STATUS_BADGE_FG = {
     ProcessStatus.ORGANIZED: "#15803D",
     ProcessStatus.MANUAL_REVIEW: "#B45309",
     ProcessStatus.DUPLICATE_SKIPPED: "#0369A1",
+    ProcessStatus.OBSOLETE: "#64748B",
     ProcessStatus.IGNORED_NON_PDF: "#64748B",
     ProcessStatus.ERROR: "#B91C1C",
 }

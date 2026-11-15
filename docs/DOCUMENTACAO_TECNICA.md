@@ -19,7 +19,7 @@ O Tomus atua como uma esteira autônoma e determinística de engenharia da infor
 2. **Identificadores Persistentes da Ciência:** Resolução exata de metadados via regex e APIs REST de identificadores globais (DOI via CrossRef e ISBN-10/ISBN-13 com validação de checksum via Google Books API).
 3. **Classificação Ontológica Oficial:** Mapeamento em 4 níveis da tabela de áreas do conhecimento **CAPES/CNPq** (*Grande Área › Área Básica › Subárea › Especialidade*).
 4. **Inteligência Artificial Local-First (BYOK):** Inferência semântica com múltiplos provedores em nuvem via TLS direto (*Bring Your Own Key*), operando com pool rotativo multi-chave, circuit breaker para erro 429 (*Too Many Requests*) e cascata automática de fallback.
-5. **Renomeação Determinística e Fichamento Canônico:** Padronização nominal rigorosa de arquivos no sistema de arquivos (`SOBRENOME_ANO_TITULO.pdf`) e geração de citação bibliográfica formatada segundo a **ABNT NBR 6023**.
+5. **Renomeação Determinística e Fichamento Canônico:** Padronização nominal rigorosa de arquivos no sistema de arquivos (`Autor - Título - Ano.pdf`) e geração de arquivo companheiro `.md` com citação bibliográfica formatada segundo a **ABNT NBR 6023**.
 
 ### 1.1 Princípios Fundamentais de Engenharia
 
@@ -109,8 +109,8 @@ src/tomus/
 │   ├── ocr_docling.py   # OCR e parser de layout avançado com fallback gracioso
 │   └── identifiers.py   # Varredura e resolução de DOI (CrossRef) e ISBN (Google Books)
 ├── storage/             # Operações de Disco, Integridade e Companions
-│   ├── organizer.py     # Execução de cópia/movimentação atômica e resolução de colisões
-│   └── companion.py     # Geração de arquivos de metadados (.tomus.json e .bib)
+│   ├── organizer.py     # Execução atômica, LibraryIndex 3 camadas, duplicatas/ e obsoletos/
+│   └── companion.py     # Geração de arquivos companheiros (.md com YAML e ABNT NBR 6023)
 └── gui/                 # Interface Gráfica Desktop
     ├── app.py           # Ponto de entrada PySide6 e inicialização do loop de eventos
     ├── main_window.py   # Janela principal QMainWindow contendo QWebEngineView
@@ -172,9 +172,10 @@ sequenceDiagram
     end
 
     Pipe->>Org: Executar Ação de Disco (Copiar ou Mover)
-    Org->>Org: Criar Diretórios CAPES (Grande Área / Área Básica / Subárea)
-    Org->>Org: Sanitizar Nome (AUTOR_ANO_TITULO.pdf)
-    Org->>Org: Escrever Arquivo Companion (.tomus.json)
+    Org->>Org: Verificar LibraryIndex (L1 SHA-256, L2 DOI/ISBN/ISSN, L3 Fingerprint + G1/G2/G3)
+    Org->>Org: Criar Diretórios CAPES (Área Básica / Subárea / Tipo)
+    Org->>Org: Sanitizar Nome (Autor - Título - Ano.pdf)
+    Org->>Org: Escrever Arquivo Companion (.md YAML + ABNT NBR 6023)
     Org-->>Pipe: DocumentEntry Finalizado
     
     Pipe-->>Worker: Emitir Evento item_processed
@@ -202,6 +203,24 @@ Para que os nomes das pastas criadas no sistema de arquivos sejam compatíveis e
 2. Substituição de barras `/` e contrabarras `\` por hifens espelhados para não quebrar a árvore de pastas.
 3. Remoção de caracteres de pontuação ilegais no POSIX e Windows (`:`, `*`, `?`, `"`, `<`, `>`, `|`).
 4. Colapso de múltiplos espaços em branco em um único espaço e aparamento de bordas (*trim*).
+
+### 5.3 Vocabulário Controlado e Desambiguação (`normalize_and_resolve_taxonomy`)
+
+Além da estrutura hierárquica base (`capes-cnpq-v1`), `tomus.core.taxonomy` aplica `normalize_and_resolve_taxonomy()` com vocabulário controlado de subáreas (ex.: 18 subáreas consolidadas em Psicologia e subáreas médicas padronizadas), mapeamento de sinônimos, desambiguação por área específica e âncoras determinísticas por autor clássico para evitar dispersão ou hiperconcentração em subáreas genéricas como *Psicologia Clínica*.
+
+### 5.4 Deduplicação Multicamada e Controle de Obsolescência (`LibraryIndex`)
+
+Na inicialização de lotes, `LibraryIndex.from_target_dir()` lê em $O(N)$ o front matter YAML dos arquivos companheiros `.md` via parser seguro sem `eval()` (`_parse_front_matter_safe`). Cada documento entrante é avaliado em 3 camadas com resolução por `compare_editions()`:
+1. **Camada 1 (`L1_SHA256`):** Hash criptográfico global entre todas as subáreas/pastas; colisões da mesma cópia binária vão para `duplicatas/`.
+2. **Camada 2 (`L2_DOI` / `L2_ISBN` / `L2_ISSN`):** Identificadores normalizados (`normalize_isbn` ISBN-10 → ISBN-13, `normalize_issn`, `normalize_doi`), protegidos contra exemplos de prompt/blacklist e contaminação cruzada.
+3. **Camada 3 (`L3_FINGERPRINT`):** Impressão digital bibliográfica composta por chave do primeiro autor (`extract_first_author_key`) e tokens normalizados de título/subtítulo.
+
+Para impedir falsos positivos em obras seriadas ou coletâneas, as camadas L2 e L3 aplicam três **Guardas Estruturais**:
+* **Guarda G1 (Discriminadores):** Preserva distinção entre volumes (`vol`), partes (`part`), livros de séries (`livro`) e edições voltadas a públicos distintos (`aud`: terapeuta vs. paciente/exercícios).
+* **Guarda G2 (Proporção de Páginas):** Exige `min(pages_a, pages_b) / max(pages_a, pages_b) >= 0.25`, impedindo que um capítulo avulso colida com o livro completo de mesmo ISBN.
+* **Guarda G3 (Subtítulos Disjuntos):** Impede colisão entre títulos guarda-chuva curtos cujos subtítulos possuem vocabulário totalmente disjunto.
+
+Quando duas obras compatíveis diferem em edição ou ano (`compare_editions()`), o Tomus mantém sempre a edição mais recente na árvore temática: se o arquivo antigo for o entrante, é arquivado diretamente em `obsoletos/` (`ProcessStatus.OBSOLETE`); se a edição mais recente chegar depois, o sistema realiza **substituição reversa segura** (contida por `_is_within()`), promovendo a nova edição para a árvore temática e movendo a antiga (com ficha `.md` explicativa) para `obsoletos/`.
 
 ---
 
@@ -275,7 +294,7 @@ A formatação de referências bibliográficas do Tomus segue com exatidão a no
 ### 7.1 Regras de Formatação Implementadas
 
 * **Autores:** 
-  * Sobrenome principal em letras maiúsculas (*CAIXA ALTA*), seguido pelo prenome e outros nomes (e.g., `VYGOTSKY, Lev Semenovitch`).
+  * Sobrenome principal em letras maiúsculas (*CAIXA ALTA*), seguido pelo prenome e outros nomes (e.g., `VYGOTSKY, Lev Semenovitch`), com suporte dedicado a **autoria institucional** (`is_institutional_author`, mantendo instituições por extenso em maiúsculas ou no padrão `BRASIL. Ministério...` sem inversão indevida).
   * Conforme a norma, nomes de autores são apresentados em **texto normal (sem negrito)**.
 * **Título de Livros / Teses / Monografias:**
   * O título da obra recebe destaque tipográfico exclusivo em **negrito puro** (`<strong>TITULO</strong>`).
@@ -312,7 +331,8 @@ A estabilidade da aplicação é mantida por uma suíte de testes automatizados 
 
 * `tests/test_multi_provider.py`: Validação de chamadas simuladas aos provedores Gemini, Groq, NVIDIA, DeepSeek e Claude, incluindo rotação de chaves e fallbacks em caso de erro 429.
 * `tests/test_gui_web_bridge.py`: Validação da ponte IPC do Qt, saúde das chaves, métodos seguros de cópia para clipboard e segurança de caminhos.
-* `tests/test_companion.py`: Testes de geração dos arquivos de metadados `.tomus.json` e exportação `.bib`.
+* `tests/test_companion.py`: Testes de geração dos arquivos companheiros `.md` (front matter YAML e formatação ABNT NBR 6023, incluindo autoria institucional).
+* `tests/test_library_index_dedup_obsolete.py`: Testes da deduplicação em 3 camadas (`LibraryIndex`), Guardas Estruturais G1–G3, substituição reversa para `obsoletos/`, taxonomia controlada e sanitização contra prompt injection.
 * `tests/test_namer.py`: Testes exatos das regras de renomeação de arquivos e formatação ABNT NBR 6023.
 * `tests/test_taxonomy_and_identifiers.py`: Testes de parsing e normalização da árvore de 4 níveis CAPES/CNPq e regexes de DOI e ISBN.
 * `tests/test_pipeline_integration.py`: Teste de ponta a ponta simulando ingestão, extração, classificação e organização física em pastas temporárias.

@@ -3,11 +3,9 @@
 Declara o Protocol LLMProvider, aplica short-circuit antes da chamada de rede
 quando o texto alfanumérico útil for < 50 caracteres e não houver
 ExternalMetadata (confidence_score = 0.0), implementa múltiplos provedores
-(Gemini, NVIDIA, DeepSeek, Claude, Groq, GitHub Models) com saída estruturada,
-retry em HTTP 429/503, validação de par (grande_area, area_basica) via
-validate_or_repair_pair forçando confidence_score = 0.0 quando retornar None, e
-aplica o teto min(score, 0.50) quando o título for vazio/genérico sem autor
-identável.
+(Gemini, NVIDIA, DeepSeek, Claude, Groq) com saída estruturada, retry em HTTP
+429/503, normalização taxonômica/autores, filtro de identificadores contaminantes
+e teto min(score, 0.50) quando o título for vazio/genérico sem autor.
 """
 
 from __future__ import annotations
@@ -15,8 +13,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import httpx
@@ -27,9 +25,15 @@ from tomus.core.models import ExternalMetadata, LLMClassificationOutput
 from tomus.core.prompts import (
     build_context_payload,
     build_system_prompt,
+    extract_first_author_key,
     is_generic_title,
+    normalize_authors,
 )
-from tomus.core.taxonomy import validate_or_repair_pair
+from tomus.core.taxonomy import (
+    normalize_and_resolve_taxonomy,
+    validate_or_repair_pair,
+)
+from tomus.extractors.identifiers import normalize_doi, normalize_isbn
 
 # Limite de texto alfanumérico útil abaixo do qual ocorre short-circuit.
 MIN_USEFUL_CHARS = 50
@@ -39,6 +43,8 @@ GENERIC_TITLE_CONFIDENCE_CAP = 0.50
 
 # Limiar de confiança para organização automática.
 CONFIDENCE_MIN = 0.70
+
+_llm_logger = logging.getLogger("tomus.llm")
 
 
 def _resolve_api_key(api_key: str | list[str]) -> str:
@@ -63,21 +69,12 @@ def _resolve_api_keys(api_key: str | list[str] | None) -> list[str]:
 
 
 def _sanitize_error_message(message: str) -> str:
-    # Mascarar padrões conhecidos de chaves de API.
     import re as _re
-    text = _re.sub(
-        r"(sk-[A-Za-z0-9]{20,})", "sk-***REDACTED***", message
-    )
-    text = _re.sub(
-        r"(nvapi-[A-Za-z0-9._-]{20,})", "nvapi-***REDACTED***", text
-    )
-    text = _re.sub(
-        r"(gsk-[A-Za-z0-9._-]{20,})", "gsk-***REDACTED***", text
-    )
-    text = _re.sub(
-        r"(gsh_[A-Za-z0-9._-]{20,})", "gsh-***REDACTED***", text
-    )
-    # Usar mask_key para padrões genéricos que terminam com 4 caracteres visíveis.
+
+    text = _re.sub(r"(sk-[A-Za-z0-9]{20,})", "sk-***REDACTED***", message)
+    text = _re.sub(r"(nvapi-[A-Za-z0-9._-]{20,})", "nvapi-***REDACTED***", text)
+    text = _re.sub(r"(gsk-[A-Za-z0-9._-]{20,})", "gsk-***REDACTED***", text)
+    text = _re.sub(r"(gsh_[A-Za-z0-9._-]{20,})", "gsh-***REDACTED***", text)
     for m in _re.finditer(r"[A-Za-z0-9._-]{20,}", message):
         masked = mask_key(m.group(0))
         if masked != m.group(0):
@@ -122,10 +119,11 @@ def _alphanumeric_count(text: str) -> int:
 
 
 def _is_retryable_http(exc: BaseException) -> bool:
-    """Verificar se uma exceção do google-genai é um erro HTTP retryable (429/503 ou timeout de rede)."""
+    """Verificar se uma exceção do google-genai é um erro HTTP retryable (429/503 ou timeout)."""
     if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
         return True
     import socket
+
     if isinstance(exc, (TimeoutError, socket.timeout)):
         return True
     code = getattr(exc, "code", None)
@@ -139,18 +137,8 @@ def _is_retryable_http(exc: BaseException) -> bool:
         return False
 
 
-def _retry_on_retryable_http():
-    """Decorador de retry para erros HTTP retryable (429 e 503)."""
-    return retry(
-        retry=retry_if_exception(_is_retryable_http),
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        reraise=True,
-    )
-
-
 def _is_generic_openai_retryable(exc: BaseException) -> bool:
-    """Verificar se uma exceção httpx é transitória (429/503/529 ou falha de transporte/timeout)."""
+    """Verificar se uma exceção httpx é transitória (429/503/529 ou transporte/timeout)."""
     if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
         return True
     if isinstance(exc, httpx.HTTPStatusError):
@@ -169,6 +157,14 @@ def _strip_markdown_json(text: str) -> str:
     if text.startswith("json"):
         text = text[4:].strip()
     return text
+
+
+def _parse_classification_json(content: str) -> LLMClassificationOutput:
+    json_text = _strip_markdown_json(content)
+    try:
+        return LLMClassificationOutput.model_validate_json(json_text)
+    except Exception:
+        return LLMClassificationOutput.model_validate(json.loads(json_text))
 
 
 @dataclass
@@ -208,7 +204,7 @@ def _check_short_circuit(
     provider_name: str = "",
     model_name: str = "",
 ) -> ClassificationResult | None:
-    """Retornar ClassificationResult de short-circuit se texto útil < 50 chars e sem metadados externos."""
+    """Retornar ClassificationResult de short-circuit se texto útil < 50 chars e sem metadados."""
     useful_chars = _alphanumeric_count(sampled_text) + _alphanumeric_count(cip_text)
     has_external = external_metadata is not None and bool(
         external_metadata.title or external_metadata.authors
@@ -234,17 +230,41 @@ def _check_short_circuit(
     return None
 
 
+def _error_result(
+    reasoning: str,
+    used_ocr: bool,
+    provider_name: str = "",
+    model_name: str = "",
+) -> ClassificationResult:
+    return ClassificationResult(
+        grande_area="",
+        area_basica="",
+        tipo="Outros",
+        authors=[],
+        title="",
+        subtitle="",
+        year=None,
+        confidence_score=0.0,
+        reasoning=reasoning,
+        used_ocr=used_ocr,
+        provider_name=provider_name,
+        model_name=model_name,
+    )
+
+
 def _finalize_classification(
     output: LLMClassificationOutput,
     used_ocr: bool,
     provider_name: str = "",
     model_name: str = "",
 ) -> ClassificationResult:
-    """Aplicar validação/reparo CAPES e trava determinística de título genérico."""
+    """Aplicar normalização de autores, consolidação taxonômica, blacklist e travas de confiança."""
     reparado = validate_or_repair_pair(output.grande_area, output.area_basica)
     tipo_str = output.tipo.value if hasattr(output.tipo, "value") else str(output.tipo)
+    authors_norm = normalize_authors(list(output.authors))
+    clean_doi = normalize_doi(output.doi)
+    clean_isbn = normalize_isbn(output.isbn)
 
-    # Subarea e especialidade: garantir que nunca fiquem vazios.
     subarea = (output.subarea or "").strip()
     especialidade = (output.especialidade or "").strip()
     if not subarea or subarea.lower() in ("não especificada", "nao especificada", "none", "null", ""):
@@ -259,7 +279,7 @@ def _finalize_classification(
             subarea=subarea,
             especialidade=especialidade,
             tipo=tipo_str,
-            authors=list(output.authors),
+            authors=authors_norm,
             title=output.title,
             subtitle=output.subtitle,
             year=output.year,
@@ -270,8 +290,8 @@ def _finalize_classification(
             volume=output.volume,
             number=output.number,
             pages=output.pages,
-            doi=output.doi,
-            isbn=output.isbn,
+            doi=clean_doi,
+            isbn=clean_isbn,
             confidence_score=0.0,
             reasoning=(
                 f"{output.reasoning} Par (grande_area, area_basica) irreparável "
@@ -281,21 +301,34 @@ def _finalize_classification(
             provider_name=provider_name,
             model_name=model_name,
         )
+
     grande_area, area_basica = reparado
+    resolved = normalize_and_resolve_taxonomy(
+        {
+            "grande_area": grande_area,
+            "area_basica": area_basica,
+            "subarea": subarea,
+            "especialidade": especialidade,
+            "titulo": output.title or "",
+            "subtitulo": output.subtitle or "",
+            "authors": authors_norm,
+        },
+        first_author_key=extract_first_author_key(authors_norm),
+    )
 
     confidence = float(output.confidence_score)
     title = output.title or ""
-    has_authors = bool(output.authors)
+    has_authors = bool(authors_norm) and authors_norm != ["Autor Desconhecido"]
     if is_generic_title(title) and not has_authors:
         confidence = min(confidence, GENERIC_TITLE_CONFIDENCE_CAP)
 
     return ClassificationResult(
-        grande_area=grande_area,
-        area_basica=area_basica,
-        subarea=subarea,
-        especialidade=especialidade,
+        grande_area=resolved["grande_area"],
+        area_basica=resolved["area_basica"],
+        subarea=resolved["subarea"],
+        especialidade=resolved["especialidade"],
         tipo=tipo_str,
-        authors=list(output.authors),
+        authors=authors_norm,
         title=title,
         subtitle=output.subtitle,
         year=output.year,
@@ -306,8 +339,8 @@ def _finalize_classification(
         volume=output.volume,
         number=output.number,
         pages=output.pages,
-        doi=output.doi,
-        isbn=output.isbn,
+        doi=clean_doi,
+        isbn=clean_isbn,
         confidence_score=confidence,
         reasoning=output.reasoning,
         used_ocr=used_ocr,
@@ -326,6 +359,7 @@ class LLMProvider(Protocol):
         cip_text: str,
         external_metadata: ExternalMetadata | None,
         used_ocr: bool = False,
+        source_path: Path | None = None,
     ) -> ClassificationResult:
         """Classificar um documento e retornar o resultado estruturado."""
         ...
@@ -343,8 +377,6 @@ class GeminiProvider:
         from google.genai import Client
         from google.genai import types as genai_types
 
-        # Configurar timeout explícito de 45 segundos para evitar que conexões travadas
-        # bloqueiem o worker indefinidamente.
         http_options = genai_types.HttpOptions(
             timeout=45_000,
             client_args={"timeout": 45.0},
@@ -356,7 +388,6 @@ class GeminiProvider:
         self._fallback_models = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
 
     def _is_404(self, exc: BaseException) -> bool:
-        """Verificar se uma exceção do google-genai é um erro HTTP 404 (NOT_FOUND)."""
         code = getattr(exc, "code", None)
         try:
             return int(code) == 404
@@ -374,7 +405,6 @@ class GeminiProvider:
         system_prompt: str,
         context_payload: str,
     ) -> LLMClassificationOutput:
-        """Chamar a API Gemini com saída estruturada e retry HTTP 429/503, com fallback em HTTP 404."""
         config = self._types.GenerateContentConfig(
             system_instruction=system_prompt,
             response_mime_type="application/json",
@@ -400,9 +430,7 @@ class GeminiProvider:
                 return parsed
             except Exception as exc:
                 ultimo_erro = exc
-                if self._is_404(exc):
-                    continue
-                if _is_retryable_http(exc):
+                if self._is_404(exc) or _is_retryable_http(exc):
                     continue
                 raise
         raise ultimo_erro or RuntimeError("Falha ao chamar a API Gemini")
@@ -413,8 +441,8 @@ class GeminiProvider:
         cip_text: str,
         external_metadata: ExternalMetadata | None,
         used_ocr: bool = False,
+        source_path: Path | None = None,
     ) -> ClassificationResult:
-        """Classificar via Gemini aplicando travas determinísticas de confiança."""
         short = _check_short_circuit(
             sampled_text, cip_text, external_metadata, used_ocr, "gemini", self._model
         )
@@ -422,24 +450,18 @@ class GeminiProvider:
             return short
 
         system_prompt = build_system_prompt()
-        context_payload = build_context_payload(sampled_text, cip_text, external_metadata)
+        context_payload = build_context_payload(
+            sampled_text, cip_text, external_metadata, source_path=source_path
+        )
 
         try:
             output = self._call_gemini(system_prompt, context_payload)
         except Exception as exc:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=f"Falha na chamada ao LLM: {_sanitize_error_message(str(exc))}",
-                used_ocr=used_ocr,
-                provider_name="gemini",
-                model_name=self._model,
+            return _error_result(
+                f"Falha na chamada ao LLM: {_sanitize_error_message(str(exc))}",
+                used_ocr,
+                "gemini",
+                self._model,
             )
 
         return _finalize_classification(output, used_ocr, "gemini", self._model)
@@ -469,12 +491,113 @@ class MockLLMProvider:
         cip_text: str,
         external_metadata: ExternalMetadata | None,
         used_ocr: bool = False,
+        source_path: Path | None = None,
     ) -> ClassificationResult:
         return self._result
 
 
-class NvidiaProvider:
+class _OpenAICompatibleProvider:
+    """Base compartilhada para provedores HTTP OpenAI-compatíveis (NVIDIA, DeepSeek, Groq)."""
+
+    _provider_label: str = ""
+    _provider_id: str = ""
+    _max_tokens: int = 2048
+    _use_json_response_format: bool = False
+    _allow_reasoning_fallback: bool = False
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str,
+        base_url: str,
+        max_sampled_chars: int = 15_000,
+    ) -> None:
+        self._client = httpx.Client(
+            base_url=base_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=60.0,
+        )
+        self._model = model
+        self._max_sampled_chars = max_sampled_chars
+
+    @retry(
+        retry=retry_if_exception(_is_generic_openai_retryable),
+        stop=stop_after_attempt(4),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        reraise=True,
+    )
+    def _call_chat_completions(self, system_prompt: str, context_payload: str) -> str:
+        payload: dict[str, Any] = {
+            "model": self._model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_prompt
+                    + "\n\nResponda APENAS com um objeto JSON válido estritamente no schema solicitado, sem marcação markdown adicional.",
+                },
+                {"role": "user", "content": context_payload},
+            ],
+            "temperature": 0.1,
+            "max_tokens": self._max_tokens,
+        }
+        if self._use_json_response_format:
+            payload["response_format"] = {"type": "json_object"}
+
+        resp = self._client.post("/chat/completions", json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        choice = data.get("choices", [{}])[0]
+        msg = choice.get("message", {})
+        content = msg.get("content")
+        if (not content or not str(content).strip()) and self._allow_reasoning_fallback:
+            reasoning = msg.get("reasoning_content")
+            if reasoning and "{" in reasoning and "}" in reasoning:
+                content = reasoning
+        if not content or not str(content).strip():
+            raise ValueError(f"Resposta do LLM {self._provider_label} veio vazia")
+        return str(content)
+
+    def classify(
+        self,
+        sampled_text: str,
+        cip_text: str,
+        external_metadata: ExternalMetadata | None,
+        used_ocr: bool = False,
+        source_path: Path | None = None,
+    ) -> ClassificationResult:
+        short = _check_short_circuit(
+            sampled_text, cip_text, external_metadata, used_ocr
+        )
+        if short is not None:
+            return short
+
+        system_prompt = build_system_prompt()
+        context_payload = build_context_payload(
+            sampled_text, cip_text, external_metadata, source_path=source_path
+        )
+
+        try:
+            content = self._call_chat_completions(system_prompt, context_payload)
+        except Exception as exc:
+            return _error_result(
+                f"Falha na chamada ao LLM {self._provider_label}: {_sanitize_error_message(str(exc))}",
+                used_ocr,
+            )
+
+        output = _parse_classification_json(content)
+        return _finalize_classification(output, used_ocr, self._provider_id, self._model)
+
+
+class NvidiaProvider(_OpenAICompatibleProvider):
     """Provedor NVIDIA NIM usando httpx diretamente."""
+
+    _provider_label = "NVIDIA"
+    _provider_id = "nvidia"
+    _max_tokens = 4096
+    _allow_reasoning_fallback = True
 
     def __init__(
         self,
@@ -483,115 +606,14 @@ class NvidiaProvider:
         base_url: str = "https://integrate.api.nvidia.com/v1",
         max_sampled_chars: int = 15_000,
     ) -> None:
-        self._client = httpx.Client(
-            base_url=base_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=60.0,
-        )
-        self._model = model
-        self._max_sampled_chars = max_sampled_chars
-
-    @retry(
-        retry=retry_if_exception(_is_generic_openai_retryable),
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        reraise=True,
-    )
-    def _call_nvidia(self, system_prompt: str, context_payload: str) -> str:
-        """Chamar a API NVIDIA NIM /chat/completions com retry em 429/503."""
-        payload = {
-            "model": self._model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt
-                    + "\n\nResponda APENAS com um objeto JSON válido estritamente no schema solicitado, sem marcação markdown adicional.",
-                },
-                {"role": "user", "content": context_payload},
-            ],
-            "temperature": 0.1,
-            "max_tokens": 4096,
-        }
-        resp = self._client.post("/chat/completions", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        choice = data.get("choices", [{}])[0]
-        msg = choice.get("message", {})
-        content = msg.get("content")
-        if not content or not str(content).strip():
-            reasoning = msg.get("reasoning_content")
-            if reasoning and "{" in reasoning and "}" in reasoning:
-                content = reasoning
-            else:
-                raise ValueError("Resposta do LLM NVIDIA veio vazia")
-        return str(content)
-
-    def classify(
-        self,
-        sampled_text: str,
-        cip_text: str,
-        external_metadata: ExternalMetadata | None,
-        used_ocr: bool = False,
-    ) -> ClassificationResult:
-        """Classificar via NVIDIA NIM aplicando travas determinísticas de confiança."""
-        useful_chars = _alphanumeric_count(sampled_text) + _alphanumeric_count(cip_text)
-        has_external = external_metadata is not None and bool(
-            external_metadata.title or external_metadata.authors
-        )
-        if useful_chars < MIN_USEFUL_CHARS and not has_external:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=(
-                    "Texto alfanumérico útil inferior a 50 caracteres e sem "
-                    "metadados externos; classificação não realizada."
-                ),
-                used_ocr=used_ocr,
-            )
-
-        system_prompt = build_system_prompt()
-        context_payload = build_context_payload(sampled_text, cip_text, external_metadata)
-
-        try:
-            content = self._call_nvidia(system_prompt, context_payload)
-        except Exception as exc:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=f"Falha na chamada ao LLM NVIDIA: {_sanitize_error_message(str(exc))}",
-                used_ocr=used_ocr,
-            )
-
-        json_text = _strip_markdown_json(content)
-        try:
-            output = LLMClassificationOutput.model_validate_json(json_text)
-        except Exception:
-            output = LLMClassificationOutput.model_validate(json.loads(json_text))
-
-        return _finalize_classification(output, used_ocr, "nvidia", self._model)
+        super().__init__(api_key, model, base_url, max_sampled_chars)
 
 
-class DeepSeekProvider:
-    """Provedor DeepSeek usando httpx diretamente.
+class DeepSeekProvider(_OpenAICompatibleProvider):
+    """Provedor DeepSeek usando httpx diretamente."""
 
-    Chama a API DeepSeek em POST /chat/completions e aplica travas
-    determinísticas de confiança idênticas às do NvidiaProvider.
-    """
+    _provider_label = "DeepSeek"
+    _provider_id = "deepseek"
 
     def __init__(
         self,
@@ -600,102 +622,25 @@ class DeepSeekProvider:
         base_url: str = "https://api.deepseek.com/v1",
         max_sampled_chars: int = 15_000,
     ) -> None:
-        self._client = httpx.Client(
-            base_url=base_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=60.0,
-        )
-        self._model = model
-        self._max_sampled_chars = max_sampled_chars
+        super().__init__(api_key, model, base_url, max_sampled_chars)
 
-    @retry(
-        retry=retry_if_exception(_is_generic_openai_retryable),
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        reraise=True,
-    )
-    def _call_deepseek(self, system_prompt: str, context_payload: str) -> str:
-        """Chamar a API DeepSeek /chat/completions com retry em 429/503."""
-        payload = {
-            "model": self._model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt
-                    + "\n\nResponda APENAS com um objeto JSON válido estritamente no schema solicitado, sem marcação markdown adicional.",
-                },
-                {"role": "user", "content": context_payload},
-            ],
-            "temperature": 0.1,
-            "max_tokens": 2048,
-        }
-        resp = self._client.post("/chat/completions", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        choice = data.get("choices", [{}])[0]
-        content = choice.get("message", {}).get("content")
-        if not content or not str(content).strip():
-            raise ValueError("Resposta do LLM DeepSeek veio vazia")
-        return str(content)
 
-    def classify(
+class GroqProvider(_OpenAICompatibleProvider):
+    """Provedor Groq (OpenAI-compatível) usando httpx diretamente."""
+
+    _provider_label = "Groq"
+    _provider_id = "groq"
+    _use_json_response_format = True
+
+    def __init__(
         self,
-        sampled_text: str,
-        cip_text: str,
-        external_metadata: ExternalMetadata | None,
-        used_ocr: bool = False,
-    ) -> ClassificationResult:
-        """Classificar via DeepSeek aplicando travas determinísticas de confiança."""
-        useful_chars = _alphanumeric_count(sampled_text) + _alphanumeric_count(cip_text)
-        has_external = external_metadata is not None and bool(
-            external_metadata.title or external_metadata.authors
-        )
-        if useful_chars < MIN_USEFUL_CHARS and not has_external:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=(
-                    "Texto alfanumérico útil inferior a 50 caracteres e sem "
-                    "metadados externos; classificação não realizada."
-                ),
-                used_ocr=used_ocr,
-            )
+        api_key: str,
+        model: str = "openai/gpt-oss-120b",
+        base_url: str = "https://api.groq.com/openai/v1",
+        max_sampled_chars: int = 15_000,
+    ) -> None:
+        super().__init__(api_key, model, base_url, max_sampled_chars)
 
-        system_prompt = build_system_prompt()
-        context_payload = build_context_payload(sampled_text, cip_text, external_metadata)
-
-        try:
-            content = self._call_deepseek(system_prompt, context_payload)
-        except Exception as exc:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=f"Falha na chamada ao LLM DeepSeek: {_sanitize_error_message(str(exc))}",
-                used_ocr=used_ocr,
-            )
-
-        json_text = _strip_markdown_json(content)
-        try:
-            output = LLMClassificationOutput.model_validate_json(json_text)
-        except Exception:
-            output = LLMClassificationOutput.model_validate(json.loads(json_text))
-
-        return _finalize_classification(output, used_ocr, "deepseek", self._model)
 
 class ClaudeProvider:
     """Provedor Anthropic Claude usando httpx diretamente."""
@@ -726,7 +671,6 @@ class ClaudeProvider:
         reraise=True,
     )
     def _call_claude(self, system_prompt: str, context_payload: str) -> str:
-        """Chamar a API Anthropic /messages com retry em 429/529/503."""
         payload = {
             "model": self._model,
             "max_tokens": 2048,
@@ -750,189 +694,33 @@ class ClaudeProvider:
         cip_text: str,
         external_metadata: ExternalMetadata | None,
         used_ocr: bool = False,
+        source_path: Path | None = None,
     ) -> ClassificationResult:
-        """Classificar via Anthropic Claude aplicando travas determinísticas de confiança."""
-        useful_chars = _alphanumeric_count(sampled_text) + _alphanumeric_count(cip_text)
-        has_external = external_metadata is not None and bool(
-            external_metadata.title or external_metadata.authors
+        short = _check_short_circuit(
+            sampled_text, cip_text, external_metadata, used_ocr
         )
-        if useful_chars < MIN_USEFUL_CHARS and not has_external:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=(
-                    "Texto alfanumérico útil inferior a 50 caracteres e sem "
-                    "metadados externos; classificação não realizada."
-                ),
-                used_ocr=used_ocr,
-            )
+        if short is not None:
+            return short
 
         system_prompt = build_system_prompt()
-        context_payload = build_context_payload(sampled_text, cip_text, external_metadata)
+        context_payload = build_context_payload(
+            sampled_text, cip_text, external_metadata, source_path=source_path
+        )
 
         try:
             content = self._call_claude(system_prompt, context_payload)
         except Exception as exc:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=f"Falha na chamada ao LLM Claude: {_sanitize_error_message(str(exc))}",
-                used_ocr=used_ocr,
+            return _error_result(
+                f"Falha na chamada ao LLM Claude: {_sanitize_error_message(str(exc))}",
+                used_ocr,
             )
 
-        json_text = _strip_markdown_json(content)
-        try:
-            output = LLMClassificationOutput.model_validate_json(json_text)
-        except Exception:
-            output = LLMClassificationOutput.model_validate(json.loads(json_text))
-
+        output = _parse_classification_json(content)
         return _finalize_classification(output, used_ocr, "claude", self._model)
 
 
-class GroqProvider:
-    """Provedor Groq (OpenAI-compatível) usando httpx diretamente.
-
-    Chama a API Groq em POST /chat/completions e aplica travas
-    determinísticas de confiança idênticas às dos demais provedores.
-    """
-
-    def __init__(
-        self,
-        api_key: str,
-        model: str = "openai/gpt-oss-120b",
-        base_url: str = "https://api.groq.com/openai/v1",
-        max_sampled_chars: int = 15_000,
-    ) -> None:
-        self._client = httpx.Client(
-            base_url=base_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            timeout=60.0,
-        )
-        self._model = model
-        self._max_sampled_chars = max_sampled_chars
-
-    @retry(
-        retry=retry_if_exception(_is_generic_openai_retryable),
-        stop=stop_after_attempt(4),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        reraise=True,
-    )
-    def _call_groq(self, system_prompt: str, context_payload: str) -> str:
-        """Chamar a API Groq /chat/completions com retry em 429/503."""
-        payload = {
-            "model": self._model,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt
-                    + "\n\nResponda APENAS com um objeto JSON válido estritamente no schema solicitado, sem marcação markdown adicional.",
-                },
-                {"role": "user", "content": context_payload},
-            ],
-            "temperature": 0.1,
-            "max_tokens": 2048,
-            "response_format": {"type": "json_object"},
-        }
-        resp = self._client.post("/chat/completions", json=payload)
-        resp.raise_for_status()
-        data = resp.json()
-        choice = data.get("choices", [{}])[0]
-        content = choice.get("message", {}).get("content")
-        if not content or not str(content).strip():
-            raise ValueError("Resposta do LLM Groq veio vazia")
-        return str(content)
-
-    def classify(
-        self,
-        sampled_text: str,
-        cip_text: str,
-        external_metadata: ExternalMetadata | None,
-        used_ocr: bool = False,
-    ) -> ClassificationResult:
-        """Classificar via Groq aplicando travas determinísticas de confiança."""
-        useful_chars = _alphanumeric_count(sampled_text) + _alphanumeric_count(cip_text)
-        has_external = external_metadata is not None and bool(
-            external_metadata.title or external_metadata.authors
-        )
-        if useful_chars < MIN_USEFUL_CHARS and not has_external:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=(
-                    "Texto alfanumérico útil inferior a 50 caracteres e sem "
-                    "metadados externos; classificação não realizada."
-                ),
-                used_ocr=used_ocr,
-            )
-
-        system_prompt = build_system_prompt()
-        context_payload = build_context_payload(sampled_text, cip_text, external_metadata)
-
-        try:
-            content = self._call_groq(system_prompt, context_payload)
-        except Exception as exc:
-            return ClassificationResult(
-                grande_area="",
-                area_basica="",
-                tipo="Outros",
-                authors=[],
-                title="",
-                subtitle="",
-                year=None,
-                confidence_score=0.0,
-                reasoning=f"Falha na chamada ao LLM Groq: {_sanitize_error_message(str(exc))}",
-                used_ocr=used_ocr,
-            )
-
-        json_text = _strip_markdown_json(content)
-        try:
-            output = LLMClassificationOutput.model_validate_json(json_text)
-        except Exception:
-            output = LLMClassificationOutput.model_validate(json.loads(json_text))
-
-        return _finalize_classification(output, used_ocr, "groq", self._model)
-
-
-# --------------------------------------------------------------------------- #
-# FallbackLLMDispatcher e fábrica de cadeia de provedores
-# --------------------------------------------------------------------------- #
-import logging  # noqa: E402
-
-_llm_logger = logging.getLogger("tomus.llm")
-
-
 class FallbackLLMDispatcher:
-    """Despachante de provedores LLM com fallback automático.
-
-    Implementa o protocolo :class:`LLMProvider`. Recebe uma cadeia ordenada de
-    tuplas ``(nome_provedor, instancia_provedor)``. O primeiro é o provedor
-    primário; os demais são fallbacks tentados em ordem quando o anterior
-    falha (exceção ou resultado com reasoning contendo 'Falha na chamada ao
-    LLM').
-
-    Quando todos os provedores falham, retorna o último resultado de falha.
-    """
+    """Despachante de provedores LLM com fallback automático."""
 
     def __init__(self, providers: list[tuple[str, object]]) -> None:
         if not providers:
@@ -941,12 +729,10 @@ class FallbackLLMDispatcher:
 
     @property
     def primary_name(self) -> str:
-        """Retornar o nome do provedor primário."""
         return self._providers[0][0]
 
     @property
     def provider_names(self) -> list[str]:
-        """Retornar a lista ordenada de nomes dos provedores na cadeia."""
         return [nome for nome, _ in self._providers]
 
     def classify(
@@ -955,24 +741,28 @@ class FallbackLLMDispatcher:
         cip_text: str,
         external_metadata: ExternalMetadata | None,
         used_ocr: bool = False,
+        source_path: Path | None = None,
     ) -> ClassificationResult:
-        """Classificar tentando os provedores em ordem até obter sucesso.
-
-        Se um provedor levantar exceção ou retornar resultado com
-        reasoning contendo 'Falha na chamada ao LLM', loga um warning e
-        tenta o próximo da cadeia.
-        """
         ultimo_resultado: ClassificationResult | None = None
         ultimo_erro: str | None = None
 
         for indice, (nome, provedor) in enumerate(self._providers):
             try:
-                resultado = provedor.classify(
-                    sampled_text=sampled_text,
-                    cip_text=cip_text,
-                    external_metadata=external_metadata,
-                    used_ocr=used_ocr,
-                )
+                try:
+                    resultado = provedor.classify(
+                        sampled_text=sampled_text,
+                        cip_text=cip_text,
+                        external_metadata=external_metadata,
+                        used_ocr=used_ocr,
+                        source_path=source_path,
+                    )
+                except TypeError:
+                    resultado = provedor.classify(
+                        sampled_text=sampled_text,
+                        cip_text=cip_text,
+                        external_metadata=external_metadata,
+                        used_ocr=used_ocr,
+                    )
             except Exception as exc:
                 ultimo_erro = str(exc)
                 proximo = (
@@ -986,22 +776,12 @@ class FallbackLLMDispatcher:
                     exc,
                     proximo,
                 )
-                ultimo_resultado = ClassificationResult(
-                    grande_area="",
-                    area_basica="",
-                    tipo="Outros",
-                    authors=[],
-                    title="",
-                    subtitle="",
-                    year=None,
-                    confidence_score=0.0,
-                    reasoning=f"Falha na chamada ao LLM {nome}: {_sanitize_error_message(str(exc))}",
-                    used_ocr=used_ocr,
+                ultimo_resultado = _error_result(
+                    f"Falha na chamada ao LLM {nome}: {_sanitize_error_message(str(exc))}",
+                    used_ocr,
                 )
                 continue
 
-            # Resultado de erro de rede/API: reasoning começa com
-            # 'Falha na chamada ao LLM ...' -> tenta o próximo provedor.
             if resultado.reasoning.startswith("Falha na chamada ao LLM"):
                 ultimo_erro = resultado.reasoning
                 proximo = (
@@ -1018,27 +798,17 @@ class FallbackLLMDispatcher:
                 ultimo_resultado = resultado
                 continue
 
-            # Sucesso: preenche provider/model efetivos se ausentes e retorna.
             if not resultado.provider_name:
                 resultado.provider_name = nome.split(" (")[0]
             if not resultado.model_name:
                 resultado.model_name = str(getattr(provedor, "_model", ""))
             return resultado
 
-        # Todos os provedores falharam: retornar o último resultado de erro.
         if ultimo_resultado is not None:
             return ultimo_resultado
-        return ClassificationResult(
-            grande_area="",
-            area_basica="",
-            tipo="Outros",
-            authors=[],
-            title="",
-            subtitle="",
-            year=None,
-            confidence_score=0.0,
-            reasoning=f"Falha na chamada ao LLM: {_sanitize_error_message(str(ultimo_erro or 'provedor desconhecido'))}",
-            used_ocr=used_ocr,
+        return _error_result(
+            f"Falha na chamada ao LLM: {_sanitize_error_message(str(ultimo_erro or 'provedor desconhecido'))}",
+            used_ocr,
         )
 
 
@@ -1049,21 +819,7 @@ def create_provider_chain(
     cli_model: str | None = None,
     cli_api_key: str | None = None,
 ) -> LLMProvider:
-    """Criar uma cadeia de provedores LLM com fallback automático.
-
-    Parâmetros:
-        config: configuração ativa (AppConfig).
-        cli_provider: provedor solicitado via CLI (sobrescreve config).
-        cli_model: modelo solicitado via CLI (sobrescreve config).
-        cli_api_key: chave de API via CLI (sobrescreve config e env).
-
-    A cadeia usa o provedor especificado pelo usuário como primário e inclui
-    como fallback os demais provedores que tiverem chave de API configurada.
-    Se o primário não tiver chave, o primeiro com chave válida torna-se o
-    primário efetivo.
-
-    Suporta: "gemini", "nvidia", "deepseek", "claude", "groq".
-    """
+    """Criar uma cadeia de provedores LLM com fallback automático."""
     provedores_disponiveis: dict[str, dict[str, Any]] = {
         "gemini": {
             "classe": GeminiProvider,
@@ -1102,7 +858,6 @@ def create_provider_chain(
     }
 
     def _resolver_chaves(nome_provedor: str, cli_key: str | None) -> list[str]:
-        """Resolver as chaves de API: CLI > env > config (suporta pool de múltiplas chaves)."""
         if cli_key:
             return _resolve_api_keys(cli_key)
         info = provedores_disponiveis[nome_provedor]
@@ -1113,7 +868,6 @@ def create_provider_chain(
         return _resolve_api_keys(info["chave"])
 
     def _resolver_modelo(nome_provedor: str, cli_model_val: str | None) -> str:
-        """Resolver o modelo: CLI > [llm.providers.<nome>].model > config.llm.model > padrão."""
         if cli_model_val:
             return cli_model_val
         prov_cfg = (config.llm.providers or {}).get(nome_provedor, {})
@@ -1123,12 +877,10 @@ def create_provider_chain(
             return config.llm.model
         return provedores_disponiveis[nome_provedor]["modelo_padrao"]
 
-    # Determinar provedor primário: CLI > config.llm.provider > "gemini".
     provedor_solicitado = cli_provider or config.llm.provider or "gemini"
     if provedor_solicitado not in provedores_disponiveis:
         provedor_solicitado = "gemini"
 
-    # Construir cadeia: começar com o solicitado, depois os demais com chave.
     cadeia: list[tuple[str, object]] = []
     nomes_vistos: set[str] = set()
 
@@ -1140,7 +892,7 @@ def create_provider_chain(
         info = provedores_disponiveis[nome]
         chaves = _resolver_chaves(nome, cli_api_key if usar_cli_key else None)
         if not chaves:
-            return  # sem chave: não adicionar
+            return
         modelo = _resolver_modelo(nome, cli_model if usar_cli_model else None)
         for idx, chave in enumerate(chaves):
             instancia = info["classe"](api_key=chave, model=modelo)
@@ -1148,19 +900,16 @@ def create_provider_chain(
             cadeia.append((rotulo, instancia))
         nomes_vistos.add(nome)
 
-    # Primeiro: o provedor solicitado pelo usuário (se tiver chave).
     _adicionar_provedor(
         provedor_solicitado,
         usar_cli_key=(cli_provider is not None),
         usar_cli_model=(cli_model is not None),
     )
 
-    # Depois: os demais da cadeia de fallback do config (se houver chave).
     for nome in config.llm.fallback_chain:
         if nome != provedor_solicitado:
             _adicionar_provedor(nome, usar_cli_key=False, usar_cli_model=False)
 
-    # Se o solicitado não teve chave, garantir pelo menos um com chave.
     if not cadeia:
         for nome in ("gemini", "nvidia", "deepseek", "claude", "groq"):
             _adicionar_provedor(nome, usar_cli_key=False, usar_cli_model=False)

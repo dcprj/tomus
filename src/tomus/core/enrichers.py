@@ -25,9 +25,18 @@ from tomus import __version__
 from tomus.core.config import AppConfig
 from tomus.core.models import ExtractedDocument, ExternalMetadata
 from tomus.core.prompts import is_generic_title
+from tomus.extractors.identifiers import (
+    DOI_BLACKLIST,
+    ISBN_BLACKLIST,
+    normalize_doi,
+    normalize_isbn,
+)
 
 # Limiar de similaridade para buscas por título/autor (Item 16).
 _SIMILARITY_THRESHOLD = 88.0
+
+# Similaridade mínima de título para aceitar doi/isbn retornado por busca textual.
+_TITLE_SIMILARITY_MIN_FOR_ID = 0.65
 
 # Timeouts e retry (Item 16).
 _REQUEST_TIMEOUT = 8.0
@@ -142,6 +151,7 @@ def _openalex_to_metadata(item: dict, score: float) -> ExternalMetadata:
 
     doi_raw = item.get("doi")
     doi = doi_raw.split("doi.org/")[-1] if doi_raw and "doi.org/" in str(doi_raw) else doi_raw
+    doi = normalize_doi(doi) or None
 
     return ExternalMetadata(
         source="openalex",
@@ -219,8 +229,8 @@ def _google_books_to_metadata(item: dict, score: float) -> ExternalMetadata:
         t = id_entry.get("type")
         val = id_entry.get("identifier")
         if t in ("ISBN_13", "ISBN_10") and val:
-            isbn = val
-            if t == "ISBN_13":
+            isbn = normalize_isbn(val)
+            if isbn:
                 break
 
     return ExternalMetadata(
@@ -275,6 +285,13 @@ def enrich_document_metadata(
     (exato) ou título/autor, retornando uma lista de
     :class:`ExternalMetadata` válidos (similaridade >= 88.0 para buscas
     textuais).
+
+    Regras de sanidade (Camada 2 / anti-contaminação cruzada):
+      - Resultados de busca textual com match_score < 0.65 e que carreguem
+        doi/isbn são descartados.
+      - doi/isbn presentes em ISBN_BLACKLIST / DOI_BLACKLIST são anulados
+        (já normalizados em ``_openalex_to_metadata`` / ``_google_books_to_metadata``
+        e descartados quando listrados).
     """
     email = config.api_keys.openalex_polite_email or None
     google_key = config.api_keys.google_books_api_key or None
@@ -313,4 +330,13 @@ def enrich_document_metadata(
             except Exception:
                 pass
 
-    return results
+    # Filtro de sanidade: descartar resultados de busca textual com
+    # similaridade baixa que carreguem identificadores (evita contaminação cruzada).
+    filtered: list[ExternalMetadata] = []
+    for m in results:
+        has_identifier = bool(m.doi or m.isbn)
+        if has_identifier and m.match_score < _TITLE_SIMILARITY_MIN_FOR_ID:
+            continue
+        filtered.append(m)
+
+    return filtered

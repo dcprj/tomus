@@ -221,6 +221,12 @@ _STATUS_TOKEN_BY_STATUS: Final[dict[ProcessStatus, tuple[str, str, str, str]]] =
         "status_duplicate_skipped_fg_dark",
         "status_duplicate_skipped_bg_dark",
     ),
+    ProcessStatus.OBSOLETE: (
+        "status_ignored_non_pdf_fg_light",
+        "status_ignored_non_pdf_bg_light",
+        "status_ignored_non_pdf_fg_dark",
+        "status_ignored_non_pdf_bg_dark",
+    ),
     ProcessStatus.IGNORED_NON_PDF: (
         "status_ignored_non_pdf_fg_light",
         "status_ignored_non_pdf_bg_light",

@@ -1,9 +1,13 @@
-"""Extração de identificadores (DOI, ISBN) e detecção de Ficha Catalográfica (Item 13).
+"""Extração de identificadores (DOI, ISBN, ISSN) e detecção de Ficha Catalográfica (Item 13).
 
 Localiza candidatos a DOI por expressão regular estrita (limpando pontuação
 terminal) e candidatos a ISBN-10/ISBN-13 validando matematicamente o dígito
 verificador via ``python-stdnum`` (``stdnum.isbn.is_valid``). Detecta também
 páginas de Ficha Catalográfica CIP por marcadores ABNT.
+
+Fornece funções de normalização canônica (Camada 2 do LibraryIndex):
+``normalize_isbn``, ``normalize_issn`` e ``normalize_doi``, aplicando
+filtros contra listas negras de identificadores contaminantes.
 """
 
 from __future__ import annotations
@@ -12,12 +16,17 @@ import re
 from typing import Optional, Tuple
 
 from stdnum import isbn as _isbn
+from stdnum import issn as _issn
 
 # Expressão regular estrita para DOI (Item 13).
 DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b")
 
 # Pontuação terminal que pode ser capturada indevidamente pela regex.
 _TERMINAL_PUNCT = ".,;:!?)]}»’\"'"
+
+# Identificadores contaminantes a serem filtrados (Camada 2 / Sanidade Bibliográfica).
+ISBN_BLACKLIST = {"9786557826669"}
+DOI_BLACKLIST = {"10.1590/1980-53148425", "10.56083/rcv5n6-015"}
 
 
 def _clean_doi(candidate: str) -> str:
@@ -66,8 +75,59 @@ CIP_MARKERS = (
     "Dados Internacionais de Catalogação",
     "CDD",
     "CDU",
-    "Tomusári",
+    "Bibliotecári",
 )
+
+
+def normalize_isbn(raw: Optional[str]) -> Optional[str]:
+    """Normalizar ISBN para ISBN-13 canônico.
+
+    Remove caracteres fora de ``[0-9Xx]``, valida o dígito verificador com
+    ``stdnum.isbn.is_valid``, converte ISBN-10 para ISBN-13 via
+    ``stdnum.isbn.to_isbn13(stdnum.isbn.compact(s))`` e filtra
+    ``ISBN_BLACKLIST``. Retorna ``None`` quando inválido ou listrado.
+    """
+    if not raw:
+        return None
+    s = re.sub(r"[^0-9Xx]", "", str(raw))
+    if not s or not _isbn.is_valid(s):
+        return None
+    s13 = _isbn.to_isbn13(_isbn.compact(s))
+    if s13 in ISBN_BLACKLIST:
+        return None
+    return s13
+
+
+def normalize_issn(raw: Optional[str]) -> Optional[str]:
+    """Normalizar ISSN para forma compacta de 8 caracteres (``XXXXYYYY``).
+
+    Valida com ``stdnum.issn.is_valid`` e compacta via
+    ``stdnum.issn.compact``. Retorna ``None`` quando inválido.
+    """
+    if not raw:
+        return None
+    s = re.sub(r"[^0-9Xx]", "", str(raw))
+    if not s or not _issn.is_valid(s):
+        return None
+    return _issn.compact(s)
+
+
+def normalize_doi(raw: Optional[str]) -> Optional[str]:
+    """Normalizar DOI para forma canônica em minúsculas.
+
+    Extrai ``10\\.\\d{4,9}/\\S+`` em minúsculas, remove prefixo
+    ``doi.org/`` e pontuação terminal, e filtra ``DOI_BLACKLIST``. Retorna
+    ``None`` quando inválido ou listrado.
+    """
+    if not raw:
+        return None
+    s = str(raw).strip().lower()
+    if "doi.org/" in s:
+        s = s.split("doi.org/")[-1]
+    s = s.strip(".,;:!?)]}»\"'")
+    if not re.match(r"^10\.\d{4,9}/\S+$", s) or s in DOI_BLACKLIST:
+        return None
+    return s
 
 
 def detect_cip_page(text: str) -> str:

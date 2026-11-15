@@ -19,7 +19,7 @@ O **Tomus** foi criado exatamente para resolver essa dor, de forma automatizada,
 1. **Ele examina os seus PDFs:** Lê o conteúdo textual e, se o documento for um livro ou artigo antigo escaneado, utiliza a inteligência visual do seu próprio computador Mac para transcrever o texto.
 2. **Ele identifica a obra com precisão:** Localiza títulos, autores, ano de publicação, editoras ou revistas científicas.
 3. **Ele organiza seu acervo por assuntos:** Agrupa seus arquivos na taxonomia oficial de áreas do conhecimento da **CAPES/CNPq** (por exemplo: *Ciências Humanas › Filosofia › Epistemologia*).
-4. **Ele padroniza o nome dos arquivos:** Renomeia cada arquivo de forma clara e profissional: `SOBRENOME_ANO_TITULO.pdf`.
+4. **Ele padroniza o nome dos arquivos:** Renomeia cada arquivo de forma clara e profissional: `Autor - Título - Ano.pdf`.
 5. **Ele entrega a citação pronta:** Gera a referência bibliográfica oficial completa conforme a norma **ABNT NBR 6023**, pronta para copiar com um único clique e colar no seu editor de texto (Word, Docs, Pages ou LaTeX).
 6. **Ele protege seus dados:** Seus arquivos PDF **nunca saem do seu computador**. Todo o processamento de arquivos é estritamente local e seguro.
 
@@ -202,7 +202,8 @@ No topo da barra lateral, você pode clicar nos filtros para focar no que precis
 * **Todos os Itens:** Restaura a visão geral da biblioteca.
 * **Organizados:** Mostra tudo o que foi identificado e catalogado com alta precisão.
 * **Revisão Manual:** Mostra documentos que merecem a sua atenção (veja a seção 6).
-* **Duplicatas:** Mostra arquivos que você tinha repetidos no computador (o Tomus detecta duplicatas idênticas byte a byte para poupar seu espaço em disco).
+* **Duplicatas (`duplicatas/`):** Mostra exemplares repetidos da mesma edição (detectados por SHA-256 exato, DOI/ISBN ou impressão digital bibliográfica) para manter apenas um canônico na árvore temática.
+* **Obsoletos (`obsoletos/`):** Mostra edições anteriores superadas por versões mais recentes da mesma obra. Sempre que uma edição mais nova é processada, o Tomus mantém a mais recente na árvore temática e move a antiga para `obsoletos/` com uma ficha `.md` explicativa apontando para o exemplar atualizado.
 * **Erros / Ignorados:** Mostra se havia algum arquivo com senha ou que não era um PDF válido.
 
 ### 5.3 Busca Instantânea
@@ -239,7 +240,7 @@ Raramente, alguns documentos aparecem marcados com o selo amarelo de **Revisão 
 
 * **Cadastre pelo menos duas chaves (Gemini + Groq):** O Gemini é extraordinário para a maioria dos arquivos. Se você cadastrar também uma chave gratuita do Groq nas Preferências, você nunca ficará na mão: se o Gemini atingir o limite diário no meio de um lote grande com centenas de PDFs, o Tomus migra automaticamente para o Groq sem interromper o seu trabalho.
 * **Use o Modo Copiar na primeira vez:** Assim você mantém seus arquivos originais exatamente como estavam, permitindo comparar os resultados com total tranquilidade.
-* **Exporte sua bibliografia:** Se você utiliza gerenciadores bibliográficos como Zotero, Mendeley ou JabRef, note que o Tomus cria, junto de cada pasta organizada, um arquivo de metadados em formato padrão aberto (`.tomus.json`) que pode ser lido por outras ferramentas.
+* **Exporte sua bibliografia:** Para cada PDF organizado, o Tomus gera ao lado um arquivo companheiro Markdown (`.md`) com front matter YAML estruturado e a referência completa pronta na norma **ABNT NBR 6023**, facilitando a importação e indexação em ferramentas como Obsidian, Zotero ou Notion.
 
 ---
 

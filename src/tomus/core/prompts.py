@@ -4,11 +4,16 @@ Concentra as instruções de classificação e o controle de orçamento de token
 * texto amostrado (sampled_text) limitado a 15.000 caracteres, priorizando cip_text;
 * regras dos 5 tipos documentais (Livro, Revista Científica, Artigo,
   Tese_Dissertacao, Outros);
-* formatação de autores em 'Sobrenome, Nome';
-* catálogo fechado da CAPES/CNPq via format_taxonomy_for_prompt.
+* padronização de autores pessoais ('Sobrenome, Nome') e autoria institucional;
+* catálogo fechado da CAPES/CNPq via format_taxonomy_for_prompt;
+* pistas de arquivo de origem sanitizadas contra prompt injection.
 """
 
 from __future__ import annotations
+
+import re
+import unicodedata
+from pathlib import Path
 
 from tomus.core.models import ExternalMetadata
 from tomus.core.taxonomy import format_taxonomy_for_prompt
@@ -25,6 +30,131 @@ GENERIC_TITLES = {
 # Prefixos genéricos de exportação de escritório que reduzem a confiança.
 GENERIC_TITLE_PREFIXES = ("microsoft powerpoint -", "microsoft word -")
 
+# ---------------------------------------------------------------------------
+# Normalização de autores pessoais e institucionais
+# ---------------------------------------------------------------------------
+_INSTITUTIONAL_RE = re.compile(
+    r"\b(conselho|associa|association|organiza|organization|minist|secretaria|"
+    r"universidade|university|instituto|institute|fundacao|fundação|foundation|"
+    r"sociedade|society|federa|comissao|comissão|comite|comitê|governo|forum|fórum|"
+    r"centro|world health|unesco|unicef|brasil|crp|cfp|oms|who|apa)\b"
+)
+
+_INSTITUTIONAL_ALIASES: dict[str, str] = {
+    "cfp": "Conselho Federal de Psicologia",
+    "conselho federal de psicologia": "Conselho Federal de Psicologia",
+    "apa": "American Psychiatric Association",
+    "apa american psychiatric association": "American Psychiatric Association",
+    "american psychiatric association": "American Psychiatric Association",
+    "associacao americana de psiquiatria": "American Psychiatric Association",
+    "oms": "Organização Mundial da Saúde",
+    "who": "Organização Mundial da Saúde",
+    "world health organization": "Organização Mundial da Saúde",
+    "organizacao mundial da saude": "Organização Mundial da Saúde",
+}
+
+_SURNAME_SUFFIXES = {"filho", "junior", "jr", "neto", "sobrinho", "segundo"}
+_UNKNOWN_AUTHORS = {"autor desconhecido", "desconhecido", "anonimo", "anônimo", "unknown", "n/a"}
+
+
+def _fold_author_text(value: str) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return " ".join(re.sub(r"[^0-9a-z]+", " ", text.casefold()).split())
+
+
+def is_institutional_author(raw: str) -> bool:
+    """Identificar se o nome de autor representa uma instituição/órgão."""
+    cleaned = " ".join(str(raw or "").replace("\u00a0", " ").split()).strip(" .;")
+    if not cleaned:
+        return False
+    folded = _fold_author_text(cleaned)
+    if folded in _INSTITUTIONAL_ALIASES:
+        return True
+    if _INSTITUTIONAL_RE.search(folded):
+        # Evita falsos positivos caso um autor pessoal tenha sobrenome curto antes de vírgula
+        if "," in cleaned and len(cleaned.split(",", 1)[0].split()) == 1 and not folded.startswith("brasil"):
+            return False
+        return True
+    return False
+
+
+def normalize_author_name(raw: str) -> str:
+    """Normalizar nome de autor (pessoal ou institucional) preservando 'Sobrenome, Nome'.
+
+    * Instituições são preservadas por extenso sem inversão (ex.: ``CFP`` ->
+      ``Conselho Federal de Psicologia``; ``Brasil, Ministério...`` ->
+      ``Brasil. Ministério...``).
+    * Nomes pessoais já em ``Sobrenome, Nome`` têm apenas espaços limpos,
+      preservando prenomes ou iniciais existentes.
+    * Nomes pessoais sem vírgula (ex.: ``Donald Woods Winnicott``) são convertidos
+      para ``Winnicott, Donald Woods`` (respeitando sufixos como Filho/Júnior/Neto).
+    """
+    cleaned = " ".join(str(raw or "").replace("\u00a0", " ").split()).strip(" .;")
+    folded = _fold_author_text(cleaned)
+    if not cleaned or folded in _UNKNOWN_AUTHORS:
+        return "Autor Desconhecido"
+
+    if folded in _INSTITUTIONAL_ALIASES:
+        return _INSTITUTIONAL_ALIASES[folded]
+
+    if is_institutional_author(cleaned):
+        return re.sub(r"^(Brasil)\s*[,.]\s*", r"\1. ", cleaned, flags=re.I)
+
+    if "," in cleaned:
+        surname, given = [part.strip() for part in cleaned.split(",", 1)]
+        return f"{surname}, {given}".strip(", ")
+
+    parts = cleaned.split()
+    if len(parts) == 1:
+        return parts[0]
+
+    cut = len(parts) - 1
+    if _fold_author_text(parts[-1]) in _SURNAME_SUFFIXES and len(parts) > 2:
+        cut -= 1
+    surname = " ".join(parts[cut:])
+    given = " ".join(parts[:cut])
+    return f"{surname}, {given}"
+
+
+def normalize_authors(authors: list[str] | None) -> list[str]:
+    """Normalizar e deduplicar a lista de autores mantendo a ordem."""
+    if not authors:
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in authors:
+        norm = normalize_author_name(raw)
+        if not norm:
+            continue
+        key = _fold_author_text(norm)
+        if key not in seen:
+            seen.add(key)
+            result.append(norm)
+    return result
+
+
+def extract_first_author_key(authors: list[str] | None) -> str:
+    """Extrair chave canônica do sobrenome (ou instituição) do primeiro autor."""
+    if not authors:
+        return ""
+    norm = normalize_author_name(authors[0])
+    if norm == "Autor Desconhecido":
+        return ""
+    if is_institutional_author(norm):
+        return _fold_author_text(norm)
+    surname = norm.split(",", 1)[0].strip() if "," in norm else norm
+    surname = re.sub(r"^(de|da|do|dos|das)[- ]+", "", surname, flags=re.I)
+    return _fold_author_text(surname).replace(" ", "")
+
+
+def _sanitize_path_hint(value: str, max_len: int = 180) -> str:
+    """Sanitizar pistas de caminho de arquivo contra prompt injection."""
+    clean = re.sub(r"[\r\n\x00-\x1f\x7f]+", " ", str(value or ""))
+    clean = clean.replace("###", " ").replace("```", " ")
+    clean = " ".join(clean.split())
+    return clean[:max_len]
+
 
 def _truncate_sampled_text(sampled_text: str, cip_text: str) -> str:
     """Truncar sampled_text priorizando a integralidade de cip_text.
@@ -39,7 +169,6 @@ def _truncate_sampled_text(sampled_text: str, cip_text: str) -> str:
     reserve = len(cip_text)
     budget = MAX_SAMPLED_TEXT_CHARS - reserve
     if budget <= 0:
-        # Não há espaço para nada além do CIP; retornar o CIP sozinho.
         return cip_text[:MAX_SAMPLED_TEXT_CHARS]
 
     return sampled_text[:budget] + "\n..." + cip_text
@@ -56,32 +185,39 @@ def build_system_prompt() -> str:
         "1. Responda SOMENTE em JSON válido estritamente no esquema solicitado.\n"
         "2. 'grande_area' e 'area_basica' devem pertencer ao catálogo fechado "
         "CAPES/CNPq fornecido no contexto; não invente categorias.\n"
-        "3. 'subarea' é a subárea dentro da Área Básica (ex: 'Psicologia Clínica' "
-        "dentro de Psicologia). Use 'Não especificada' se não houver subárea clara.\n"
-        "4. 'especialidade' é a especialidade dentro da subárea (ex: \"Psicologia Hospitalar\" "
-        "dentro de Psicologia Clínica). Use 'Não especificada' se não houver.\n"
+        "3. 'subarea' deve priorizar o vocabulário controlado fornecido para a Área Básica "
+        "(ex: 'Psicanálise', 'Avaliação Psicológica', 'Psicologia Clínica' dentro de Psicologia). "
+        "Use 'Geral' quando não houver subárea mais específica.\n"
+        "4. 'especialidade' é a especialidade dentro da subárea. Use 'Não especificada' se não houver.\n"
         "5. 'tipo' deve ser exatamente um dos cinco valores: Livro, "
         "Revista Científica, Artigo, Tese_Dissertacao ou Outros.\n"
-        "4. 'authors' deve ser uma lista de strings no formato 'Sobrenome, Nome'. Se desconhecido ou institucional, use ['Autor Desconhecido'].\n"
-        "5. 'title' deve ser o título principal da obra/documento em português ou idioma original.\n"
-        "6. 'subtitle' deve ser o subtítulo da obra se houver, ou string vazia (\"\") se ausente.\n"
-        "7. 'year' deve ser o ano de publicação como número inteiro de 4 dígitos (ex: 2022) ou null se não puder ser determinado.\n"
-        "8. 'publisher' deve ser o nome da editora ou publicador (ex: 'Zahar', 'Companhia das Letras', 'Pólen Livros', 'Editora UnB', 'CEBRAP'), ou null se não constar.\n"
-        "9. 'city' deve ser a cidade / local de publicação (ex: 'São Paulo', 'Rio de Janeiro', 'Brasília'), ou null se não constar.\n"
-        "10. 'edition' deve ser a edição da obra (ex: '2. ed.', '1. ed.'), ou null.\n"
-        "11. 'journal_name' deve ser o título da revista ou periódico científico se o tipo for Artigo (ex: 'Tempo Psicanalítico', 'Novos Estudos CEBRAP', 'Cadernos de Pesquisa'), ou null se livro.\n"
-        "12. 'volume' deve ser o volume do periódico se indicado (ex: '54', 'v. 54' ou '39'), ou null.\n"
-        "13. 'number' deve ser o número ou fascículo do periódico se indicado (ex: '1', 'n. 1'), ou null.\n"
-        "14. 'pages' deve ser a paginação inicial e final do artigo (ex: '134-155') ou total de páginas do livro (ex: '288 p.'), ou null.\n"
-        "15. 'doi' deve ser o identificador DOI (ex: '10.1590/1980-53148425') se presente no texto, ou null.\n"
-        "16. 'isbn' deve ser o ISBN (ex: '978-65-5782-666-9') se presente na ficha catalográfica ou texto, ou null.\n"
-        "17. 'confidence_score' deve estar entre 0.0 e 1.0 representando o grau de certeza na classificação temática.\n"
-        "18. 'reasoning' deve justificar brevemente a escolha da Grande Área e Área Básica com base no texto analisado.\n\n"
+        "6. 'authors': para pessoas físicas use 'Sobrenome, Nome'. "
+        "Para autoria institucional ou corporativa (ex: Conselho Federal de Psicologia, "
+        "Organização Mundial da Saúde, American Psychiatric Association, Brasil. Ministério da Saúde), "
+        "mantenha o nome oficial completo por extenso SEM inverter por vírgula e NUNCA use "
+        "'Autor Desconhecido' quando a entidade estiver explicitada. Use ['Autor Desconhecido'] "
+        "somente se não houver autor identificável.\n"
+        "7. 'title' deve ser o título principal da obra/documento em português ou idioma original.\n"
+        "8. 'subtitle' deve ser o subtítulo da obra se houver, ou string vazia (\"\") se ausente.\n"
+        "9. 'year' deve ser o ano de publicação da edição efetiva do PDF como inteiro de 4 dígitos "
+        "(priorize o ano desta edição/tradução na ficha catalográfica/folha de rosto sobre o ano da obra original), "
+        "ou null se não puder ser determinado.\n"
+        "10. 'publisher' deve ser o nome da editora ou publicador, ou null se não constar.\n"
+        "11. 'city' deve ser a cidade / local de publicação, ou null se não constar.\n"
+        "12. 'edition' deve ser a edição da obra quando explicitada (ex: '2. ed.', '6. ed.'), ou null.\n"
+        "13. 'journal_name' deve ser o título da revista ou periódico científico se o tipo for Artigo, ou null se livro.\n"
+        "14. 'volume' deve ser o volume do periódico ou volume da obra se explicitado, ou null.\n"
+        "15. 'number' deve ser o número ou fascículo do periódico se indicado, ou null.\n"
+        "16. 'pages' deve ser a paginação inicial e final do artigo (ex: '134-155') ou total de páginas do livro, ou null.\n"
+        "17. 'doi' deve ser extraído somente se o identificador DOI real (formato '10.xxxx/xxxxx') constar no texto ou nos metadados externos; caso contrário, use null (nunca invente).\n"
+        "18. 'isbn' deve ser extraído somente se um ISBN real (formato '978-xx-xxxx-xxx-x' ou 10 dígitos) constar na ficha catalográfica, texto ou metadados externos; caso contrário, use null (nunca invente).\n"
+        "19. 'confidence_score' deve estar entre 0.0 e 1.0 representando o grau de certeza na classificação temática.\n"
+        "20. 'reasoning' deve justificar brevemente a escolha da Grande Área, Área Básica e Subárea com base no texto analisado.\n\n"
         "Formato JSON obrigatório:\n"
         "{\n"
         '  "grande_area": "string (exata da tabela CAPES)",\n'
         '  "area_basica": "string (exata da tabela CAPES)",\n'
-        '  "subarea": "string (subárea dentro da área básica ou \"Não especificada\")",\n'
+        '  "subarea": "string (subárea controlada ou \"Geral\")",\n'
         '  "especialidade": "string (especialidade dentro da subárea ou \"Não especificada\")",\n'
         '  "tipo": "Livro | Revista Científica | Artigo | Tese_Dissertacao | Outros",\n'
         '  "authors": ["Sobrenome, Nome"],\n'
@@ -114,18 +250,30 @@ def build_context_payload(
     sampled_text: str,
     cip_text: str,
     external_metadata: ExternalMetadata | None = None,
+    source_path: Path | None = None,
 ) -> str:
     """Montar o payload contextual enviado ao LLM.
 
     O texto amostrado é truncado a no máximo 15.000 caracteres, priorizando a
-    preservação integral de cip_text. Metadados externos (quando disponíveis)
-    são incluídos para auxiliar a classificação.
+    preservação integral de cip_text. Metadados externos e pistas sanitizadas
+    do caminho de origem (quando disponíveis) auxiliam a classificação.
     """
     lines: list[str] = []
     lines.append("### Contexto do documento")
     lines.append("")
     lines.append(format_taxonomy_for_prompt())
     lines.append("")
+
+    if source_path is not None:
+        safe_name = _sanitize_path_hint(source_path.name)
+        safe_parent = _sanitize_path_hint(source_path.parent.name)
+        if safe_name or safe_parent:
+            lines.append("### Pistas do arquivo de origem (auxiliar; menor prioridade que CIP e folha de rosto)")
+            if safe_name:
+                lines.append(f"Nome do arquivo: {safe_name}")
+            if safe_parent:
+                lines.append(f"Pasta de origem: {safe_parent}")
+            lines.append("")
 
     texto_amostrado = _truncate_sampled_text(sampled_text, cip_text)
 

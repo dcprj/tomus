@@ -7,7 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 
 class DocumentType(str, Enum):
@@ -26,6 +26,8 @@ class ProcessStatus(str, Enum):
     ORGANIZED = "organized"
     MANUAL_REVIEW = "manual_review"
     DUPLICATE_SKIPPED = "duplicate_skipped"
+    DUPLICATE = "duplicate_skipped"  # alias semântico para duplicatas/
+    OBSOLETE = "obsolete"            # edição antiga movida para obsoletos/
     IGNORED_NON_PDF = "ignored_non_pdf"
     ERROR = "error"
 
@@ -100,6 +102,21 @@ class LLMClassificationOutput(BaseModel):
     confidence_score: float = Field(default=0.0, ge=0.0, le=1.0)
     reasoning: str = ""
 
+    @field_validator("tipo", mode="before")
+    @classmethod
+    def _normalize_tipo(cls, v: Any) -> DocumentType:
+        """Normaliza tipos documentais para os valores do catálogo fechado."""
+        if isinstance(v, DocumentType):
+            return v
+        if not isinstance(v, str):
+            return v
+        t = v.strip().lower()
+        if t in ("revista científica", "revista cientifica", "periódico", "periodico"):
+            return DocumentType.REVISTA_CIENTIFICA
+        if t in ("tese", "dissertação", "tcc", "monografia"):
+            return DocumentType.TESE_DISSERTACAO
+        return v
+
 
 class FileManifestEntry(BaseModel):
     """Registro individual auditável gravado em manifest.json (Stage 5)."""
@@ -120,6 +137,7 @@ class ExecutionSummary(BaseModel):
     organized_count: int = 0
     manual_review_count: int = 0
     duplicate_skipped_count: int = 0
+    obsolete_count: int = 0
     ignored_non_pdf_count: int = 0
     error_count: int = 0
     manual_review_ratio: float = 0.0

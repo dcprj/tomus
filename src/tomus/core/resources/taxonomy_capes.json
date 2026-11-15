@@ -59,7 +59,7 @@
       "Economia",
       "Contabilidade",
       "Turismo",
-      "Tomusonomia",
+      "Biblioteconomia",
       "Arquivologia",
       "Serviço Social",
       "Relações Internacionais"
@@ -91,6 +91,38 @@
       "Música",
       "Dança",
       "Cinema e Audiovisual"
+    ]
+  },
+  "subareas": {
+    "Psicologia": [
+      "Psicanálise",
+      "Psicologia Analítica",
+      "Psicologia Clínica",
+      "Avaliação Psicológica",
+      "Neuropsicologia",
+      "Psicologia Hospitalar e da Saúde",
+      "Psicologia Jurídica",
+      "Psicologia Social",
+      "Psicologia Organizacional e do Trabalho",
+      "Psicologia Escolar e Educacional",
+      "Psicologia do Desenvolvimento",
+      "Psicologia Cognitiva",
+      "Psicologia Experimental e Análise do Comportamento",
+      "Psicobiologia e Psicofarmacologia",
+      "Psicologia da Personalidade",
+      "Fundamentos e História da Psicologia",
+      "Psicologia do Esporte",
+      "Psicologia do Trânsito",
+      "Geral"
+    ],
+    "Medicina": [
+      "Psiquiatria",
+      "Neurologia",
+      "Neurociências",
+      "Pediatria",
+      "Farmacologia",
+      "Clínica Médica",
+      "Geral"
     ]
   }
 }
