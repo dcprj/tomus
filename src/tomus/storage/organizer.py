@@ -561,6 +561,8 @@ class LibraryIndex:
                 continue
 
             pdf_path = md_path.with_suffix(".pdf")
+            if not pdf_path.exists():
+                continue
             pages = fm.get("paginas_pdf")
             if pages is None and pdf_path.exists():
                 pages = _read_pdf_page_count(pdf_path)
