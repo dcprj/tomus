@@ -306,13 +306,31 @@ def generate_companion_markdown(
     return "\n".join(lines) + "\n"
 
 
-def _resolve_canonical_paths(canonical_dest: Path) -> tuple[str, str]:
-    """Resolver caminhos exibíveis (relativo ao cwd se possível) do canônico."""
-    try:
-        canonical_rel = canonical_dest.resolve().relative_to(Path.cwd().resolve())
-        canonical_path = str(canonical_rel)
-    except ValueError:
-        canonical_path = str(canonical_dest.resolve())
+def _resolve_canonical_paths(
+    canonical_dest: Path,
+    target_dir: Path | None = None,
+) -> tuple[str, str]:
+    """Resolver caminhos exibíveis do canônico.
+
+    Se ``target_dir`` for informado, o caminho é tornado relativo a ele.
+    Caso contrário, usa o diretório de trabalho atual como referência, com
+    fallback para o caminho absoluto se não for possível torná-lo relativo.
+    """
+    if target_dir is not None:
+        try:
+            canonical_rel = canonical_dest.resolve().relative_to(target_dir.resolve())
+            canonical_path = str(canonical_rel)
+        except ValueError:
+            canonical_path = str(canonical_dest.resolve())
+    else:
+        if not canonical_dest.is_absolute():
+            canonical_path = str(canonical_dest)
+        else:
+            try:
+                canonical_rel = canonical_dest.resolve().relative_to(Path.cwd().resolve())
+                canonical_path = str(canonical_rel)
+            except ValueError:
+                canonical_path = str(canonical_dest.resolve())
     return canonical_path, str(Path(canonical_path).with_suffix(".md"))
 
 
@@ -333,12 +351,13 @@ def generate_duplicate_companion_markdown(
     canonical_dest: Path,
     sha256: str,
     match_layer: str = "L1_SHA256",
+    target_dir: Path | None = None,
 ) -> str:
     """Gerar arquivo companheiro .md para uma duplicata detectada."""
     now = datetime.now()
     detected_at = now.strftime("%Y-%m-%d %H:%M:%S")
     data_detectada = now.strftime("%d/%m/%Y às %H:%M:%S")
-    canonical_path, canonical_md = _resolve_canonical_paths(canonical_dest)
+    canonical_path, canonical_md = _resolve_canonical_paths(canonical_dest, target_dir)
     camada_pt = _traduzir_camada_deteccao(match_layer)
 
     lines: list[str] = []
@@ -389,12 +408,13 @@ def generate_obsolete_companion_markdown(
     obsolete_info: dict[str, Any] | None = None,
     canonical_info: dict[str, Any] | None = None,
     replaced_existing: bool = False,
+    target_dir: Path | None = None,
 ) -> str:
     """Gerar arquivo companheiro .md para uma edição superada enviada a obsoletos/."""
     now = datetime.now()
     detected_at = now.strftime("%Y-%m-%d %H:%M:%S")
     data_detectada = now.strftime("%d/%m/%Y às %H:%M:%S")
-    canonical_path, canonical_md = _resolve_canonical_paths(canonical_dest)
+    canonical_path, canonical_md = _resolve_canonical_paths(canonical_dest, target_dir)
     camada_pt = _traduzir_camada_deteccao(match_layer)
     obs = obsolete_info or {}
     can = canonical_info or {}

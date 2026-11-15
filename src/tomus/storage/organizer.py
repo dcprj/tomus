@@ -786,6 +786,7 @@ class LibraryOrganizer:
                 obsolete_info=matched_canon,
                 canonical_info=new_canon_record,
                 replaced_existing=True,
+                target_dir=self.target_dir,
             )
             obs_dest.with_suffix(".md").write_text(md_content, encoding="utf-8")
 
@@ -875,6 +876,7 @@ class LibraryOrganizer:
                     canonical_dest=Path(matched_canon["_pdf_path"]),
                     sha256=sha256,
                     match_layer=match_layer or "L1_SHA256",
+                    target_dir=self.target_dir,
                 )
                 dup_dest_path.with_suffix(".md").write_text(md_content, encoding="utf-8")
 
@@ -904,6 +906,7 @@ class LibraryOrganizer:
                     obsolete_info=rec,
                     canonical_info=matched_canon,
                     replaced_existing=False,
+                    target_dir=self.target_dir,
                 )
                 obs_dest_path.with_suffix(".md").write_text(md_content, encoding="utf-8")
 
