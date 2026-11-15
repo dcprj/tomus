@@ -448,10 +448,11 @@ def test_generate_duplicate_companion_markdown():
         sha256="abc123",
     )
     assert "status: 'duplicata'" in md
-    assert "original_filename: 'b.pdf'" in md
+    assert "camada_deteccao: 'L1_SHA256'" in md
+    assert "arquivo_origem: 'b.pdf'" in md
     assert "sha256: abc123" in md
-    assert "canonical_path:" in md
-    assert "detected_at:" in md
+    assert "caminho_canonico:" in md
+    assert "detectado_em:" in md
     assert "## Arquivo Duplicado Detectado" in md
     assert "b.pdf" in md
 

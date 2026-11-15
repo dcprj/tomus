@@ -204,7 +204,10 @@ def test_camada2_dsm_substituicao_reversa_e_arquivamento_direto(tmp_path: Path):
     assert (target / "obsoletos" / "APA - DSM - 2002.pdf").exists()
     obs_md = (target / "obsoletos" / "APA - DSM-5 - 2014.md").read_text(encoding="utf-8")
     assert "status: 'obsoleto'" in obs_md
-    assert "replaced_existing: true" in obs_md
+    assert "substituiu_existente: true" in obs_md
+    assert "camada_deteccao:" in obs_md
+    assert "caminho_canonico:" in obs_md
+    assert "detectado_em:" in obs_md
 
 
 # --------------------------------------------------------------------------- #
