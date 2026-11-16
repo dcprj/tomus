@@ -7,48 +7,42 @@ e este projeto adota versionamento semântico ([Semantic Versioning](https://sem
 
 ## [1.3.0] - 2026-11-16
 
-### Deduplicação de Documentos em 3 Camadas + Guardas (`src/tomus/core/dedup.py`, `src/tomus/storage/*.py`)
-- **L1_SHA256**: hash SHA-256 do conteúdo do PDF para detecção de cópias exatas.
-- **L2_IDENTIFICADOR**: identificadores estruturais (ISBN, DOI, ISSN, CIP) extraídos dos metadados.
-- **L3_IMPRESSAO_DIGITAL**: impressão digital por título/ano/editora para detecção heurística de edições distintas do mesmo trabalho.
-- **Guardas G1-G3**: validações que impedem exclusão acidental de cópia única, protegem itens com autoria institucional e bloqueiam remoção de referências citadas em outros documentos.
+### Deduplicação em 3 camadas e Obsolescência (`src/tomus/storage/organizer.py`)
+- **`LibraryIndex`** (em `src/tomus/storage/organizer.py`, não em `library_index.py`): índice em memória inicializado via `LibraryIndex.from_target_dir()` que lê `.md` companheiros da árvore temática, ignorando arquivos `.md` órfãos sem PDF-irmão (evita entradas zumbis).
+- **L1_SHA256**: hash SHA-256 do conteúdo do PDF para detecção de cópias exatas entre todas as subáreas/pastas (`duplicatas/`).
+- **L2_IDENTIFICADOR**: DOI / ISBN-13 / ISSN normalizados (via `normalize_doi`, `normalize_isbn`, `normalize_issn`) com camadas `L2_DOI`, `L2_ISBN`, `L2_ISSN` e Guardas G1/G2/G3.
+- **L3_IMPRESSAO_DIGITAL**: impressão digital bibliográfica (`work_fingerprint` / `_build_title_fingerprint`) com camada `L3_FINGERPRINT`.
+- **Guardas G1-G3**: G1 — discriminadores estruturais de volume/parte/público (`vol`, `part`, `aud`, `livro`) via `_extract_discriminators()`; G2 — proporção de páginas `>= 0.25` (`MIN_PAGE_RATIO`) via `is_structurally_compatible()`; G3 — subtítulos disjuntos (`_sub_tokens` disjuntos) para não confundir edições distintas.
+- **`compare_editions()`**: veredito `DUPLICATE`/`OBSOLETE` com vencedor (`can`/`inc`) baseado em ano e edição.
+- **Substituição reversa segura para `obsoletos/`**: edição antiga movida para `obsoletos/` e nova promovida à árvore temática, validada por `_is_within()` (contenção de caminho) em `_demote_canonical_to_obsolete()`.
 
-### Pasta `obsoletos/` e Substituição Reversa Segura (`src/tomus/storage/obsoletos.py`)
-- Movimentação segura de documentos obsoletos para a pasta `obsoletos/` com registro de origem.
-- Substituição reversa que restaura o documento original a partir da pasta de obsoletos sem perda de metadados nem quebra de links.
+### Companions `.md` e Front Matter YAML (`src/tomus/storage/companion.py`, `src/tomus/core/prompts.py`)
+- **`generate_companion_markdown()`** (`companion.py`): front matter YAML 100% em pt-BR com chaves `titulo`, `subtitulo`, `autores`, `ano`, `editora`, `cidade`, `edicao`, `periodico`, `volume`, `numero`, `paginas`, `paginas_pdf`, `doi`, `isbn`, `grande_area`, `area_basica`, `subarea`, `especialidade`, `tipo`, `sha256`, `indice_confianca`, `utilizou_ocr`, `arquivo_origem`, `organizado_em`. Não existe chave `gramc`.
+- **Duplicatas/obsoletos**: `generate_duplicate_companion_markdown()` e `generate_obsolete_companion_markdown()` com `status`, `camada_deteccao`, `substituiu_existente`, `caminho_canonico` (relativo à raiz da biblioteca via `_resolve_canonical_paths()`) e `detectado_em`.
+- **Autoria institucional ABNT NBR 6023**: `is_institutional_author()` e `_sobrenome_maiusculo()`/`format_abnt_authors()` preservam entidades (ex.: Conselho Federal de Psicologia) sem inversão de nome; sobrenomes pessoais em caixa alta.
+- `caminho_canonico` é relativo à raiz da biblioteca (não absoluto), tornando a biblioteca portável.
 
-### LibraryIndex (`src/tomus/storage/library_index.py`)
-- Ignora arquivos `.md` órfãos sem PDF-irmão ao indexar a biblioteca, evitando entradas zumbis.
-- `caminho_canonico` agora relativo à raiz da biblioteca (não caminhos absolutos), tornando a biblioteca portável entre máquinas.
+### Taxonomia Controlada CAPES/CNPq (`src/tomus/core/taxonomy.py`, `src/tomus/core/llm.py`)
+- **`normalize_and_resolve_taxonomy()`**: normaliza sinônimos e aplica regras determinísticas de desambiguação (Grande Área / Área Básica / Subárea / Especialidade) consistentes com `taxonomy_capes.json`.
+- **`repair_taxonomy_levels()`** e **`validate_or_repair_pair()`**: reparo de níveis taxonômicos inconsistentes e deslocamento Grande Área ↔ Área Básica.
+- **`AREA_BASICA_ALIASES`**: mapeamento de aliases de áreas básicas (ex.: `"ciencia da computacao" -> "Computação"`).
+- Usado pelo classificador LLM em `src/tomus/core/llm.py` (`_finalize_classification`).
 
-### Companions `.md` e Front Matter YAML (`src/tomus/companion/`)
-- Front matter YAML 100% em pt-BR (chaves traduzidas: `titulo`, `autor`, `ano`, `area`, `subarea`, `gramc`, etc.).
-- Autoria institucional formatada conforme **ABNT NBR 6023** (sobrenomes em caixa alta, entidade como autor coletivo).
-- `caminho_canonico` relativo à raiz da biblioteca.
+### OCR e Empacotamento macOS (`pyproject.toml`, `src/tomus/extractors/ocr_docling.py`, `src/tomus/gui/app.py`, `packaging/`)
+- **`pyproject.toml`**: pin `opencv-python-headless>=4.5.1.48,<4.11` (bloqueia versões `>= 4.11`, incompatíveis com OpenSSL 3 do macOS moderno); não é "menor que 4.11", é inferior a 4.11.
+- **`src/tomus/extractors/ocr_docling.py`**: `_configure_opencv_threads()` define `cv2.setNumThreads(0)` e `OPENCV_FOR_THREADS_NUM=1` para evitar contenção de threads do Apple GCD com onnxruntime em bundles congelados.
+- **`src/tomus/gui/app.py`**: `_apply_webengine_defenses()` define `QTWEBENGINE_DISABLE_SANDBOX=1`, `QTWEBENGINEPROCESS_PATH`, `QTWEBENGINE_RESOURCES_PATH` e `QTWEBENGINE_LOCALES_PATH` antes de instanciar `QWebEnginePage` (evita SIGABRT no sandbox do macOS).
+- **`packaging/hooks/hook-tomus.py`**: `bindepend_symlink_suppression = ["**/cv2/.dylibs/*", "**/cv2/__dot__dylibs/*"]` — **suprime** (não copia) os binários dinâmicos do OpenCV para não sobrescrever o OpenSSL 3 do bundle.
+- **`packaging/pyinstaller.spec`**: filtra `libcrypto.3.dylib` e `libssl.3.dylib` de `cv2/.dylibs/` e `cv2/__dot__dylibs/`; coleta binários/dados do QtWebEngine; `CFBundleVersion`/`CFBundleShortVersionString` = `1.3.0`.
+- **`packaging/build_macos.sh`**: symlinks relativos do `QtWebEngineProcess` (`Contents/MacOS/QtWebEngineProcess` e `.../QtWebEngineCore.framework/Helpers`) e assinatura ad-hoc (`codesign --force --deep --sign -`).
 
-### Taxonomia Controlada CAPES/CNPq (`src/tomus/taxonomy/`)
-- `repair_taxonomy_levels()` para normalização e reparo de níveis de taxonomia inconsistentes.
-- `AREA_BASICA_ALIASES` para mapeamento de aliases de áreas básicas.
-- Árvore exibindo Subáreas abaixo de cada Área Básica com inferência automática da Grande Área.
-
-### Proteção OpenCV / OpenSSL (`pyproject.toml`, `src/tomus/__init__.py`, `packaging/*`)
-- Bloqueio de `opencv-python-headless` menor que 4.11 (incompatível com OpenSSL 3 do macOS moderno).
-- `cv2.setNumThreads(0)` para evitar contentão de threads entre OpenCV e QtWebEngine.
-- Warnings de `urllib3 v2 only supports OpenSSL` silenciados.
-
-### Empacotamento macOS (OpenSSL + QtWebEngine) (`packaging/hooks/hook-tomus.py`, `packaging/build_macos.sh`, `packaging/pyinstaller.spec`)
-- `hook-tomus.py`: evita colisão de OpenSSL entre o ambiente Python e o OpenCV 4.10, copiando bibliotecas `.so`/`dylib` necessárias para o bundle.
-- `build_macos.sh`: layout corrigido do `QtWebEngineProcess` e correção de codesign (entitlements + assinatura do helper).
-- `pyinstaller.spec`: CFBundleVersion/CFBundleShortVersionString atualizados e inclusão dos binários do QtWebEngine no `.app`.
-
-### Hardening AppSec (`src/tomus/gui/bridge.py`, `src/tomus/taxonomy/web.py`)
-- `approveManualTriage` com validação rigorosa de identificadores e sanitização de caminhos (prevenção de path traversal).
-- Taxonomia web com escape de saída e validação de entrada contra injeção.
+### Hardening AppSec (`src/tomus/gui/bridge.py`, `src/tomus/gui/web/app.js`)
+- **`approveManualTriage`** (`bridge.py`): exceções sanitizadas via `_sanitize_error_message()` (redação de chaves `sk-`, `nvapi-`, `gsk-`, `gsh_`) antes de retornar ao frontend; validação de caminho seguro em `openPdf`/`revealPath` (`_is_safe_path`, `_PROTECTED_NAMES`, `_SYSTEM_ROOTS`).
+- **`src/tomus/gui/web/app.js`**: `escapeHtml()` aplicado em `buildTriageAreaOptionsHtml()` e na tabela/inspetor para prevenir XSS via `innerHTML`; citação ABNT NBR 6023 renderizada com escape de saída.
 
 ### Documentação & Backlog v1.3.0 (`docs/`, `docs/backlog.md`)
-- Documentação técnica, manual do usuário e landing page atualizados (Prisma UX).
-- `docs/backlog.md` refletindo as entregas de v1.3.0 e itens para v1.4.0.
-- Badge de versão atualizado no site/web do Prisma.
+- `docs/DOCUMENTACAO_TECNICA.md`, `docs/MANUAL_DO_USUARIO.md`, `docs/index.html` e correspondentes `.html` do GitHub Pages atualizados (Prisma UX).
+- `docs/backlog.md` com itens para v1.3.1+ e v2.0.0+.
 
 ## [1.2.0] - 2026-11-14
 
