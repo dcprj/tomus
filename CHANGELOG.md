@@ -5,6 +5,51 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adota versionamento semântico ([Semantic Versioning](https://semver.org/lang/pt-BR/)).
 
+## [1.3.0] - 2026-11-16
+
+### Deduplicação de Documentos em 3 Camadas + Guardas (`src/tomus/core/dedup.py`, `src/tomus/storage/*.py`)
+- **L1_SHA256**: hash SHA-256 do conteúdo do PDF para detecção de cópias exatas.
+- **L2_IDENTIFICADOR**: identificadores estruturais (ISBN, DOI, ISSN, CIP) extraídos dos metadados.
+- **L3_IMPRESSAO_DIGITAL**: impressão digital por título/ano/editora para detecção heurística de edições distintas do mesmo trabalho.
+- **Guardas G1-G3**: validações que impedem exclusão acidental de cópia única, protegem itens com autoria institucional e bloqueiam remoção de referências citadas em outros documentos.
+
+### Pasta `obsoletos/` e Substituição Reversa Segura (`src/tomus/storage/obsoletos.py`)
+- Movimentação segura de documentos obsoletos para a pasta `obsoletos/` com registro de origem.
+- Substituição reversa que restaura o documento original a partir da pasta de obsoletos sem perda de metadados nem quebra de links.
+
+### LibraryIndex (`src/tomus/storage/library_index.py`)
+- Ignora arquivos `.md` órfãos sem PDF-irmão ao indexar a biblioteca, evitando entradas zumbis.
+- `caminho_canonico` agora relativo à raiz da biblioteca (não caminhos absolutos), tornando a biblioteca portável entre máquinas.
+
+### Companions `.md` e Front Matter YAML (`src/tomus/companion/`)
+- Front matter YAML 100% em pt-BR (chaves traduzidas: `titulo`, `autor`, `ano`, `area`, `subarea`, `gramc`, etc.).
+- Autoria institucional formatada conforme **ABNT NBR 6023** (sobrenomes em caixa alta, entidade como autor coletivo).
+- `caminho_canonico` relativo à raiz da biblioteca.
+
+### Taxonomia Controlada CAPES/CNPq (`src/tomus/taxonomy/`)
+- `repair_taxonomy_levels()` para normalização e reparo de níveis de taxonomia inconsistentes.
+- `AREA_BASICA_ALIASES` para mapeamento de aliases de áreas básicas.
+- Árvore exibindo Subáreas abaixo de cada Área Básica com inferência automática da Grande Área.
+
+### Proteção OpenCV / OpenSSL (`pyproject.toml`, `src/tomus/__init__.py`, `packaging/*`)
+- Bloqueio de `opencv-python-headless` menor que 4.11 (incompatível com OpenSSL 3 do macOS moderno).
+- `cv2.setNumThreads(0)` para evitar contentão de threads entre OpenCV e QtWebEngine.
+- Warnings de `urllib3 v2 only supports OpenSSL` silenciados.
+
+### Empacotamento macOS (OpenSSL + QtWebEngine) (`packaging/hooks/hook-tomus.py`, `packaging/build_macos.sh`, `packaging/pyinstaller.spec`)
+- `hook-tomus.py`: evita colisão de OpenSSL entre o ambiente Python e o OpenCV 4.10, copiando bibliotecas `.so`/`dylib` necessárias para o bundle.
+- `build_macos.sh`: layout corrigido do `QtWebEngineProcess` e correção de codesign (entitlements + assinatura do helper).
+- `pyinstaller.spec`: CFBundleVersion/CFBundleShortVersionString atualizados e inclusão dos binários do QtWebEngine no `.app`.
+
+### Hardening AppSec (`src/tomus/gui/bridge.py`, `src/tomus/taxonomy/web.py`)
+- `approveManualTriage` com validação rigorosa de identificadores e sanitização de caminhos (prevenção de path traversal).
+- Taxonomia web com escape de saída e validação de entrada contra injeção.
+
+### Documentação & Backlog v1.3.0 (`docs/`, `docs/backlog.md`)
+- Documentação técnica, manual do usuário e landing page atualizados (Prisma UX).
+- `docs/backlog.md` refletindo as entregas de v1.3.0 e itens para v1.4.0.
+- Badge de versão atualizado no site/web do Prisma.
+
 ## [1.2.0] - 2026-11-14
 
 ### Motor de LLM & Resiliência

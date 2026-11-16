@@ -1,6 +1,6 @@
 # Documentação Técnica e Arquitetura do Tomus
 
-> **Versão da Especificação:** 1.2.0  
+> **Versão da Especificação:** 1.3.0  
 > **Status:** Ativa / Homologada  
 > **Autores:** Dario Pinheiro (Arquiteto-Chefe & Mantenedor) e Equipe de Engenharia Tomus  
 > **Licença:** Código Aberto sob [MIT License](https://github.com/dcprj/tomus/blob/main/LICENSE)  
@@ -78,6 +78,7 @@ O projeto adota uma stack moderna, minimalista e pragmática, priorizando robust
 | **Extração de PDF** | `PyMuPDF` (`fitz` 1.25+) | Parser de documento, texto vetorial e imagens | A mais rápida biblioteca de processamento de PDFs para Python; processa centenas de páginas por segundo sem vazamento de memória. |
 | **Extração Complementar**| `pdfplumber` (0.11+) | Análise de layout estruturado e tabelas | Auxilia na extração de texto quando blocos vetoriais necessitam de inspeção geométrica de caixas delimitadoras (*bounding boxes*). |
 | **OCR Nativo no macOS**| Apple Vision (`VNRecognizeTextRequest`) via `pyobjc` | OCR local em PDFs escaneados | 3 a 5 vezes mais rápido que o Tesseract; utiliza a Neural Engine dos chips Apple Silicon (M1/M2/M3/M4) com zero binários externos. |
+| **OCR de Layout (Docling / RapidOCR)** | `docling` + `opencv-python-headless` (< 4.11) e `rapidocr` | OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2) | `cv2.setNumThreads(0)` e `OPENCV_FOR_THREADS_NUM=1` evitam contenção de threads do Apple GCD com onnxruntime em bundles congelados PyInstaller no macOS; fallback seguro retorna texto vazio sem quebrar o processo. |
 | **Cliente HTTP / APIs**| `httpx` (0.28+) com HTTP/2 e TLS 1.3 | Comunicação com provedores de IA e metadados | Suporte nativo a chamadas síncronas e assíncronas, pools de conexão e controle fino de timeouts para evitar travamentos de rede. |
 | **Persistência de Cache**| `sqlite3` (embutido na stdlib) | Cache local de extração e classificação | Banco relacional serverless, ACID, sem dependências externas, garantindo recuperação instantânea de sessões e integridade de dados. |
 | **CLI & Terminal** | `click` (8.1+) + `rich` (13.9+) | Interface de linha de comando para automação | Permite execução headless em servidores, pipelines de laboratório e automações via shell script com logs coloridos. |
@@ -206,11 +207,11 @@ Para que os nomes das pastas criadas no sistema de arquivos sejam compatíveis e
 
 ### 5.3 Vocabulário Controlado e Desambiguação (`normalize_and_resolve_taxonomy`)
 
-Além da estrutura hierárquica base (`capes-cnpq-v1`), `tomus.core.taxonomy` aplica `normalize_and_resolve_taxonomy()` com vocabulário controlado de subáreas (ex.: 18 subáreas consolidadas em Psicologia e subáreas médicas padronizadas), mapeamento de sinônimos, desambiguação por área específica e âncoras determinísticas por autor clássico para evitar dispersão ou hiperconcentração em subáreas genéricas como *Psicologia Clínica*.
+Além da estrutura hierárquica base (`capes-cnpq-v1`), `tomus.core.taxonomy` aplica `normalize_and_resolve_taxonomy()` com vocabulário controlado de subáreas (ex.: 18 subáreas consolidadas em Psicologia e subáreas médicas padronizadas), mapeamento de sinônimos, desambiguação por área específica e âncoras determinísticas por autor clássico para evitar dispersão ou hiperconcentração em subáreas genéricas como *Psicologia Clínica*. A função `repair_taxonomy_levels()` repara pares deslocados de Grande Área / Área Básica (promovendo a Subárea quando o usuário ou o LLM informam o rótulo errado no nível superior) e a tabela `AREA_BASICA_ALIASES` normaliza variantes de acento/caixa (ex.: `"ciencia da computacao"` → `"Computação"`) antes da validação canônica.
 
 ### 5.4 Deduplicação Multicamada e Controle de Obsolescência (`LibraryIndex`)
 
-Na inicialização de lotes, `LibraryIndex.from_target_dir()` lê em $O(N)$ o front matter YAML dos arquivos companheiros `.md` via parser seguro sem `eval()` (`_parse_front_matter_safe`). Cada documento entrante é avaliado em 3 camadas com resolução por `compare_editions()`:
+Na inicialização de lotes, `LibraryIndex.from_target_dir()` lê em $O(N)$ o front matter YAML dos arquivos companheiros `.md` via parser seguro sem `eval()` (`_parse_front_matter_safe`). **Arquivos `.md` orfãos sem PDF irmão são ignorados** (`md_path.with_suffix(".pdf")` inexistente → `continue`), evitando entradas fantasmas no índice. Cada documento entrante é avaliado em 3 camadas com resolução por `compare_editions()`:
 1. **Camada 1 (`L1_SHA256`):** Hash criptográfico global entre todas as subáreas/pastas; colisões da mesma cópia binária vão para `duplicatas/`.
 2. **Camada 2 (`L2_DOI` / `L2_ISBN` / `L2_ISSN`):** Identificadores normalizados (`normalize_isbn` ISBN-10 → ISBN-13, `normalize_issn`, `normalize_doi`), protegidos contra exemplos de prompt/blacklist e contaminação cruzada.
 3. **Camada 3 (`L3_FINGERPRINT`):** Impressão digital bibliográfica composta por chave do primeiro autor (`extract_first_author_key`) e tokens normalizados de título/subtítulo.
@@ -251,7 +252,7 @@ stateDiagram-v2
     RevisaoManual --> [*]
 ```
 
-### 6.1 Provedores Oficiais e Modelos Homologados (v1.2.0)
+### 6.1 Provedores Oficiais e Modelos Homologados (v1.3.0)
 
 1. **Google Gemini (`GeminiProvider`):**
    * *Modelo Padrão:* `gemini-3.5-flash`
@@ -322,6 +323,10 @@ Como ferramenta que opera diretamente sobre arquivos do usuário no disco rígid
    * Para evitar que comandos de navegador web convencional (*Back, Forward, Reload, View Source, Inspect*) interfiram na experiência desktop nativa, o `QWebEngineView` opera com `setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)` e listener defensivo de `contextmenu` no DOM.
 4. **Isolamento de Memória IPC:**
    * A ponte `QWebChannel` restringe os métodos invocáveis aos slots explicitamente decorados com `@Slot` na classe `WebBridge`. Nenhuma execução de código arbitrário (`eval`) é permitida no lado Python a partir de eventos da interface.
+
+5. **Empacotamento macOS (OpenSSL + QtWebEngineProcess):**
+   * No bundle congelado (PyInstaller), `src/tomus/gui/app.py` injeta `QTWEBENGINE_DISABLE_SANDBOX=1` e resolve o caminho canônico do `QtWebEngineProcess.app` dentro de `sys._MEIPASS` (variantes `PySide6/Qt/.../Helpers/QtWebEngineProcess.app/...` e `QtWebEngineProcess.app/...`), definindo `QTWEBENGINEPROCESS_PATH` e `QTWEBENGINE_PROCESS_PATH` antes de instanciar `QWebEnginePage`. Também configura `QTWEBENGINE_RESOURCES_PATH` para os arquivos `.pak` e `icudtl.dat`.
+   * O aviso `urllib3 v2 only supports OpenSSL` é filtrado via `warnings.filterwarnings("ignore", ...)` em `src/tomus/__init__.py` e `src/tomus/cli/main.py` para evitar ruído de inicialização no macOS.
 
 ---
 

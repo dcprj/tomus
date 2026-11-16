@@ -233,7 +233,7 @@
   <main class="doc-page">
     <div class="doc-container">
       <header class="doc-header">
-        <div class="doc-badge">Especificação de Engenharia v1.2.0</div>
+        <div class="doc-badge">Especificação de Engenharia v1.3.0</div>
         <h1 class="doc-title">Documentação Técnica e Arquitetura do Tomus</h1>
         <div class="doc-meta">
           <span><strong>Autores:</strong> Dario Pinheiro e Equipe Tomus</span>
@@ -373,9 +373,9 @@ flowchart TD
           <li><strong>Radar de Identificadores (DOI / ISBN):</strong> Busca por expressões regulares de DOI e ISBN com validação de checksum e consulta automática às APIs oficiais (CrossRef e Google Books).</li>
           <li><strong>Consulta ao Cache SHA-256:</strong> Se o hash do texto já foi classificado anteriormente, o resultado é recuperado em menos de 1 milissegundo.</li>
           <li><strong>Inferência Semântica via LLM:</strong> Se não estiver em cache, o Tomus consulta o pool de modelos de inteligência artificial com injeção estruturada da taxonomia CAPES.</li>
-          <li><strong>Classificação Controlada CAPES/CNPq:</strong> A função <code>normalize_and_resolve_taxonomy()</code> consolida sinônimos em vocabulário controlado de subáreas e resolve desambiguações semânticas (como Psicologia Clínica vs. Psicanálise).</li>
-          <li><strong>Deduplicação em 3 Camadas &amp; Controle de Obsolescência (<code>LibraryIndex</code>):</strong> Avalia <strong>L1_SHA256</strong> (hash global entre subáreas), <strong>L2_DOI/ISBN/ISSN</strong> (identificadores normalizados) e <strong>L3_FINGERPRINT</strong> (impressão digital bibliográfica), protegidos pelas <strong>Guardas Estruturais G1</strong> (volumes, partes, público-alvo), <strong>G2</strong> (proporção de páginas &ge; 0,25 contra capítulos soltos) e <strong>G3</strong> (subtítulos disjuntos em títulos curtos). Mesma edição vai para <code>duplicatas/</code>; edições antigas superadas vão para <code>obsoletos/</code>, inclusive via substituição reversa segura validada por <code>_is_within()</code>.</li>
-          <li><strong>Operação Atômica de Disco:</strong> O arquivo é copiado ou movido para a pasta correta (<code>Área Básica / Subárea / Tipo</code>), renomeado no padrão <code>Autor - Título - Ano.pdf</code> e acompanhado de seu arquivo companheiro <code>.md</code> (front matter YAML + ABNT NBR 6023).</li>
+          <li><strong>Classificação Controlada CAPES/CNPq:</strong> <code>normalize_and_resolve_taxonomy()</code> consolida sinônimos em vocabulário controlado de subáreas e resolve desambiguações semânticas; <code>repair_taxonomy_levels()</code> repara pares deslocados de Grande Área / Área Básica e a tabela <code>AREA_BASICA_ALIASES</code> normaliza variantes de acento/caixa (ex.: <code>"ciencia da computacao"</code> → <code>"Computação"</code>).</li>
+          <li><strong>Deduplicação em 3 Camadas &amp; Controle de Obsolescência (<code>LibraryIndex</code>):</strong> Avalia <strong>L1_SHA256</strong>, <strong>L2_DOI/ISBN/ISSN</strong> e <strong>L3_FINGERPRINT</strong>, protegidos pelas Guardas Estruturais G1–G3. Mesma edição vai para <code>duplicatas/</code>; edições antigas superadas vão para <code>obsoletos/</code> via substituição reversa segura (<code>_is_within()</code>). <strong>Arquivos <code>.md</code> orfãos sem PDF irmão são ignorados na inicialização do índice.</strong></li>
+          <li><strong>Operação Atômica de Disco:</strong> O arquivo é copiado ou movido para a pasta correta (<code>Área Básica / Subárea / Tipo</code>), renomeado no padrão <code>Autor - Título - Ano.pdf</code> e acompanhado de seu arquivo companheiro <code>.md</code> com <strong>front matter YAML 100% em pt-BR</strong> (incluindo <code>camada_deteccao</code> e <code>caminho_canonico</code> relativo à raiz da biblioteca em <code>duplicatas/</code> e <code>obsoletos/</code>) + referência ABNT NBR 6023.</li>
         </ol>
 
         <h2>5. Motor de IA: Pool Multi-Chave e Cascata de Fallback</h2>
@@ -406,7 +406,7 @@ flowchart TD
           </div>
         </div>
 
-        <h3>Provedores Homologados na Versão 1.2.0</h3>
+        <h3>Provedores Homologados na Versão 1.3.0</h3>
         <ul>
           <li><strong>Google Gemini:</strong> Modelo <code>gemini-3.5-flash</code> (Provedor primário padrão, alta janela de contexto).</li>
           <li><strong>Groq:</strong> Modelo <code>llama-3.3-70b-versatile</code> (1º Fallback gratuito, 1.000 requisições/dia, latência ultrabaixa).</li>
@@ -414,6 +414,10 @@ flowchart TD
           <li><strong>Anthropic Claude:</strong> Modelo <code>claude-haiku-5-5</code> (Precisão bibliográfica extrema, suporte a blocos thinking/text).</li>
           <li><strong>DeepSeek:</strong> Modelo <code>deepseek-flash</code> (Excelente custo-benefício e rapidez).</li>
         </ul>
+
+        <h3>5.5 OCR de Layout e Empacotamento macOS</h3>
+        <p><strong>OCR de Layout (Docling / RapidOCR):</strong> O Tomus utiliza <code>opencv-python-headless</code> (&lt; 4.11) com <code>cv2.setNumThreads(0)</code> e <code>OPENCV_FOR_THREADS_NUM=1</code> para evitar contenção de threads do Apple GCD com onnxruntime durante o OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2 páginas), com fallback seguro que retorna texto vazio sem quebrar o processo.</p>
+        <p><strong>Empacotamento macOS (OpenSSL + QtWebEngineProcess):</strong> No bundle congelado (PyInstaller), o aplicativo injeta <code>QTWEBENGINE_DISABLE_SANDBOX=1</code> e resolve o caminho canônico do <code>QtWebEngineProcess.app</code> dentro de <code>sys._MEIPASS</code>, definindo <code>QTWEBENGINEPROCESS_PATH</code>, <code>QTWEBENGINE_PROCESS_PATH</code> e <code>QTWEBENGINE_RESOURCES_PATH</code> antes de instanciar <code>QWebEnginePage</code>. O aviso <code>urllib3 v2 only supports OpenSSL</code> é filtrado para evitar ruído de inicialização no macOS.</p>
 
         <h2>6. ABNT NBR 6023 Normativa</h2>
         <p>A formatação de referências do Tomus segue com exatidão a norma brasileira <strong>ABNT NBR 6023</strong>:</p>
