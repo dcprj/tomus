@@ -306,14 +306,44 @@ def generate_companion_markdown(
     return "\n".join(lines) + "\n"
 
 
-def _resolve_canonical_paths(canonical_dest: Path) -> tuple[str, str]:
-    """Resolver caminhos exibíveis (relativo ao cwd se possível) do canônico."""
-    try:
-        canonical_rel = canonical_dest.resolve().relative_to(Path.cwd().resolve())
-        canonical_path = str(canonical_rel)
-    except ValueError:
-        canonical_path = str(canonical_dest.resolve())
+def _resolve_canonical_paths(
+    canonical_dest: Path,
+    target_dir: Path | None = None,
+) -> tuple[str, str]:
+    """Resolver caminhos exibíveis do canônico.
+
+    Se ``target_dir`` for informado, o caminho é tornado relativo a ele.
+    Caso contrário, usa o diretório de trabalho atual como referência, com
+    fallback para o caminho absoluto se não for possível torná-lo relativo.
+    """
+    if target_dir is not None:
+        try:
+            canonical_rel = canonical_dest.resolve().relative_to(target_dir.resolve())
+            canonical_path = str(canonical_rel)
+        except ValueError:
+            canonical_path = str(canonical_dest.resolve())
+    else:
+        if not canonical_dest.is_absolute():
+            canonical_path = str(canonical_dest)
+        else:
+            try:
+                canonical_rel = canonical_dest.resolve().relative_to(Path.cwd().resolve())
+                canonical_path = str(canonical_rel)
+            except ValueError:
+                canonical_path = str(canonical_dest.resolve())
     return canonical_path, str(Path(canonical_path).with_suffix(".md"))
+
+
+_CAMADA_DETECCAO_PT_BR: dict[str, str] = {
+    "L3_FINGERPRINT": "L3_IMPRESSAO_DIGITAL",
+    "L2_IDENTIFIER": "L2_IDENTIFICADOR",
+}
+
+
+def _traduzir_camada_deteccao(match_layer: str) -> str:
+    """Normalizar identificador de camada de detecção para pt-BR."""
+    raw = (match_layer or "").strip()
+    return _CAMADA_DETECCAO_PT_BR.get(raw, raw)
 
 
 def generate_duplicate_companion_markdown(
@@ -321,21 +351,23 @@ def generate_duplicate_companion_markdown(
     canonical_dest: Path,
     sha256: str,
     match_layer: str = "L1_SHA256",
+    target_dir: Path | None = None,
 ) -> str:
     """Gerar arquivo companheiro .md para uma duplicata detectada."""
     now = datetime.now()
     detected_at = now.strftime("%Y-%m-%d %H:%M:%S")
     data_detectada = now.strftime("%d/%m/%Y às %H:%M:%S")
-    canonical_path, canonical_md = _resolve_canonical_paths(canonical_dest)
+    canonical_path, canonical_md = _resolve_canonical_paths(canonical_dest, target_dir)
+    camada_pt = _traduzir_camada_deteccao(match_layer)
 
     lines: list[str] = []
     lines.append("---")
     lines.append("status: 'duplicata'")
-    lines.append(f"match_layer: {match_layer!r}")
-    lines.append(f"original_filename: {duplicate_source.name!r}")
+    lines.append(f"camada_deteccao: {camada_pt!r}")
+    lines.append(f"arquivo_origem: {duplicate_source.name!r}")
     lines.append(f"sha256: {sha256}")
-    lines.append(f"canonical_path: {canonical_path!r}")
-    lines.append(f"detected_at: {detected_at!r}")
+    lines.append(f"caminho_canonico: {canonical_path!r}")
+    lines.append(f"detectado_em: {detected_at!r}")
     lines.append("---")
     lines.append("")
 
@@ -344,7 +376,7 @@ def generate_duplicate_companion_markdown(
     lines.append("## Arquivo Duplicado Detectado")
     lines.append("")
     lines.append(f"- **Detectado em:** {data_detectada}")
-    lines.append(f"- **Camada de detecção:** {match_layer}")
+    lines.append(f"- **Camada de detecção:** {camada_pt}")
     lines.append("")
     lines.append(
         "Este arquivo é uma **duplicata da mesma edição** de uma obra já organizada "
@@ -376,21 +408,23 @@ def generate_obsolete_companion_markdown(
     obsolete_info: dict[str, Any] | None = None,
     canonical_info: dict[str, Any] | None = None,
     replaced_existing: bool = False,
+    target_dir: Path | None = None,
 ) -> str:
     """Gerar arquivo companheiro .md para uma edição superada enviada a obsoletos/."""
     now = datetime.now()
     detected_at = now.strftime("%Y-%m-%d %H:%M:%S")
     data_detectada = now.strftime("%d/%m/%Y às %H:%M:%S")
-    canonical_path, canonical_md = _resolve_canonical_paths(canonical_dest)
+    canonical_path, canonical_md = _resolve_canonical_paths(canonical_dest, target_dir)
+    camada_pt = _traduzir_camada_deteccao(match_layer)
     obs = obsolete_info or {}
     can = canonical_info or {}
 
     lines: list[str] = []
     lines.append("---")
     lines.append("status: 'obsoleto'")
-    lines.append(f"match_layer: {match_layer!r}")
-    lines.append(f"replaced_existing: {str(replaced_existing).lower()}")
-    lines.append(f"original_filename: {obsolete_source.name!r}")
+    lines.append(f"camada_deteccao: {camada_pt!r}")
+    lines.append(f"substituiu_existente: {str(replaced_existing).lower()}")
+    lines.append(f"arquivo_origem: {obsolete_source.name!r}")
     if obs.get("titulo"):
         lines.append(f"titulo: {obs['titulo']!r}")
     if obs.get("ano") is not None:
@@ -402,8 +436,8 @@ def generate_obsolete_companion_markdown(
     if can.get("edicao"):
         lines.append(f"edicao_canonica: {can['edicao']!r}")
     lines.append(f"sha256: {sha256}")
-    lines.append(f"canonical_path: {canonical_path!r}")
-    lines.append(f"detected_at: {detected_at!r}")
+    lines.append(f"caminho_canonico: {canonical_path!r}")
+    lines.append(f"detectado_em: {detected_at!r}")
     lines.append("---")
     lines.append("")
 
@@ -412,7 +446,7 @@ def generate_obsolete_companion_markdown(
     lines.append("## Edição Obsoleta Arquivada")
     lines.append("")
     lines.append(f"- **Detectado em:** {data_detectada}")
-    lines.append(f"- **Camada de detecção:** {match_layer}")
+    lines.append(f"- **Camada de detecção:** {camada_pt}")
     lines.append(f"- **Substituiu exemplar anteriormente na árvore:** {'Sim' if replaced_existing else 'Não'}")
     lines.append("")
     lines.append(

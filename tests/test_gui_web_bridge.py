@@ -294,7 +294,8 @@ def test_approve_manual_triage_com_subarea_e_auto_grande_area(tmp_path):
     }
 
     ok = bridge.approveManualTriage(json.dumps(triage_payload))
-    assert ok is True
+    result = json.loads(ok) if isinstance(ok, str) else ok
+    assert result.get("success", False) is True
 
     # Verificar se foi salvo no caminho correto: target / Psicologia / Psicofarmacologia / Livro / ...
     expected_dir = target_dir / "Psicologia" / "Psicofarmacologia" / "Livro"
@@ -313,5 +314,49 @@ def test_approve_manual_triage_com_subarea_e_auto_grande_area(tmp_path):
     assert ev["classification"]["grande_area"] == "Ciências Humanas"
     assert ev["classification"]["area_basica"] == "Psicologia"
     assert ev["classification"]["subarea"] == "Psicofarmacologia"
+
+
+def test_approve_manual_triage_redige_segredo_no_erro_json(tmp_path, monkeypatch):
+    """approveManualTriage não deve vazar segredos/tokens na mensagem de erro JSON retornada."""
+    from unittest.mock import MagicMock
+
+    from tomus.gui.bridge import WebBridge
+
+    cfg = AppConfig()
+    target_dir = tmp_path / "target_biblioteca"
+    target_dir.mkdir(parents=True)
+
+    source_pdf = tmp_path / "DocComSigilo.pdf"
+    source_pdf.write_bytes(b"%PDF-1.4 dummy content for triage")
+
+    bridge = WebBridge(cfg)
+    bridge.target_dir = str(target_dir)
+
+    # Forçar exceção cuja mensagem contenha tokens de API (devem ser redigidos)
+    raw_sk = "sk-ant-1234567890abcdef1234567890abcdef"
+    raw_nvapi = "nvapi-xyz7890123456789012345678901234"
+    bridge.triage_service = MagicMock()
+    bridge.triage_service.approve_and_materialize.side_effect = Exception(
+        f"Falha ao chamar LLM com chave {raw_sk} e {raw_nvapi}"
+    )
+
+    triage_payload = {
+        "source_path": str(source_pdf),
+        "area_basica": "Psicologia",
+        "subarea": "Psicofarmacologia",
+        "tipo": "Livro",
+        "title": "Doc com Segredo",
+        "subtitle": "",
+        "authors": ["Autor, A."],
+        "year": 2020,
+    }
+
+    ok = bridge.approveManualTriage(json.dumps(triage_payload))
+    result = json.loads(ok) if isinstance(ok, str) else ok
+    assert result.get("success") is False
+    error_msg = result.get("error", "")
+    assert raw_sk not in error_msg
+    assert raw_nvapi not in error_msg
+    assert "REDACTED" in error_msg
 
 

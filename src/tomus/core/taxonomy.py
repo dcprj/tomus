@@ -89,25 +89,142 @@ def _build_area_to_grande_area() -> dict[str, str]:
     return mapping
 
 
+# Tabela de aliases de Áreas Básicas (rótulo dobrado -> rótulo canônico).
+# Permite resolver variações de acento, caixa e grafia informadas pelo LLM ou
+# pelo usuário, ex.: "ciencia da computacao" -> "Computação".
+AREA_BASICA_ALIASES: dict[str, str] = {
+    "ciencia da computacao": "Computação",
+    "ciencias da computacao": "Computação",
+}
+
+
+def _index_areas_basicas() -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+    """Retornar (grande_por_dobra, basica_por_dobra).
+
+    grande_por_dobra: rótulo de Grande Área dobrado -> rótulo canônico.
+    basica_por_dobra: rótulo de Área Básica dobrado -> (Grande Área mãe, canônico).
+    """
+    taxonomy = _load_taxonomy()
+    areas = taxonomy.get("areas", {})
+    grande_por_dobra: dict[str, str] = {}
+    basica_por_dobra: dict[str, tuple[str, str]] = {}
+    for grande_area, basicas in areas.items():
+        grande_por_dobra.setdefault(_fold_tax(grande_area), grande_area)
+        if isinstance(basicas, dict):
+            basicas = basicas.get("subareas", [])
+        for area_basica in basicas:
+            basica_por_dobra.setdefault(_fold_tax(area_basica), (grande_area, area_basica))
+    return grande_por_dobra, basica_por_dobra
+
+
 def validate_or_repair_pair(
     grande_area: str,
     area_basica: str,
 ) -> Optional[tuple[str, str]]:
     """Validar ou reparar o par (grande_area, area_basica).
 
+    Resolve acento/caixa via ``_fold_tax`` e a tabela ``AREA_BASICA_ALIASES``.
     Se a area_basica existir em outra Grande Área, corrige a grande_area pai.
     Retorna None caso nenhuma das duas exista no catálogo.
     """
-    taxonomy = _load_taxonomy()
-    areas = taxonomy.get("areas", {})
+    grande_por_dobra, basica_por_dobra = _index_areas_basicas()
     area_to_grande = _build_area_to_grande_area()
 
-    if grande_area in areas and area_basica in areas[grande_area]:
-        return (grande_area, area_basica)
+    ga_fold = _fold_tax(grande_area)
+    ab_fold = _fold_tax(area_basica)
 
-    if area_basica in area_to_grande:
-        correta = area_to_grande[area_basica]
-        return (correta, area_basica)
+    # Resolver o canônico da Área Básica: direto no catálogo ou por alias.
+    ab_canonical: Optional[str] = None
+    if ab_fold in basica_por_dobra:
+        ab_canonical = basica_por_dobra[ab_fold][1]
+    elif ab_fold in AREA_BASICA_ALIASES:
+        ab_canonical = AREA_BASICA_ALIASES[ab_fold]
+        ab_fold = _fold_tax(ab_canonical)
+
+    if ab_canonical is None:
+        return None
+
+    mother_ga = area_to_grande.get(ab_canonical)
+    ga_canonical = grande_por_dobra.get(ga_fold) if ga_fold else None
+
+    if ga_canonical is not None:
+        if mother_ga == ga_canonical:
+            return (ga_canonical, ab_canonical)
+        if mother_ga:
+            return (mother_ga, ab_canonical)
+        return None
+
+    if mother_ga:
+        return (mother_ga, ab_canonical)
+    return None
+
+
+def repair_taxonomy_levels(
+    grande_area: str,
+    area_basica: str,
+    subarea: str = "",
+    especialidade: str = "",
+) -> Optional[tuple[str, str, str, str]]:
+    """Reparar os quatro níveis taxonômicos.
+
+    Primeiro tenta ``validate_or_repair_pair(grande_area, area_basica)``.
+    Se retornar None, verifica se ``subarea`` (ou alias) corresponde via
+    ``_fold_tax`` a uma Área Básica oficial quando ``area_basica`` for uma
+    Grande Área oficial (ex.: ``Letras`` ou ``Linguística, Letras e Artes``)
+    — nesse caso promove ``subarea`` para a Área Básica canônica, corrige
+    ``grande_area`` para a Grande Área oficial mãe e rebaixa ``subarea`` para
+    ``"Geral"`` (ou promove ``especialidade`` se não for ``Geral`` e zera
+    ``especialidade`` para ``"Geral"``).
+
+    Retorna uma tupla ``(grande_area, area_basica, subarea, especialidade)``
+    ou ``None`` quando não houver reparo possível.
+    """
+    reparado = validate_or_repair_pair(grande_area, area_basica)
+    if reparado is not None:
+        ga, ab = reparado
+        return (
+            ga,
+            ab,
+            subarea or "Geral",
+            especialidade or "Geral",
+        )
+
+    grande_por_dobra, basica_por_dobra = _index_areas_basicas()
+    areas = _load_taxonomy().get("areas", {})
+
+    ab_fold = _fold_tax(area_basica)
+    sub_fold = _fold_tax(subarea)
+
+    # area_basica é na verdade uma Grande Área oficial (rótulo deslocado)?
+    mother_ga = grande_por_dobra.get(ab_fold) if ab_fold else None
+    if mother_ga is None or not sub_fold:
+        return None
+
+    # A subarea corresponde a uma Área Básica oficial dessa Grande Área?
+    if sub_fold in basica_por_dobra:
+        sub_ga, sub_ab_canonical = basica_por_dobra[sub_fold]
+        if sub_ga != mother_ga:
+            return None
+
+        nova_area_basica = sub_ab_canonical
+        esp = (especialidade or "").strip()
+        esp_fold = _fold_tax(esp)
+        if esp and esp_fold not in (
+            "geral",
+            "nao especificada",
+            "nao especificado",
+            "none",
+            "null",
+            "",
+        ):
+            # Promove a especialidade para subarea e zera a especialidade.
+            nova_subarea = esp
+            nova_especialidade = "Geral"
+        else:
+            nova_subarea = "Geral"
+            nova_especialidade = "Geral"
+
+        return (mother_ga, nova_area_basica, nova_subarea, nova_especialidade)
 
     return None
 

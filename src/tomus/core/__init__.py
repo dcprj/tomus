@@ -16,6 +16,7 @@ from tomus.core.taxonomy import (
     get_grandes_areas,
     get_areas_basicas,
     validate_or_repair_pair,
+    repair_taxonomy_levels,
     format_taxonomy_for_prompt,
 )
 from tomus.core.config import AppConfig
@@ -57,6 +58,7 @@ __all__ = [
     "get_grandes_areas",
     "get_areas_basicas",
     "validate_or_repair_pair",
+    "repair_taxonomy_levels",
     "format_taxonomy_for_prompt",
     "AppConfig",
     "scan_directory",

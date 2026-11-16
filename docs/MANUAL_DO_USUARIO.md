@@ -1,7 +1,7 @@
 # Manual do Usuário do Tomus
 
 > **Guia Oficial de Uso & Boas Práticas**  
-> **Versão do Aplicativo:** 1.2.0  
+> **Versão do Aplicativo:** 1.3.0  
 > **Sistema Operacional:** macOS 14 (Sonoma) ou superior (Apple Silicon M1/M2/M3/M4 e processadores Intel)  
 > **Autor:** Dario Pinheiro e Equipe Tomus  
 > **Suporte Comunitário:** [github.com/dcprj/tomus](https://github.com/dcprj/tomus)
@@ -29,7 +29,7 @@ O **Tomus** foi criado exatamente para resolver essa dor, de forma automatizada,
 
 A instalação do Tomus no macOS é rápida e segue o padrão amigável da Apple:
 
-1. **Baixe o instalador oficial:** Acesse a página do projeto ou a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus-1.2.0.dmg`.
+1. **Baixe o instalador oficial:** Acesse a página do projeto ou a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus-1.3.0-macOS.dmg`.
 2. **Abra o arquivo `.dmg`:** Dê um duplo clique no arquivo baixado. Uma janela se abrirá mostrando o ícone do **Tomus** ao lado da pasta **Aplicativos** (*Applications*).
 3. **Arraste e solte:** Arraste o ícone do Tomus para dentro da pasta Aplicativos.
 4. **Inicie o aplicativo:** Abra o seu *Launchpad* ou a pasta Aplicativos no Finder e clique no Tomus.
@@ -240,7 +240,7 @@ Raramente, alguns documentos aparecem marcados com o selo amarelo de **Revisão 
 
 * **Cadastre pelo menos duas chaves (Gemini + Groq):** O Gemini é extraordinário para a maioria dos arquivos. Se você cadastrar também uma chave gratuita do Groq nas Preferências, você nunca ficará na mão: se o Gemini atingir o limite diário no meio de um lote grande com centenas de PDFs, o Tomus migra automaticamente para o Groq sem interromper o seu trabalho.
 * **Use o Modo Copiar na primeira vez:** Assim você mantém seus arquivos originais exatamente como estavam, permitindo comparar os resultados com total tranquilidade.
-* **Exporte sua bibliografia:** Para cada PDF organizado, o Tomus gera ao lado um arquivo companheiro Markdown (`.md`) com front matter YAML estruturado e a referência completa pronta na norma **ABNT NBR 6023**, facilitando a importação e indexação em ferramentas como Obsidian, Zotero ou Notion.
+* **Exporte sua bibliografia:** Para cada PDF organizado, o Tomus gera ao lado um arquivo companheiro Markdown (`.md`) com **front matter YAML 100% em português do Brasil** (título, autores, ano, editora, cidade, edição, grande_area, area_basica, subarea, especialidade, tipo, sha256, índice de confiança e arquivo de origem). Nos arquivos de **duplicatas/** e **obsoletos/**, o front matter inclui ainda `camada_deteccao` (L3_IMPRESSAO_DIGITAL, L2_IDENTIFICADOR, etc.) e `caminho_canonico` relativo à raiz da biblioteca, permitindo rastrear qual é a obra canônica e onde ela está. A referência completa segue a norma **ABNT NBR 6023**, facilitando a importação e indexação em ferramentas como Obsidian, Zotero ou Notion.
 
 ---
 

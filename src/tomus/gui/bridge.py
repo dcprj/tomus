@@ -18,6 +18,7 @@ from PySide6.QtGui import QDesktopServices, QGuiApplication
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from tomus.core.config import AppConfig
+from tomus.core.llm import _sanitize_error_message
 from tomus.core.models import FileManifestEntry, PipelineEvent, ProcessStatus
 from tomus.gui.worker import ManualTriageService, PipelineWorker
 
@@ -197,12 +198,15 @@ class WebBridge(QObject):
     def getInitialState(self) -> str:
         initial_provider = self.config.llm.provider or "gemini"
         has_key = self.checkProviderKey(initial_provider)
+        from tomus.core.taxonomy import _load_taxonomy
+        taxonomy = _load_taxonomy()
         return json.dumps({
             "source": self.source_dir,
             "target": self.target_dir,
             "provider": initial_provider,
             "hasKey": bool(has_key),
-        })
+            "taxonomy": taxonomy,
+        }, ensure_ascii=False)
 
     # ------------------------------------------------------------------ #
     # Seleção de Pastas
@@ -315,6 +319,7 @@ class WebBridge(QObject):
                 "duplicate_skipped_count": summary.duplicate_skipped_count,
                 "ignored_non_pdf_count": summary.ignored_non_pdf_count,
                 "error_count": summary.error_count,
+                "obsolete_count": summary.obsolete_count,
                 "manual_review_ratio": summary.manual_review_ratio,
                 "exceeded_manual_review_ceiling": summary.exceeded_manual_review_ceiling,
                 "was_cancelled": was_cancelled,
@@ -608,14 +613,14 @@ class WebBridge(QObject):
     # Triagem Manual Assistida
     # ------------------------------------------------------------------ #
 
-    @Slot(str, result=bool)
-    def approveManualTriage(self, triage_json: str) -> bool:
+    @Slot(str, result=str)
+    def approveManualTriage(self, triage_json: str) -> str:
         if not self.triage_service:
             target = getattr(self, "target_dir", None) or getattr(self.config.general, "target_dir", None)
             if target and Path(target).exists():
                 self.triage_service = ManualTriageService(target, self.config)
             else:
-                return False
+                return json.dumps({"success": False, "error": "Serviço de triagem indisponível"})
         try:
             data = json.loads(triage_json)
             entry = FileManifestEntry(
@@ -654,10 +659,11 @@ class WebBridge(QObject):
                 classification=updated.classification,
             )
             self._on_worker_event(event)
-            return True
+            return json.dumps({"success": True})
         except Exception as exc:
-            print(f"[WebBridge] Erro na triagem manual: {exc}")
-            return False
+            safe = _sanitize_error_message(str(exc))
+            print(f"[WebBridge] Erro na triagem manual: {safe}")
+            return json.dumps({"success": False, "error": safe})
 
     @Slot(result=str)
     def undoManualTriage(self) -> str:

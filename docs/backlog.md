@@ -213,9 +213,10 @@ Conforme decisão de produto, o lançamento inicial foca na estabilização dos 
 ## 🌐 Presença Web e Distribuição: Landing Page no GitHub Pages [FEAT-WEB-01]
 
 - **Prioridade:** Média (Pós-v1.0.1)
-- **Status:** Planejado
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Responsáveis:** Prisma (UX/UI Designer) & Farol (GitOps)
 - **Hospedagem:** Gratuita via GitHub Pages (`https://dcprj.github.io/tomus/`)
+- **Evidência no Código:** `docs/index.html` existente com hero section, botões de download (`Baixar .dmg`, `Baixar Tomus para macOS`), showcase visual e garantias de privacidade.
 
 ### 1. Escopo e Objetivos
 1. **Página Estática Leve e Responsiva:** Desenvolvida em HTML5/CSS3 moderno na pasta `docs/` ou branch dedicada, sem dependências de frameworks pesados.
@@ -359,10 +360,11 @@ Atualmente, a aplicação grava qualquer string inserida nos campos de chave de 
 ## ⏱️ Estimativa de Tempo para Finalização (ETA) na Barra de Status da GUI [FEAT-UI-02]
 
 - **Prioridade:** Média / Alta (UX & Acompanhamento de Lotes Grandes)
-- **Status:** Planejado (Backlog)
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-11
 - **Origem:** Demanda de Produto (Dario — identificada durante teste com lote de 907 PDFs)
 - **Responsável:** Prisma (Tomus UX/UI & Desktop GUI Architect)
+- **Evidência no Código:** `state.batchStartTime`, `el.avgTimeIndicator` e `el.etaIndicator` implementados em `src/tomus/gui/web/app.js` (cálculo de média por arquivo e total estimado, com reset ao finalizar/interromper o lote).
 
 ### 1. Objetivo e Layout do Rodapé (Design Aprovado)
 Exibir no rodapé da interface gráfica (`footer.status-bar`), onde já constam a barra de progresso, o percentual, o estágio atual, a contagem de processados (`X / Y processados`) e os itens restantes (`Restam: Z`), duas métricas dinâmicas essenciais desenhadas e aprovadas pelo Arquiteto-Chefe (Dario):
@@ -447,10 +449,11 @@ Ao organizar bibliotecas acadêmicas volumosas (centenas ou milhares de PDFs), p
 ## 🗂️ Precedência de Filtros e Retorno à Visão Inicial da Organização [FEAT-UI-03]
 
 - **Prioridade:** Alta (Ergonomia de Navegação & UX da Bancada)
-- **Status:** Planejado (Backlog)
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-11
 - **Origem:** Demanda de Usabilidade (Dario — detectada durante acompanhamento de lote de 907 PDFs)
 - **Responsável:** Prisma (Tomus UX/UI & Desktop GUI Architect)
+- **Evidência no Código:** `state.activeAreaFilter` implementado em `src/tomus/gui/web/app.js` (linhas 21, 585, 596, 613-616, 628, 1329, 1356) com reset ao clicar em "Todos os Itens".
 
 ### 1. Diagnóstico do Problema
 1. **Filtro de Árvore Preso:** Ao navegar por um nó da Árvore CAPES/CNPq (`state.activeAreaFilter`), o estado do nó permanecia ativo mesmo ao clicar em filtros de status laterais (*Duplicatas*, *Erros*, *Ignorados*). Isso provocava uma interseção lógica restritiva (ex.: `status == 'duplicate_skipped' AND area == 'Linguística'`), resultando em tela vazia e impedindo o usuário de inspecionar os arquivos daquela categoria.
@@ -471,10 +474,11 @@ Ao organizar bibliotecas acadêmicas volumosas (centenas ou milhares de PDFs), p
 ## 📋 Botão Copiar Citação ABNT e Rigor Tipográfico NBR 6023 [BUG-UI-01]
 
 - **Prioridade:** Alta (Qualidade Visual, Ergonomia & Conformidade Normativa)
-- **Status:** Planejado (Backlog)
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-11
 - **Origem:** Demanda de Usabilidade (Dario — detectada com evidência fotográfica no Inspetor de Documentos)
 - **Responsáveis:** Prisma (UX/UI & Frontend Web) & Atlas (Ponte Nativa PySide6/Bridge)
+- **Evidência no Código:** `copyToClipboard(self, text: str)` implementado em `src/tomus/gui/bridge.py` (linha 592) usando `QGuiApplication.clipboard().setText(text)`.
 
 ### 1. Diagnóstico dos Problemas Identificados
 1. **Falha no Botão "Copiar Citação ABNT":**
@@ -502,10 +506,11 @@ Ao organizar bibliotecas acadêmicas volumosas (centenas ou milhares de PDFs), p
 ## 🚫 Desativação do Menu de Contexto Padrão do Navegador (Back, Reload, View Source) [BUG-UI-02]
 
 - **Prioridade:** Média / Alta (Polimento de Produto & Integridade de Estado Desktop)
-- **Status:** Planejado (Backlog)
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-11
 - **Origem:** Demanda de Usabilidade (Dario — identificada ao clicar na interface da bancada)
 - **Responsáveis:** Atlas (Foundation/Main Window) & Prisma (UX/UI Web)
+- **Evidência no Código:** `self.web_view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)` em `src/tomus/gui/main_window.py` (linha 75) e listener defensivo de `contextmenu` no DOM.
 
 ### 1. Diagnóstico do Problema
 No macOS e Windows, cliques secundários (ou gestos acidentais de dois dedos no trackpad / mouse) disparam o menu de contexto nativo padrão do Chromium no `QWebEngineView`, exibindo opções de navegador web como:
@@ -528,10 +533,11 @@ Esse comportamento expõe os bastidores web da aplicação, quebra a experiênci
 ## 🎛️ Redimensionamento Interativo via Mouse de Painéis (Splitters) e Colunas da Tabela [FEAT-UI-04]
 
 - **Prioridade:** Média / Alta (Ergonomia Visual & Customização do Espaço de Trabalho)
-- **Status:** Planejado (Backlog)
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-11
 - **Origem:** Demanda de Usabilidade (Dario — detectada durante acompanhamento de lote volumoso de 907 PDFs)
 - **Responsável:** Prisma (Tomus UX/UI & Desktop GUI Architect)
+- **Evidência no Código:** `sidebarResizer` e `tableResizer` implementados em `src/tomus/gui/web/app.js` (linhas 1483-1551) com divs correspondentes em `src/tomus/gui/web/index.html` (linhas 155, 206).
 
 ### 1. Diagnóstico e Necessidade de Interface
 1. **Painéis Laterais com Larguras Fixas:**
@@ -562,10 +568,11 @@ Esse comportamento expõe os bastidores web da aplicação, quebra a experiênci
 ## ⚡ Atualização do Modelo Padrão NVIDIA NIM para Llama 3.2 90B [FEAT-LLM-02]
 
 - **Prioridade:** Alta (Resiliência do Roteamento Multi-Provedor & Fallback Ativo)
-- **Status:** Planejado / Validado em Teste de Inferência
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-11
 - **Origem:** Diagnóstico de API pós-lote de 907 PDFs
 - **Responsável:** Forja (Pipeline & LLM Engine)
+- **Evidência no Código:** Modelo padrão alterado para `meta/llama-3.2-90b-vision-instruct` em `src/tomus/core/llm.py` (linha 614), `src/tomus/core/config.py` (linha 324), `src/tomus/gui/bridge.py` (linha 269) e `src/tomus/gui/widgets/preferences_dialog.py` (linha 235).
 
 ### 1. Diagnóstico do Problema
 O modelo anteriormente configurado no Tomus (`nvidia/llama-3.1-nemotron-70b-instruct`) foi descontinuado pela NVIDIA e retorna `404 Function Not Found` para requisições em novas contas. Isso fez com que, quando a cota gratuita do Gemini se esgotou às 11:08:08, o fallback para a NVIDIA falhasse em cadeia, enviando documentos perfeitamente saudáveis para a revisão manual.
@@ -580,10 +587,11 @@ O modelo anteriormente configurado no Tomus (`nvidia/llama-3.1-nemotron-70b-inst
 ## 🗑️ Remoção do Provedor "GitHub Models (gpt-4o)" da Interface e Preferências [FEAT-LLM-03]
 
 - **Prioridade:** Imediata / Alta (Sprint v1.2.0 - Limpeza de Interface)
-- **Status:** Planejado (Backlog)
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-11
 - **Origem:** Demanda de Produto (Dario — remoção de modelo desnecessário do menu de provedores)
 - **Responsáveis:** Prisma (UX/UI & Dropdown Web) & Forja (Config & Backend)
+- **Evidência no Código:** Nenhuma referência a `github`/`gpt-4o` encontrada em `src/tomus/`; provedor removido de dropdowns, preferências e bridge.
 
 ### 1. Diagnóstico e Decisão de Produto
 O seletor de modelos da barra superior do Tomus exibia a opção `GitHub Models (gpt-4o)`. Conforme decisão da Direção, esse provedor deve ser removido da interface gráfica, simplificando a esteira para os provedores de alta capacidade e gratuidade voltados ao uso acadêmico (Gemini, Groq, NVIDIA, DeepSeek, Claude).
@@ -602,10 +610,11 @@ O seletor de modelos da barra superior do Tomus exibia a opção `GitHub Models 
 ## ⚡ Homologação e Priorização do Groq (Llama 3.3 70B Versatile) na Cadeia de Fallback [FEAT-LLM-04]
 
 - **Prioridade:** Alta (Resiliência de Cota Gratuita & Velocidade de Inferência LPU)
-- **Status:** Planejado (Backlog)
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-11
 - **Origem:** Análise estratégica de limites de API (`console.groq.com/settings/limits`)
 - **Responsáveis:** Forja (Core/Pipeline/LLM) & Prisma (Preferências GUI)
+- **Evidência no Código:** `fallback_chain = ["groq", "nvidia", "claude", "deepseek"]` em `src/tomus/core/config.py` (linha 312) e `src/tomus/gui/widgets/preferences_dialog.py` (linha 681).
 
 ### 1. Diagnóstico e Vantagens Técnicas
 O provedor Groq oferece uma das maiores capacidades operacionais gratuitas do mercado para o modelo denso de 70 bilhões de parâmetros (`llama-3.3-70b-versatile`):
@@ -627,10 +636,11 @@ O provedor Groq oferece uma das maiores capacidades operacionais gratuitas do me
 ## 🧠 Homologação do Anthropic Claude (Claude Haiku 5.5) e Suporte a Blocos de Resposta [FEAT-LLM-05]
 
 - **Prioridade:** Alta (Homologação de Provedor Pago de Alta Precisão)
-- **Status:** Planejado / Validado com Sucesso em Teste de Inferência Real
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-11
 - **Origem:** Integração de chave paga da Anthropic (`sk-ant-usr-...`)
 - **Responsáveis:** Forja (Pipeline/LLM) & Prisma (Preferências GUI)
+- **Evidência no Código:** Claude na `fallback_chain` (`src/tomus/core/config.py` linha 312) e suporte a blocos `thinking`/`text` no `ClaudeProvider` (`src/tomus/core/llm.py`).
 
 ### 1. Diagnóstico e Validação em Tempo Real
 - A chave gerada e configurada pelo usuário foi testada com sucesso diretamente na API da Anthropic (`https://api.anthropic.com/v1/messages`).
@@ -696,11 +706,12 @@ O provedor Groq oferece uma das maiores capacidades operacionais gratuitas do me
 
 ### [BUG-PREF-01] Menu de Contexto e Semântica de Janela nas Preferências
 - **Prioridade:** Média (Ergonomia e Padrão macOS)
-- **Status:** Registrado no Backlog
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-12
 - **Origem:** Feedback de Uso (Dario)
 - **Responsáveis:** Prisma (UX/UI) & Atlas (Foundation)
 - **Escopo:** `src/tomus/gui/widgets/preferences_dialog.py`
+- **Evidência no Código:** `Qt.WindowType.Dialog` usado em `src/tomus/gui/widgets/preferences_dialog.py` (linha 545) e `setContextMenuPolicy(Qt.ContextMenuPolicy.DefaultContextMenu)` nos campos de texto (linhas 719, 923, 1068, 1115, 1226, 1232).
 - **Descrição:**
   1. Revisar o menu de contexto na tela de Preferências: assegurar que os campos de texto (`QLineEdit`) tenham acesso ao menu nativo de edição do sistema (*Copiar*, *Colar*, *Recortar*, *Selecionar Tudo*), enquanto o fundo do diálogo não exiba menus desnecessários.
   2. Ajustar as flags de janela no macOS (`Qt.WindowType.Dialog` ou `Qt.WindowType.Sheet`), desabilitando o botão verde de maximização/zoom indevido em caixas de diálogo de ajustes e fixando dimensões adequadas ao design.
@@ -709,11 +720,12 @@ O provedor Groq oferece uma das maiores capacidades operacionais gratuitas do me
 
 ### [FEAT-AUTH-03] Verificação Ativa de Status da Chave de API antes de Considerá-la Ativa
 - **Prioridade:** Alta (Confiabilidade e Prevenção de Falhas em Lote)
-- **Status:** Registrado no Backlog
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-12
 - **Origem:** Feedback de Uso (Dario)
 - **Responsáveis:** Atlas (Foundation/Bridge) & Forja (Core/LLM)
 - **Escopo:** `src/tomus/gui/bridge.py`, `src/tomus/gui/web/app.js`, `src/tomus/gui/widgets/preferences_dialog.py`
+- **Evidência no Código:** `validate_provider_key_live` importado e chamado em `src/tomus/gui/widgets/preferences_dialog.py` (linhas 50, 442, 806, 973) com feedback de erro/sucesso.
 - **Descrição:**
   1. Atualmente, a interface marca a chave como "Chave Ativa" apenas checando a presença da string (`bool(api_key)`), sem atestar se ela é funcional.
   2. Implementar verificação ativa de integridade (*health check ping* de 1 token) via `validateProviderKey()` antes de marcar o badge como verde.
@@ -737,11 +749,12 @@ O provedor Groq oferece uma das maiores capacidades operacionais gratuitas do me
 
 ### [FEAT-PREF-02] Ordenação Visual e Reordenável da Cadeia de Fallback
 - **Prioridade:** Média (Clareza Operacional)
-- **Status:** Registrado no Backlog
+- **Status:** Concluído / Resolvido (v1.3.0)
 - **Data do Registro:** 2026-11-12
 - **Origem:** Feedback de Uso (Dario — "Aqui não mostra, efetivamente uma ordem")
 - **Responsáveis:** Prisma (UX/UI)
 - **Escopo:** `src/tomus/gui/widgets/preferences_dialog.py`
+- **Evidência no Código:** `fallback_list` (`QListView` com `FallbackItemDelegate`) implementado em `src/tomus/gui/widgets/preferences_dialog.py` (linhas 1110-1116, 1167, 1195, 1201, 1204, 1210, 1282) com botões de reordenação ▲/▼.
 - **Descrição:**
   1. Na aba "Provedores LLM & Fallback", a seção de fallback atualmente apresenta apenas checkboxes horizontais simples (`[x] groq  [x] nvidia  [x] deepseek`), o que não explicita a ordem nem permite ao usuário personalizar a hierarquia.
   2. Substituir por uma lista vertical numerada clara:
@@ -829,10 +842,39 @@ O provedor Groq oferece uma das maiores capacidades operacionais gratuitas do me
      - **Google Gemini:** formato `AIzaSy` ou chave com comprimento mínimo adequado.
   2. Alerta visual contextual com cor vermelha e mensagem orientativa quando o formato for incompatível. Coberto por testes automatizados em `tests/test_gui_components.py`.
 
+---
 
+## 🔴 Próximos Itens Abertos (v1.3.1+)
 
+### [FEAT-AUDIT-01] Auditoria e Saneamento Automático de Biblioteca Organizada
 
+- **Prioridade:** Alta (Manutenção de Acervo & Qualidade de Dados)
+- **Status:** Aberto (Backlog)
+- **Data do Registro:** 2026-11-16
+- **Origem:** Pós-release v1.3.0 (Chefe / Sentinela)
+- **Responsáveis:** Sentinela (AppSec & Quality) & Forja (Core/Pipeline)
+- **Escopo:** `src/tomus/storage/organizer.py`, `src/tomus/storage/companion.py`, `src/tomus/gui/bridge.py`
+- **Descrição:** Analisar biblioteca já organizada em busca de PDFs sem companion .md válido (cópias em subpastas ou órfãos/corrompidos), mover pendências para pasta de trabalho de origem e submeter a classificação, ou informar que está tudo íntegro.
 
+### Visão v2.0.0+
 
+#### [LIB-01] Modo Gerenciar Biblioteca Existente
 
+- **Prioridade:** Média (Visão de Longo Prazo v2.0.0)
+- **Status:** Aberto (Visão)
+- **Responsáveis:** Atlas (Foundation) & Lince (Extractors)
+- **Descrição:** Varredura e indexação de .md já organizados.
 
+#### [LIB-02] Ciclo de Leitura no Front Matter
+
+- **Prioridade:** Média (Visão de Longo Prazo v2.0.0)
+- **Status:** Aberto (Visão)
+- **Responsáveis:** Prisma (UX/UI) & Forja (Core/Pipeline)
+- **Descrição:** status_leitura: a_ler | lendo | lido.
+
+#### [LIB-03] Fichamento Acadêmico e Exportador
+
+- **Prioridade:** Média (Visão de Longo Prazo v2.0.0)
+- **Status:** Aberto (Visão)
+- **Responsáveis:** Atlas (Foundation) & Prisma (UX/UI)
+- **Descrição:** Templates e exportação de referências.

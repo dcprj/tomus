@@ -9,7 +9,13 @@ Gera:
 import os
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_dynamic_libs, collect_all
+from PyInstaller.utils.hooks import (
+    collect_data_files,
+    collect_submodules,
+    collect_dynamic_libs,
+    collect_all,
+    copy_metadata,
+)
 
 block_cipher = None
 
@@ -62,6 +68,23 @@ hiddenimports = [
     "docling.pipeline.standard_pdf_pipeline",
     "rapidocr",
     "onnxruntime",
+    # Módulos de plugins do Docling (prevenem catálogo vazio no bundle congelado)
+    "docling.models.plugins.defaults",
+    "docling.models.stages.picture_description.picture_description_api_model",
+    "docling.models.stages.picture_description.picture_description_vlm_engine_model",
+    "docling.models.stages.picture_description.picture_description_vlm_model",
+    "docling.models.factories.base_factory",
+    "docling.models.factories.picture_description_factory",
+    "docling.models.factories.ocr_factory",
+    "docling.models.factories.layout_factory",
+    "docling.models.factories.table_structure_factory",
+    # Docling ibm-models e core (pré-visão/manipulação de modelos no bundle)
+    "docling_ibm_models",
+    "docling_ibm_models.layoutanalyzer",
+    "docling_ibm_models.tableformer",
+    "docling_ibm_models.tesseract",
+    "docling_ibm_models.granitevision",
+    "docling_core",
 ]
 
 # Coletar submódulos e arquivos de dados do Docling e motor de OCR
@@ -72,6 +95,12 @@ for pkg in ["docling", "docling_core", "docling_parse", "docling_ibm_models", "r
         pass
     try:
         hiddenimports += collect_submodules(pkg)
+    except Exception:
+        pass
+    # Garantir metadados (entry_points) no bundle congelado para evitar
+    # "No class found with the name picture_description_vlm_engine" nos factories do Docling.
+    try:
+        datas += copy_metadata(pkg)
     except Exception:
         pass
 
@@ -106,7 +135,7 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=[str(SPEC_DIR / "hooks")],
     hooksconfig={},
     runtime_hooks=[],
     excludes=["tkinter", "matplotlib", "IPython", "notebook"],
@@ -115,6 +144,24 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Filtrar binários duplicados do OpenCV que sobrescreveriam o OpenSSL 3 do sistema.
+# No macOS, libsrt.1.5.3.dylib usa @rpath/@loader_path e resolve diretamente para
+# Contents/Frameworks/, então devemos evitar copiar libcrypto.3.dylib e libssl.3.dylib
+# de cv2/.dylibs/ ou cv2/__dot__dylibs/ para o topo do bundle.
+# Cada entry em a.binaries eh 3-tupla: (dest, src, typecode)
+if sys.platform == "darwin":
+    _cv2_libs_to_exclude = {"libcrypto.3.dylib", "libssl.3.dylib"}
+    a.binaries = [
+        e for e in a.binaries
+        if not (
+            Path(e[0]).name in _cv2_libs_to_exclude
+            and (
+                e[0].startswith("cv2/.dylibs/")
+                or e[0].startswith("cv2/__dot__dylibs/")
+            )
+        )
+    ]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -169,8 +216,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "Tomus",
             "CFBundleDisplayName": "Tomus — Organizador Acadêmico de PDFs",
-            "CFBundleVersion": "1.2.0",
-            "CFBundleShortVersionString": "1.2.0",
+            "CFBundleVersion": "1.3.0",
+            "CFBundleShortVersionString": "1.3.0",
             "CFBundlePackageType": "APPL",
             "CFBundleSignature": "????",
             "LSMinimumSystemVersion": "12.0.0",

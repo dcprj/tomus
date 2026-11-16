@@ -49,6 +49,7 @@
     cntDuplicate: document.getElementById('cntDuplicate'),
     cntIgnored: document.getElementById('cntIgnored'),
     cntError: document.getElementById('cntError'),
+    cntObsolete: document.getElementById('cntObsolete'),
     capesTree: document.getElementById('capesTree'),
 
     // Table
@@ -117,6 +118,7 @@
     modalCountReview: document.getElementById('modalCountReview'),
     modalCountDuplicate: document.getElementById('modalCountDuplicate'),
     modalCountError: document.getElementById('modalCountError'),
+    modalCountObsolete: document.getElementById('modalCountObsolete'),
     modalQualityBadge: document.getElementById('modalQualityBadge'),
     modalQualityText: document.getElementById('modalQualityText'),
     btnModalClose: document.getElementById('btnModalClose'),
@@ -132,25 +134,9 @@
     pixKeyInput: document.getElementById('pixKeyInput'),
   };
 
-  // --- Dicionário Taxonômico CAPES/CNPq para o Form de Triagem ---
-  const CAPES_TAXONOMY = {
-    "Ciências Humanas": ["Psicologia", "Sociologia", "Educação", "História", "Filosofia", "Geografia", "Antropologia", "Ciência Política"],
-    "Linguística, Letras e Artes": ["Letras", "Linguística", "Artes", "Música"],
-    "Ciências Sociais Aplicadas": ["Direito", "Administração", "Economia", "Comunicação", "Ciência da Informação", "Arquitetura e Urbanismo"],
-    "Ciências da Saúde": ["Medicina", "Saúde Coletiva", "Enfermagem", "Farmácia", "Odontologia", "Fisioterapia", "Nutrição"],
-    "Ciências Exatas e da Terra": ["Ciência da Computação", "Matemática", "Física", "Química", "Geociências", "Estatística"],
-    "Engenharias": ["Engenharia de Produção", "Engenharia Elétrica", "Engenharia Civil", "Engenharia Mecânica"],
-    "Ciências Biológicas": ["Biologia Geral", "Genética", "Ecologia", "Fisiologia", "Bioquímica", "Microbiologia"],
-    "Ciências Agrárias": ["Agronomia", "Medicina Veterinária", "Zootecnia", "Recursos Naturais"],
-    "Outros": ["Outros"]
-  };
-
-  const AREA_TO_GRANDE_AREA = {};
-  for (const [ga, basicas] of Object.entries(CAPES_TAXONOMY)) {
-    for (const b of basicas) {
-      AREA_TO_GRANDE_AREA[b] = ga;
-    }
-  }
+  // --- Dicionário Taxonômico CAPES/CNPq (carregado dinamicamente do backend via getInitialState) ---
+  let CAPES_TAXONOMY = {};  // preenchido pelo backend via getInitialState()
+  let AREA_TO_GRANDE_AREA = {};  // preenchido pelo backend via getInitialState()
 
   // --- Inicialização do QWebChannel ---
   let backend = null;
@@ -194,6 +180,23 @@
           backend.checkProviderKey(state.provider).then(updateKeyBadge);
         } else if (init.hasKey !== undefined) {
           updateKeyBadge(init.hasKey);
+        }
+        // Carregar taxonomia oficial do servidor
+        if (init.taxonomy) {
+          const areas = init.taxonomy.areas || {};
+          // Limpar objetos sem criar chave 'length' (objeto != array)
+          Object.keys(CAPES_TAXONOMY).forEach(k => delete CAPES_TAXONOMY[k]);
+          Object.assign(CAPES_TAXONOMY, areas);
+          Object.keys(AREA_TO_GRANDE_AREA).forEach(k => delete AREA_TO_GRANDE_AREA[k]);
+          Object.assign(AREA_TO_GRANDE_AREA, {});
+          for (const [ga, basicas] of Object.entries(areas)) {
+            for (const b of basicas) {
+              AREA_TO_GRANDE_AREA[b] = ga;
+            }
+          }
+          if (el.triageAreaBasica) {
+            el.triageAreaBasica.innerHTML = buildTriageAreaOptionsHtml('');
+          }
         }
       });
     });
@@ -315,10 +318,11 @@
         const rev = summary.manual_review_count || 0;
         const dup = summary.duplicate_skipped_count || 0;
         const err = summary.error_count || 0;
+        const obs = summary.obsolete_count || 0;
         el.bannerHeadline.textContent = summary.was_cancelled
           ? 'Processamento interrompido pelo usuário.'
           : 'Organização do lote concluída com sucesso!';
-        el.bannerDetails.textContent = `${org} organizado(s) • ${rev} revisão manual • ${dup} duplicata(s) • ${err} erro(s). Clique aqui para limpar e iniciar novo lote.`;
+        el.bannerDetails.textContent = `${org} organizado(s) • ${rev} revisão manual • ${dup} duplicata(s) • ${obs} obsoleto(s) • ${err} erro(s). Clique aqui para limpar e iniciar novo lote.`;
         el.completionBanner.style.display = 'block';
       }
 
@@ -379,11 +383,13 @@
     const rev = summary.manual_review_count || 0;
     const dup = summary.duplicate_skipped_count || 0;
     const err = summary.error_count || 0;
+    const obs = summary.obsolete_count || 0;
 
     if (el.modalCountOrganized) el.modalCountOrganized.textContent = String(org);
     if (el.modalCountReview) el.modalCountReview.textContent = String(rev);
     if (el.modalCountDuplicate) el.modalCountDuplicate.textContent = String(dup);
     if (el.modalCountError) el.modalCountError.textContent = String(err);
+    if (el.modalCountObsolete) el.modalCountObsolete.textContent = String(obs);
 
     if (summary.was_cancelled) {
       if (el.modalIconWrap) el.modalIconWrap.className = 'modal-icon-wrap icon-warn';
@@ -517,7 +523,7 @@
     }
 
     // Status final
-    const terminalStatuses = ['organized', 'manual_review', 'duplicate_skipped', 'ignored_non_pdf', 'error'];
+    const terminalStatuses = ['organized', 'manual_review', 'duplicate_skipped', 'ignored_non_pdf', 'error', 'obsolete'];
     if (terminalStatuses.includes(ev.status)) {
       item.status = ev.status;
     } else if (ev.status === 'ignored') {
@@ -543,6 +549,7 @@
       duplicate_skipped: state.items.filter(i => i.status === 'duplicate_skipped').length,
       ignored_non_pdf: state.items.filter(i => i.status === 'ignored_non_pdf').length,
       error: state.items.filter(i => i.status === 'error').length,
+      obsolete: state.items.filter(i => i.status === 'obsolete').length,
     };
 
     el.cntTotal.textContent = counts.total;
@@ -551,6 +558,7 @@
     el.cntDuplicate.textContent = counts.duplicate_skipped;
     el.cntIgnored.textContent = counts.ignored_non_pdf;
     el.cntError.textContent = counts.error;
+    if (el.cntObsolete) el.cntObsolete.textContent = counts.obsolete;
   }
 
   // --- Atualização da Árvore CAPES/CNPq ---
@@ -718,6 +726,11 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
           Erro
         </span>`;
+      case 'obsolete':
+        return `<span class="status-pill pill-obsolete">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+          Obsoleto
+        </span>`;
       default:
         return `<span class="status-pill pill-processing">${escapeHtml(status || 'Pendente')}</span>`;
     }
@@ -761,6 +774,12 @@
       el.inspAbntCard.style.display = 'none';
       el.inspTriageCard.style.display = 'block';
       populateTriageForm(item);
+    } else if (item.status === 'obsolete') {
+      el.inspStatusBadge.className = 'status-pill-lg pill-obsolete';
+      el.inspStatusIcon.textContent = '🗄️';
+      el.inspStatusText.textContent = 'Obsoleto';
+      el.inspAbntCard.style.display = 'none';
+      el.inspTriageCard.style.display = 'none';
     } else {
       el.inspStatusBadge.className = 'status-pill-lg pill-duplicate';
       el.inspStatusIcon.textContent = '⧉';
@@ -831,20 +850,25 @@
     return raw;
   }
 
-  function populateTriageForm(item) {
-    el.inspTriageReason.textContent = formatTriageError(item.error_message || item.reasoning) || 'Encaminhado para validação humana.';
-
-    // Popular Área Básica com optgroups por Grande Área
+  function buildTriageAreaOptionsHtml(selectedValue) {
+    // Montar optgroups/options da Área Básica com escapeHtml para prevenir XSS via innerHTML
     let abOptions = '';
     for (const [ga, basicas] of Object.entries(CAPES_TAXONOMY)) {
-      abOptions += `<optgroup label="${ga}">`;
+      abOptions += `<optgroup label="${escapeHtml(ga)}">`;
       for (const ab of basicas) {
-        const isSel = (ab === item.area_basica) ? 'selected' : '';
-        abOptions += `<option value="${ab}" ${isSel}>${ab}</option>`;
+        const isSel = (ab === selectedValue) ? 'selected' : '';
+        abOptions += `<option value="${escapeHtml(ab)}" ${isSel}>${escapeHtml(ab)}</option>`;
       }
       abOptions += `</optgroup>`;
     }
-    el.triageAreaBasica.innerHTML = abOptions;
+    return abOptions;
+  }
+
+  function populateTriageForm(item) {
+    el.inspTriageReason.textContent = formatTriageError(item.error_message || item.reasoning) || 'Encaminhado para validação humana.';
+
+    // Popular Área Básica com optgroups por Grande Área (XSS-safe via escapeHtml)
+    el.triageAreaBasica.innerHTML = buildTriageAreaOptionsHtml(item.area_basica);
     if (item.area_basica) {
       el.triageAreaBasica.value = item.area_basica;
     }
@@ -884,11 +908,18 @@
     };
 
     if (backend && backend.approveManualTriage) {
-      backend.approveManualTriage(JSON.stringify(triageData)).then(res => {
-        if (!res) {
+      backend.approveManualTriage(JSON.stringify(triageData)).then(resStr => {
+        try {
+          const res = typeof resStr === 'string' ? JSON.parse(resStr) : resStr;
+          if (!res || !res.success) {
+            const errMsg = res && res.error ? res.error : 'Não foi possível materializar o item na biblioteca. Verifique se a pasta de destino está acessível e se os campos taxonômicos são válidos.';
+            alert('Erro na triagem manual:\n' + errMsg);
+          } else {
+            console.log('Triagem manual aprovada e materializada com sucesso!');
+          }
+        } catch (e) {
+          console.error('Erro ao processar resposta de triagem:', e);
           alert('Não foi possível materializar o item na biblioteca. Verifique se a pasta de destino está acessível e se os campos taxonômicos são válidos.');
-        } else {
-          console.log('Triagem manual aprovada e materializada com sucesso!');
         }
       });
     } else {

@@ -12,11 +12,11 @@ BUILD_DIR="${PROJECT_ROOT}/build"
 
 # Ler a versão do pyproject.toml
 if [ -f "${PROJECT_ROOT}/.venv/bin/python3" ]; then
-    VERSION=$("${PROJECT_ROOT}/.venv/bin/python3" -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.2.0")
+    VERSION=$("${PROJECT_ROOT}/.venv/bin/python3" -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.3.0")
 elif command -v python3 &> /dev/null; then
-    VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || python3 -c "import tomli; print(tomli.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.2.0")
+    VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || python3 -c "import tomli; print(tomli.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.3.0")
 else
-    VERSION="1.2.0"
+    VERSION="1.3.0"
 fi
 
 DMG_NAME="${APP_NAME}-${VERSION}-macOS.dmg"
@@ -60,20 +60,46 @@ echo "✅ Bundle ${APP_PATH} gerado com sucesso!"
 # 5. Corrigir caminhos do QtWebEngineProcess (evitar SIGABRT no WebContentsAdapter)
 echo "🔧 Configurando caminhos do QtWebEngineProcess..."
 FRAMEWORK_DIR="${APP_PATH}/Contents/Frameworks/PySide6/Qt/lib/QtWebEngineCore.framework"
-HELPERS_SRC="${FRAMEWORK_DIR}/Versions/Resources/Helpers/QtWebEngineProcess.app"
+HELPERS_SRC="${FRAMEWORK_DIR}/Versions/A/Helpers/QtWebEngineProcess.app"
 HELPERS_DST="${FRAMEWORK_DIR}/Helpers"
-if [ -d "${HELPERS_SRC}" ] && [ ! -L "${HELPERS_DST}" ]; then
-    ln -s "${HELPERS_SRC}" "${HELPERS_DST}"
-    echo "✓ Symlink criado: ${HELPERS_DST}"
+
+# Migrar Versions/Resources para Versions/A se necessário (PyInstaller coloca em Versions/Resources)
+if [ -d "${FRAMEWORK_DIR}/Versions/Resources/Helpers" ] && [ ! -d "${FRAMEWORK_DIR}/Versions/A/Helpers" ]; then
+    mv "${FRAMEWORK_DIR}/Versions/Resources/Helpers" "${FRAMEWORK_DIR}/Versions/A/Helpers"
 fi
+if [ -d "${FRAMEWORK_DIR}/Versions/Resources/Resources" ]; then
+    mkdir -p "${FRAMEWORK_DIR}/Versions/A/Resources"
+    cp -Rn "${FRAMEWORK_DIR}/Versions/Resources/Resources/." "${FRAMEWORK_DIR}/Versions/A/Resources/" || true
+fi
+rm -rf "${FRAMEWORK_DIR}/Versions/Resources"
+
+# Recriar Helpers com symlink relativo para Versions/A/Helpers
+if [ -d "${HELPERS_SRC}" ]; then
+    if [ -L "${HELPERS_DST}" ]; then
+        rm "${HELPERS_DST}"
+    elif [ -d "${HELPERS_DST}" ]; then
+        rm -rf "${HELPERS_DST}"
+    fi
+    ln -s "Versions/A/Helpers" "${HELPERS_DST}"
+    echo "✓ Symlink criado (relativo): ${HELPERS_DST} -> Versions/A/Helpers"
+fi
+
+# Recriar QtWebEngineProcess com symlink relativo
 MACOS_DST="${APP_PATH}/Contents/MacOS/QtWebEngineProcess"
-if [ -f "${HELPERS_SRC}/Contents/MacOS/QtWebEngineProcess" ] && [ ! -L "${MACOS_DST}" ]; then
-    ln -s "${HELPERS_SRC}/Contents/MacOS/QtWebEngineProcess" "${MACOS_DST}"
-    echo "✓ Symlink criado: ${MACOS_DST}"
+if [ -f "${HELPERS_SRC}/Contents/MacOS/QtWebEngineProcess" ]; then
+    if [ -L "${MACOS_DST}" ]; then
+        rm "${MACOS_DST}"
+    elif [ -f "${MACOS_DST}" ]; then
+        rm "${MACOS_DST}"
+    fi
+    ln -s "../Frameworks/PySide6/Qt/lib/QtWebEngineCore.framework/Versions/A/Helpers/QtWebEngineProcess.app/Contents/MacOS/QtWebEngineProcess" "${MACOS_DST}"
+    echo "✓ Symlink criado (relativo): ${MACOS_DST}"
 fi
 
 # 6. Assinatura Ad-Hoc (para execução local sem crash de assinatura)
 echo "🔏 Aplicando assinatura ad-hoc (codesign)..."
+# Remover assinaturas antigas para evitar conflitos com frameworks embutidos
+codesign --remove-sign "${APP_PATH}" 2>/dev/null || true
 codesign --force --deep --sign - "${APP_PATH}"
 
 # 5. Criar Imagem de Disco (.dmg) com atalho para /Applications

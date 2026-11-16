@@ -204,7 +204,10 @@ def test_camada2_dsm_substituicao_reversa_e_arquivamento_direto(tmp_path: Path):
     assert (target / "obsoletos" / "APA - DSM - 2002.pdf").exists()
     obs_md = (target / "obsoletos" / "APA - DSM-5 - 2014.md").read_text(encoding="utf-8")
     assert "status: 'obsoleto'" in obs_md
-    assert "replaced_existing: true" in obs_md
+    assert "substituiu_existente: true" in obs_md
+    assert "camada_deteccao:" in obs_md
+    assert "caminho_canonico:" in obs_md
+    assert "detectado_em:" in obs_md
 
 
 # --------------------------------------------------------------------------- #
@@ -380,6 +383,49 @@ def test_library_index_recarrega_estado_do_disco(tmp_path: Path):
     assert not (target / "Psicologia" / "Psicologia Analítica" / "Livro" / "Jung, C. G. - O homem e seus simbolos - 2002.pdf").exists()
     assert (target / "obsoletos" / "Jung, C. G. - O homem e seus simbolos - 2002.pdf").exists()
     assert isinstance(org2.index, LibraryIndex)
+
+
+def test_library_index_ignora_md_orfao_sem_pdf(tmp_path: Path):
+    source = tmp_path / "src"
+    target = tmp_path / "dst"
+    sha_valid = _create_dummy_pdf(source / "v2022.pdf", b"jung-2022")
+
+    org = LibraryOrganizer(target, file_operation="copy", dry_run=False)
+    org.add_organized(
+        source_path=source / "v2022.pdf",
+        grande_area="Ciências Humanas",
+        area_basica="Psicologia",
+        subarea="Psicologia Analítica",
+        especialidade="Geral",
+        tipo="Livro",
+        filename="Jung, C. G. - O homem e seus simbolos - 2022.pdf",
+        sha256=sha_valid,
+        classification={
+            "authors": ["Jung, Carl Gustav"],
+            "title": "O homem e seus símbolos",
+            "year": 2022,
+            "paginas_pdf": 316,
+        },
+    )
+
+    valid_md = (
+        target
+        / "Psicologia"
+        / "Psicologia Analítica"
+        / "Livro"
+        / "Jung, C. G. - O homem e seus simbolos - 2022.md"
+    )
+    orphan_md = valid_md.with_name("Jung, C. G. - O homem e seus simbolos - 2023.md")
+    orphan_content = valid_md.read_text(encoding="utf-8").replace(
+        sha_valid, "f" * 64
+    )
+    orphan_md.write_text(orphan_content, encoding="utf-8")
+
+    reloaded = LibraryIndex.from_target_dir(target)
+    assert len(reloaded.canon_by_sha) == 1
+    assert sha_valid in reloaded.canon_by_sha
+    assert ("f" * 64) not in reloaded.canon_by_sha
+    assert ("f" * 64) not in reloaded.seen_by_sha
 
 
 # --------------------------------------------------------------------------- #

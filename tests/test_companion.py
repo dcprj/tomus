@@ -446,14 +446,21 @@ def test_generate_duplicate_companion_markdown():
         duplicate_source=Path("/source/b.pdf"),
         canonical_dest=Path("/target/Ciências Humanas/Psicologia/Livro/a.pdf"),
         sha256="abc123",
+        target_dir=Path("/target"),
     )
     assert "status: 'duplicata'" in md
-    assert "original_filename: 'b.pdf'" in md
+    assert "camada_deteccao: 'L1_SHA256'" in md
+    assert "arquivo_origem: 'b.pdf'" in md
     assert "sha256: abc123" in md
-    assert "canonical_path:" in md
-    assert "detected_at:" in md
+    assert "caminho_canonico:" in md
+    assert "detectado_em:" in md
     assert "## Arquivo Duplicado Detectado" in md
     assert "b.pdf" in md
+    # Caminho canônico deve ser relativo à raiz da biblioteca (sem '/target/')
+    assert "Ciências Humanas/Psicologia/Livro/a.pdf" in md
+    assert "/target/" not in md
+    assert "/target/Ciências Humanas/Psicologia/Livro/a.pdf" not in md
+    assert "Ciências Humanas/Psicologia/Livro/a.md" in md
 
 
 def test_organizer_ignored_non_pdf_diagnostics(tmp_path: Path):
