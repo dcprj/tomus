@@ -135,7 +135,7 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
-    hookspath=[],
+    hookspath=[str(SPEC_DIR / "hooks")],
     hooksconfig={},
     runtime_hooks=[],
     excludes=["tkinter", "matplotlib", "IPython", "notebook"],
@@ -144,6 +144,24 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Filtrar binários duplicados do OpenCV que sobrescreveriam o OpenSSL 3 do sistema.
+# No macOS, libsrt.1.5.3.dylib usa @rpath/@loader_path e resolve diretamente para
+# Contents/Frameworks/, então devemos evitar copiar libcrypto.3.dylib e libssl.3.dylib
+# de cv2/.dylibs/ ou cv2/__dot__dylibs/ para o topo do bundle.
+# Cada entry em a.binaries eh 3-tupla: (dest, src, typecode)
+if sys.platform == "darwin":
+    _cv2_libs_to_exclude = {"libcrypto.3.dylib", "libssl.3.dylib"}
+    a.binaries = [
+        e for e in a.binaries
+        if not (
+            Path(e[0]).name in _cv2_libs_to_exclude
+            and (
+                e[0].startswith("cv2/.dylibs/")
+                or e[0].startswith("cv2/__dot__dylibs/")
+            )
+        )
+    ]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
