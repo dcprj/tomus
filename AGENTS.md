@@ -33,3 +33,16 @@
 - **Proibição de uso direto da `main`:** NUNCA faça commits, merges ou pushes diretamente na branch `main` durante o desenvolvimento, correções de bugs, refatorações ou atualizações de documentação.
 - **Branches de trabalho obrigatórias:** Toda tarefa operacional deve utilizar uma branch dedicada (ex.: `feat/<escopo>`, `fix/<escopo>`, `refactor/<escopo>`, `docs/<escopo>`).
 - **Exceção exclusiva (Releases):** A branch `main` só pode ser utilizada para novas releases e **exclusivamente mediante autorização explícita do usuário** na conversa atual.
+
+---
+
+## 4. Gestão de Contexto, Modelos NVIDIA e Renovação (`/new`) no Maestri
+
+- **Checagem obrigatória antes de delegar:** Antes de enviar qualquer Ordem de Serviço no Maestri, executar `maestri check "<Agente>"` para conferir se o agente está ocioso, qual modelo está ativo e o `%` de uso da janela de contexto.
+- **Padrão de modelo NVIDIA no OpenCode:** Manter os agentes executores do OpenCode no modelo **`Nemotron 3.5 Super VL 120B A12B`** e **não usar `Nemotron 3 Ultra 550B A55B`** via NVIDIA NIM no OpenCode devido à falha de serialização de `tool calling`.
+- **Política fixa de renovação (`/new`):**
+  - **Até 50%:** manter a sessão atual.
+  - **Entre 50% e 65%:** rodar `/new` antes de iniciar uma **nova tarefa independente**.
+  - **Acima de 65%–70%:** rodar `/new` **obrigatoriamente** antes de delegar.
+- **Procedimento de `/new` via CLI (agente ocioso):** Enviar `maestri ask "<Agente>" --raw "/new\n"` seguido de `maestri ask "<Agente>" --raw "\r"` e confirmar via `maestri check "<Agente>"` que o terminal entrou em `New session`.
+- **Higiene de ordens e verificação pós-entrega:** Evitar excesso de aspas aninhadas nas ordens de serviço e conferir após a entrega (`maestri check` / `git diff`) se o agente executou ferramentas reais em vez de vazar texto de chamada de ferramenta (ex.: `Assistant tool call:` ou `<|open|>`).

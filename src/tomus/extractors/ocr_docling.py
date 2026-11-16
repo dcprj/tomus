@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import logging
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -31,12 +32,28 @@ _CONVERTER: Optional[object] = None
 _RAPIDOCR_ENGINE: Optional[object] = None
 
 
+def _configure_opencv_threads():
+    """Definir defensivamente cv2.setNumThreads(0) e OPENCV_FOR_THREADS_NUM=1.
+
+    Evita contenção de threads do Apple GCD com onnxruntime durante o OCR,
+    especialmente em bundles congelados (.app) do PyInstaller no macOS.
+    """
+    try:
+        os.environ.setdefault("OPENCV_FOR_THREADS_NUM", "1")
+        import cv2  # type: ignore
+
+        cv2.setNumThreads(0)
+    except Exception:  # pragma: no cover - cv2 pode não estar instalado
+        pass
+
+
 def _get_converter():
     """Retornar uma instância singleton/lazy do ``DocumentConverter`` do Docling.
 
     Retorna ``None`` quando o Docling não estiver disponível ou não puder ser
     instanciado (fallback seguro).
     """
+    _configure_opencv_threads()
     global _CONVERTER
     if _CONVERTER is not None:
         return _CONVERTER
@@ -56,6 +73,7 @@ def _get_rapidocr_engine():
 
     Retorna ``None`` quando o RapidOCR não estiver disponível.
     """
+    _configure_opencv_threads()
     global _RAPIDOCR_ENGINE
     if _RAPIDOCR_ENGINE is not None:
         return _RAPIDOCR_ENGINE

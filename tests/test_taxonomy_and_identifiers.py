@@ -13,7 +13,10 @@ from tomus.core.taxonomy import (
     get_grandes_areas,
     get_areas_basicas,
     validate_or_repair_pair,
+    repair_taxonomy_levels,
 )
+from tomus.core.llm import _finalize_classification
+from tomus.core.models import LLMClassificationOutput, DocumentType
 from tomus.extractors.identifiers import (
     extract_doi,
     extract_isbn,
@@ -108,3 +111,116 @@ def test_detect_cip_page():
 
 def test_detect_cip_page_sem_marcador():
     assert detect_cip_page("apenas texto comum sem ficha") == ""
+
+
+# --------------------------------------------------------------------------- #
+# validate_or_repair_pair — acento, caixa e aliases
+# --------------------------------------------------------------------------- #
+
+def test_validate_or_repair_pair_case_insensitive():
+    assert validate_or_repair_pair("ciências humanas", "psicologia") == (
+        "Ciências Humanas",
+        "Psicologia",
+    )
+
+
+def test_validate_or_repair_pair_alias_computacao():
+    # Variações sem acento da Área Básica "Computação".
+    assert validate_or_repair_pair(
+        "Ciências Exatas e da Terra", "ciencia da computacao"
+    ) == ("Ciências Exatas e da Terra", "Computação")
+    assert validate_or_repair_pair(
+        "Ciências Exatas e da Terra", "ciencias da computacao"
+    ) == ("Ciências Exatas e da Terra", "Computação")
+
+
+def test_validate_or_repair_pair_repara_grande_area_pelo_alias():
+    # Grande área informada errada + alias da área básica.
+    assert validate_or_repair_pair(
+        "Ciências da Saúde", "ciencia da computacao"
+    ) == ("Ciências Exatas e da Terra", "Computação")
+
+
+def test_validate_or_repair_pair_ambos_invalidos_retorna_none():
+    assert validate_or_repair_pair("Não Existe", "Também Não Existe") is None
+
+
+# --------------------------------------------------------------------------- #
+# repair_taxonomy_levels
+# --------------------------------------------------------------------------- #
+
+def test_repair_taxonomy_levels_ficcao_letras_literatura():
+    # Produção: LLM devolveu Ciências Humanas / Letras / Literatura.
+    # Letras é Grande Área; Literatura é Área Básica dela.
+    reparado = repair_taxonomy_levels("Ciências Humanas", "Letras", "Literatura", "")
+    assert reparado == ("Letras", "Literatura", "Geral", "Geral")
+
+
+def test_repair_taxonomy_levels_promove_especialidade_nao_geral():
+    # Especialidade não-Geral é promovida para subarea; especialidade zera.
+    reparado = repair_taxonomy_levels("Ciências Humanas", "Letras", "Literatura", "Teoria Literária")
+    assert reparado == ("Letras", "Literatura", "Teoria Literária", "Geral")
+
+
+def test_repair_taxonomy_levels_par_valido_mantido():
+    reparado = repair_taxonomy_levels("Ciências Humanas", "Psicologia", "Psicanálise", "")
+    assert reparado == ("Ciências Humanas", "Psicologia", "Psicanálise", "Geral")
+
+
+def test_repair_taxonomy_levels_subarea_vazia_sem_reparo():
+    # Sem subarea não há o que promover para Área Básica: sem reparo.
+    assert repair_taxonomy_levels("Ciências Humanas", "Letras", "", "") is None
+
+
+def test_repair_taxonomy_levels_par_realmente_invalido_retorna_none():
+    assert repair_taxonomy_levels("Não Existe", "Também Não Existe", "X", "Y") is None
+    assert repair_taxonomy_levels("Ciências Humanas", "Não Existe", "Literatura", "") is None
+
+
+# --------------------------------------------------------------------------- #
+# _finalize_classification — confiança preservada ao reparar
+# --------------------------------------------------------------------------- #
+
+def _output(grande_area, area_basica, subarea="", especialidade="", conf=0.85):
+    return LLMClassificationOutput(
+        grande_area=grande_area,
+        area_basica=area_basica,
+        subarea=subarea,
+        especialidade=especialidade,
+        tipo=DocumentType.LIVRO,
+        authors=["Machado de Assis"],
+        title="O festim dos corvos",
+        subtitle="",
+        year=2020,
+        confidence_score=conf,
+        reasoning="llm",
+    )
+
+
+def test_finalize_classification_repara_e_nao_zera_confianca():
+    # Caso de produção: não deve zerar a confiança ao reparar Letras/Literatura.
+    res = _finalize_classification(
+        _output("Ciências Humanas", "Letras", "Literatura", ""), used_ocr=False
+    )
+    assert res.grande_area == "Letras"
+    assert res.area_basica == "Literatura"
+    assert res.subarea == "Geral"
+    assert res.confidence_score == 0.85  # confiança preservada
+
+
+def test_finalize_classification_alias_computacao_preserva_confianca():
+    res = _finalize_classification(
+        _output("Ciências Exatas e da Terra", "ciencia da computacao", "", ""),
+        used_ocr=False,
+    )
+    assert res.area_basica == "Computação"
+    assert res.confidence_score == 0.85
+
+
+def test_finalize_classification_par_invalido_zera_confianca():
+    # Par realmente invocado não tem reparo possível: confiança vira 0.0.
+    res = _finalize_classification(
+        _output("Não Existe", "Também Não Existe", "", ""), used_ocr=False
+    )
+    assert res.confidence_score == 0.0
+    assert "irreparável" in res.reasoning

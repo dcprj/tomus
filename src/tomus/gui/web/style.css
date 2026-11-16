@@ -782,6 +782,7 @@ input:disabled,
 .pill-processing{ background-color: #F1F5F9; color: #334155; border: 1px solid #CBD5E1; }
 .pill-ignored   { background-color: #F8FAFC; color: #64748B; border: 1px solid #E2E8F0; }
 .pill-error     { background-color: #FEE2E2; color: #991B1B; border: 1px solid #FECACA; }
+.pill-obsolete  { background-color: #F3F4F6; color: #6B7280; border: 1px solid #D1D5DB; }
 
 /* Spinning animation for processing badge */
 @keyframes spin {
@@ -1233,7 +1234,7 @@ input:disabled,
 
 .modal-stats-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -1289,6 +1290,13 @@ input:disabled,
 }
 .stat-error .stat-num { color: #991B1B; }
 .stat-error .stat-label { color: #DC2626; }
+
+.stat-obsolete {
+  background: #F3F4F6;
+  border-color: #D1D5DB;
+}
+.stat-obsolete .stat-num { color: #4B5563; }
+.stat-obsolete .stat-label { color: #6B7280; }
 
 .modal-quality-badge {
   display: inline-flex;

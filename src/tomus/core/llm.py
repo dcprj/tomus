@@ -32,6 +32,7 @@ from tomus.core.prompts import (
 from tomus.core.taxonomy import (
     normalize_and_resolve_taxonomy,
     validate_or_repair_pair,
+    repair_taxonomy_levels,
 )
 from tomus.extractors.identifiers import normalize_doi, normalize_isbn
 
@@ -273,34 +274,42 @@ def _finalize_classification(
         especialidade = "Geral"
 
     if reparado is None:
-        return ClassificationResult(
-            grande_area=output.grande_area,
-            area_basica=output.area_basica,
-            subarea=subarea,
-            especialidade=especialidade,
-            tipo=tipo_str,
-            authors=authors_norm,
-            title=output.title,
-            subtitle=output.subtitle,
-            year=output.year,
-            publisher=output.publisher,
-            city=output.city,
-            edition=output.edition,
-            journal_name=output.journal_name,
-            volume=output.volume,
-            number=output.number,
-            pages=output.pages,
-            doi=clean_doi,
-            isbn=clean_isbn,
-            confidence_score=0.0,
-            reasoning=(
-                f"{output.reasoning} Par (grande_area, area_basica) irreparável "
-                f"contra o catálogo CAPES/CNPq."
-            ),
-            used_ocr=used_ocr,
-            provider_name=provider_name,
-            model_name=model_name,
+        # Antes de zerar a confiança, tentar reparo dos quatro níveis
+        # (deslocamento Grande Área <-> Área Básica, ex.: Letras/Literatura).
+        reparado_niveis = repair_taxonomy_levels(
+            output.grande_area, output.area_basica, subarea, especialidade
         )
+        if reparado_niveis is None:
+            return ClassificationResult(
+                grande_area=output.grande_area,
+                area_basica=output.area_basica,
+                subarea=subarea,
+                especialidade=especialidade,
+                tipo=tipo_str,
+                authors=authors_norm,
+                title=output.title,
+                subtitle=output.subtitle,
+                year=output.year,
+                publisher=output.publisher,
+                city=output.city,
+                edition=output.edition,
+                journal_name=output.journal_name,
+                volume=output.volume,
+                number=output.number,
+                pages=output.pages,
+                doi=clean_doi,
+                isbn=clean_isbn,
+                confidence_score=0.0,
+                reasoning=(
+                    f"{output.reasoning} Par (grande_area, area_basica) irreparável "
+                    f"contra o catálogo CAPES/CNPq."
+                ),
+                used_ocr=used_ocr,
+                provider_name=provider_name,
+                model_name=model_name,
+            )
+        grande_area, area_basica, subarea, especialidade = reparado_niveis
+        reparado = (grande_area, area_basica)
 
     grande_area, area_basica = reparado
     resolved = normalize_and_resolve_taxonomy(

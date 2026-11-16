@@ -33,7 +33,11 @@ from tomus.core.models import (
     ProcessStatus,
 )
 from tomus.core.pipeline import run_pipeline
-from tomus.core.taxonomy import get_taxonomy_version, validate_or_repair_pair
+from tomus.core.taxonomy import (
+    get_taxonomy_version,
+    validate_or_repair_pair,
+    repair_taxonomy_levels,
+)
 from tomus.storage.companion import generate_companion_markdown
 from tomus.storage.namer import format_academic_filename
 from tomus.storage.organizer import (
@@ -155,13 +159,20 @@ class ManualTriageService(QObject):
         subarea: str = "Geral",
     ) -> FileManifestEntry:
         """Aprovar classificação manual e materializar o item na biblioteca."""
-        # Validar/reparar o par CAPES/CNPq.
+        # Validar/reparar o par CAPES/CNPq (incluindo deslocamento de níveis
+        # quando area_basica é, na verdade, uma Grande Área, ex.: Letras).
         par = validate_or_repair_pair(grande_area, area_basica)
         if par is None:
-            raise ValueError(
-                f"Par CAPES/CNPq inválido: {grande_area} / {area_basica}"
+            reparado_niveis = repair_taxonomy_levels(
+                grande_area, area_basica, subarea
             )
-        grande_area, area_basica = par
+            if reparado_niveis is None:
+                raise ValueError(
+                    f"Par CAPES/CNPq inválido: {grande_area} / {area_basica}"
+                )
+            grande_area, area_basica, subarea, _especialidade = reparado_niveis
+        else:
+            grande_area, area_basica = par
 
         # Nome padronizado do arquivo de destino.
         filename = format_academic_filename(
