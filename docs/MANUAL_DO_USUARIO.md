@@ -1,7 +1,7 @@
 # Manual do Usuário do Tomus
 
 > **Guia Oficial de Uso & Boas Práticas**  
-> **Versão do Aplicativo:** 1.3.0  
+> **Versão do Aplicativo:** 1.3.1  
 > **Sistema Operacional:** macOS 14 (Sonoma) ou superior (Apple Silicon M1/M2/M3/M4 e processadores Intel)  
 > **Autor:** Dario Pinheiro e Equipe Tomus  
 > **Suporte Comunitário:** [github.com/dcprj/tomus](https://github.com/dcprj/tomus)
@@ -29,7 +29,7 @@ O **Tomus** foi criado exatamente para resolver essa dor, de forma automatizada,
 
 A instalação do Tomus no macOS é rápida e segue o padrão amigável da Apple:
 
-1. **Baixe o instalador oficial:** Acesse a página do projeto ou a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus-1.3.0-macOS.dmg`.
+1. **Baixe o instalador oficial:** Acesse a página do projeto ou a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus-1.3.1-macOS.dmg`.
 2. **Abra o arquivo `.dmg`:** Dê um duplo clique no arquivo baixado. Uma janela se abrirá mostrando o ícone do **Tomus** ao lado da pasta **Aplicativos** (*Applications*).
 3. **Arraste e solte:** Arraste o ícone do Tomus para dentro da pasta Aplicativos.
 4. **Inicie o aplicativo:** Abra o seu *Launchpad* ou a pasta Aplicativos no Finder e clique no Tomus.
