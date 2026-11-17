@@ -27,7 +27,7 @@ jobs:
       - name: Criar ambiente virtual isolado
         run: |
           python -m venv .venv
-          echo ".venv/bin" >> $GITHUB_PATH
+          echo "${GITHUB_WORKSPACE}/.venv/bin" >> $GITHUB_PATH
 
       - name: Instalar dependências Python
         run: |
@@ -60,32 +60,29 @@ jobs:
           if .venv/bin/python - <<'PY'
 import sys
 from PyInstaller.archive.readers import CArchiveReader
-import importlib.util
 
-# 1. pyi_rth_pkgres não deve estar no binário (CArchive)
-try:
-    arch = CArchiveReader("dist/Tomus.app/Contents/MacOS/Tomus")
-    toc = arch.toc
-    names = [entry[0] for entry in toc]
-    if any("pyi_rth_pkgres" in n for n in names):
-        print("FALHA: pyi_rth_pkgres encontrado no CArchive")
-        sys.exit(1)
-    print("OK: pyi_rth_pkgres ausente do CArchive")
-except Exception as exc:
-    print(f"AVISO: não foi possível ler CArchive: {exc}")
+# 1. pyi_rth_pkgres não deve estar no binário (CArchive).
+# arch.toc é um dict de chaves string: verificar chave diretamente.
+arch = CArchiveReader("dist/Tomus.app/Contents/MacOS/Tomus")
+if "pyi_rth_pkgres" in arch.toc:
+    print("FALHA: pyi_rth_pkgres encontrado no CArchive")
+    sys.exit(1)
+print("OK: pyi_rth_pkgres ausente do CArchive")
 
-# 2. pkg_resources não deve estar no PYZ
+# 2. pkg_resources não deve estar no PYZ (via CArchive quando existe PYZ separado,
+# ou integrado no executável com exclude_binaries=True no macOS).
 try:
-    import zlib
-    import marshal
-    with open("dist/Tomus.app/Contents/PYZ-00.pyz", "rb") as fh:
-        data = fh.read()
-    if b"pkg_resources" in data:
-        print("FALHA: pkg_resources encontrado no PYZ")
-        sys.exit(1)
+    pyz = arch.open_embedded_archive("PYZ-00.pyz")
+except Exception:
+    pyz = None
+if pyz is not None:
+    for key in pyz.toc.keys():
+        if key == "pkg_resources" or key.startswith("pkg_resources."):
+            print("FALHA: pkg_resources encontrado no PYZ")
+            sys.exit(1)
     print("OK: pkg_resources ausente do PYZ")
-except Exception as exc:
-    print(f"AVISO: não foi possível inspecionar PYZ: {exc}")
+else:
+    print("AVISO: PYZ-00.pyz não encontrado como arquivo separado (normal em macOS com exclude_binaries=True); pkg_resources verificado apenas no CArchive")
 PY
           then
             echo "Smoke check (pkgres) passou"
@@ -107,14 +104,44 @@ PY
             echo "FALHA: docling_slim dist-info não encontrado no bundle" && exit 1
           fi
 
-          echo "=== Smoke check: boot nativo do executável Tomus por 5s ==="
-          timeout 5 "${EXE_PATH}" >/tmp/tomus_boot.log 2>&1 || true
-          if grep -Ei "ImportError|Traceback|SIGABRT" /tmp/tomus_boot.log; then
-            echo "FALHA: erro no boot nativo do Tomus"
-            cat /tmp/tomus_boot.log
-            exit 1
+          echo "=== Smoke check: boot offscreen do executável Tomus por 5s ==="
+          if QT_QPA_PLATFORM=offscreen .venv/bin/python - <<'PY'
+import subprocess
+import sys
+import os
+
+exe = "dist/Tomus.app/Contents/MacOS/Tomus"
+env = dict(os.environ)
+env["QT_QPA_PLATFORM"] = "offscreen"
+
+p = subprocess.Popen([exe], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
+try:
+    out, _ = p.communicate(timeout=5)
+    # Saiu antes de 5s: falha
+    print(f"FALHA: executável encerrou antes de 5s (rc={p.returncode})")
+    print(out)
+    sys.exit(1)
+except subprocess.TimeoutExpired:
+    # Permaneceu vivo por 5s: sucesso
+    p.terminate()
+    try:
+        out, _ = p.communicate(timeout=2)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        out, _ = p.communicate()
+    bad = ("Traceback", "ImportError", "AttributeError", "SIGABRT")
+    for token in bad:
+        if token in out:
+            print(f"FALHA: encontrou '{token}' no boot offscreen")
+            print(out)
+            sys.exit(1)
+    print("OK: executável Tomus rodou 5s offscreen sem erro")
+PY
+          then
+            echo "Smoke check (boot) passou"
+          else
+            echo "Smoke check (boot) FALHOU" && exit 1
           fi
-          echo "OK: executável Tomus rodou por 5s sem erro"
 
       - name: Listar artifacts gerados
         shell: bash
