@@ -1,6 +1,6 @@
 # Documentação Técnica e Arquitetura do Tomus
 
-> **Versão da Especificação:** 1.3.0  
+> **Versão da Especificação:** 1.3.1  
 > **Status:** Ativa / Homologada  
 > **Autores:** Dario Pinheiro (Arquiteto-Chefe & Mantenedor) e Equipe de Engenharia Tomus  
 > **Licença:** Código Aberto sob [MIT License](https://github.com/dcprj/tomus/blob/main/LICENSE)  
@@ -252,7 +252,7 @@ stateDiagram-v2
     RevisaoManual --> [*]
 ```
 
-### 6.1 Provedores Oficiais e Modelos Homologados (v1.3.0)
+### 6.1 Provedores Oficiais e Modelos Homologados (v1.3.1)
 
 1. **Google Gemini (`GeminiProvider`):**
    * *Modelo Padrão:* `gemini-3.5-flash`

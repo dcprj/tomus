@@ -24,12 +24,16 @@ jobs:
         run: |
           brew install create-dmg || true
 
+      - name: Criar ambiente virtual isolado
+        run: |
+          python -m venv .venv
+          echo ".venv/bin" >> $GITHUB_PATH
+
       - name: Instalar dependências Python
         run: |
-          python -m pip install --upgrade pip
-          pip install "setuptools<70"
-          pip install -e ".[dev]"
-          pip install pyinstaller
+          .venv/bin/pip install --upgrade pip
+          .venv/bin/pip install -e ".[dev]"
+          .venv/bin/pip install pyinstaller
 
       - name: Executar testes
         shell: bash
@@ -42,6 +46,75 @@ jobs:
         run: |
           chmod +x packaging/build_macos.sh
           ./packaging/build_macos.sh
+
+      - name: Smoke check do bundle macOS
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_PATH="dist/Tomus.app"
+          PYZ_PATH="${APP_PATH}/Contents/PYZ-00.pyz"
+          EXE_PATH="${APP_PATH}/Contents/MacOS/Tomus"
+          FRAMEWORKS_DIR="${APP_PATH}/Contents/Frameworks"
+
+          echo "=== Smoke check: verifica ausência de pyi_rth_pkgres e pkg_resources ==="
+          if .venv/bin/python - <<'PY'
+import sys
+from PyInstaller.archive.readers import CArchiveReader
+import importlib.util
+
+# 1. pyi_rth_pkgres não deve estar no binário (CArchive)
+try:
+    arch = CArchiveReader("dist/Tomus.app/Contents/MacOS/Tomus")
+    toc = arch.toc
+    names = [entry[0] for entry in toc]
+    if any("pyi_rth_pkgres" in n for n in names):
+        print("FALHA: pyi_rth_pkgres encontrado no CArchive")
+        sys.exit(1)
+    print("OK: pyi_rth_pkgres ausente do CArchive")
+except Exception as exc:
+    print(f"AVISO: não foi possível ler CArchive: {exc}")
+
+# 2. pkg_resources não deve estar no PYZ
+try:
+    import zlib
+    import marshal
+    with open("dist/Tomus.app/Contents/PYZ-00.pyz", "rb") as fh:
+        data = fh.read()
+    if b"pkg_resources" in data:
+        print("FALHA: pkg_resources encontrado no PYZ")
+        sys.exit(1)
+    print("OK: pkg_resources ausente do PYZ")
+except Exception as exc:
+    print(f"AVISO: não foi possível inspecionar PYZ: {exc}")
+PY
+          then
+            echo "Smoke check (pkgres) passou"
+          else
+            echo "Smoke check (pkgres) FALHOU" && exit 1
+          fi
+
+          echo "=== Smoke check: libavcodec em Contents/Frameworks ==="
+          if ls "${FRAMEWORKS_DIR}"/libavcodec* >/dev/null 2>&1; then
+            echo "OK: libavcodec presente em Contents/Frameworks"
+          else
+            echo "FALHA: libavcodec não encontrado em Contents/Frameworks" && exit 1
+          fi
+
+          echo "=== Smoke check: docling_slim dist-info coletado ==="
+          if find "${APP_PATH}" -iname "docling_slim*" -path "*dist-info*" 2>/dev/null | grep -q .; then
+            echo "OK: docling_slim dist-info presente no bundle"
+          else
+            echo "FALHA: docling_slim dist-info não encontrado no bundle" && exit 1
+          fi
+
+          echo "=== Smoke check: boot nativo do executável Tomus por 5s ==="
+          timeout 5 "${EXE_PATH}" >/tmp/tomus_boot.log 2>&1 || true
+          if grep -Ei "ImportError|Traceback|SIGABRT" /tmp/tomus_boot.log; then
+            echo "FALHA: erro no boot nativo do Tomus"
+            cat /tmp/tomus_boot.log
+            exit 1
+          fi
+          echo "OK: executável Tomus rodou por 5s sem erro"
 
       - name: Listar artifacts gerados
         shell: bash

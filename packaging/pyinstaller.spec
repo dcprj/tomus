@@ -88,7 +88,7 @@ hiddenimports = [
 ]
 
 # Coletar submódulos e arquivos de dados do Docling e motor de OCR
-for pkg in ["docling", "docling_core", "docling_parse", "docling_ibm_models", "rapidocr", "onnxruntime", "latex2mathml", "pylatexenc", "pypdfium2", "pypdfium2_raw"]:
+for pkg in ["docling", "docling-slim", "docling_core", "docling_parse", "docling_ibm_models", "rapidocr", "onnxruntime", "latex2mathml", "pylatexenc", "pypdfium2", "pypdfium2_raw"]:
     try:
         datas += collect_data_files(pkg)
     except Exception:
@@ -138,7 +138,7 @@ a = Analysis(
     hookspath=[str(SPEC_DIR / "hooks")],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "IPython", "notebook"],
+    excludes=["tkinter", "matplotlib", "IPython", "notebook", "pkg_resources"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
@@ -216,8 +216,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "Tomus",
             "CFBundleDisplayName": "Tomus — Organizador Acadêmico de PDFs",
-            "CFBundleVersion": "1.3.0",
-            "CFBundleShortVersionString": "1.3.0",
+            "CFBundleVersion": "1.3.1",
+            "CFBundleShortVersionString": "1.3.1",
             "CFBundlePackageType": "APPL",
             "CFBundleSignature": "????",
             "LSMinimumSystemVersion": "12.0.0",

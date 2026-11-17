@@ -5,6 +5,13 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adota versionamento semântico ([Semantic Versioning](https://semver.org/lang/pt-BR/)).
 
+## [1.3.1] - 2026-11-16
+
+### Correções de Empacotamento macOS / CI (Hotfix)
+- **`.github/workflows/release.yml`**: removida a instalação de `setuptools<70` (que deixava `pkg_resources` fantasma após o upgrade do torch para setuptools 84). O workflow agora cria um venv isolado (`python -m venv .venv`), expõe `.venv/bin` via `GITHUB_PATH` para todos os passos seguintes e instala dependências com `.venv/bin/pip` (`--upgrade pip`, `-e .[dev]`, `pyinstaller`). Adicionado passo de smoke check após `build_macos.sh` validando: ausência de `pyi_rth_pkgres` no binário (via `CArchiveReader`), ausência de `pkg_resources` no PYZ, presença de `libavcodec` em `Contents/Frameworks`, coleta do `docling_slim` dist-info e boot do executável `Tomus` por 5s sem erro.
+- **`packaging/pyinstaller.spec`**: `pkg_resources` incluído em `excludes`; adicionado `copy_metadata` para `docling-slim` (resolvendo `picture_description_vlm_engine` no Docling congelado); `CFBundleVersion` e `CFBundleShortVersionString` atualizados para `1.3.1`.
+- **`packaging/hooks/hook-tomus.py`**: `bindepend_symlink_suppression` restringido exclusivamente a `**/cv2/.dylibs/libssl*`, `**/cv2/.dylibs/libcrypto*`, `**/cv2/__dot__dylibs/libssl*` e `**/cv2/__dot__dylibs/libcrypto*`, preservando symlinks de `libavcodec`/`libavformat`/`libavutil`/`libswscale` em `Contents/Frameworks/` para que `import cv2` funcione no bundle.
+
 ## [1.3.0] - 2026-11-16
 
 ### Deduplicação em 3 camadas e Obsolescência (`src/tomus/storage/organizer.py`)
