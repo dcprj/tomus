@@ -242,3 +242,40 @@ def test_ocr_fallback_rapidocr_when_docling_none(tmp_path):
     assert isinstance(texto, str)
     assert len(texto) > 0, "RapidOCR deve extrair texto da imagem quando Docling indisponível"
 
+
+def test_get_converter_uses_pypdfium_backend_on_win32(monkeypatch):
+    """No Windows, _get_converter deve forçar o backend pypdfium2 para evitar
+    access violation intermitente no parser nativo threadado docling-parse."""
+    import sys as _sys
+
+    import tomus.extractors.ocr_docling as ocr_mod
+    from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+    from docling.document_converter import DocumentConverter
+    from docling.datamodel.base_models import InputFormat
+
+    ocr_mod._CONVERTER = None
+    monkeypatch.setattr(_sys, "platform", "win32")
+    converter = ocr_mod._get_converter()
+    assert isinstance(converter, DocumentConverter)
+    opt = converter.format_to_options.get(InputFormat.PDF)
+    assert opt is not None
+    assert opt.backend is PyPdfiumDocumentBackend
+
+
+def test_get_converter_uses_default_backend_on_darwin(monkeypatch):
+    """No macOS/Linux, _get_converter preserva o DocumentConverter() padrão
+    (sem forçar pypdfium2)."""
+    import sys as _sys
+
+    import tomus.extractors.ocr_docling as ocr_mod
+    from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
+    from docling.document_converter import DocumentConverter
+    from docling.datamodel.base_models import InputFormat
+
+    ocr_mod._CONVERTER = None
+    monkeypatch.setattr(_sys, "platform", "darwin")
+    converter = ocr_mod._get_converter()
+    assert isinstance(converter, DocumentConverter)
+    opt = converter.format_to_options.get(InputFormat.PDF)
+    assert opt is None or opt.backend is not PyPdfiumDocumentBackend
+

@@ -166,8 +166,45 @@ def test_main_window_web_view_instancia(monkeypatch):
     win = TomusMainWindow(cfg, source_dir="/tmp/origem", target_dir="/tmp/destino")
     assert win.web_view is not None
     assert win.bridge is not None
-    assert win.bridge.source_dir == "/tmp/origem"
-    assert win.bridge.target_dir == "/tmp/destino"
+    assert win.bridge.source_dir == str(Path("/tmp/origem"))
+    assert win.bridge.target_dir == str(Path("/tmp/destino"))
+
+
+def test_apply_webengine_defenses_frozen_win32(monkeypatch, tmp_path):
+    """_apply_webengine_defenses configura caminhos do QtWebEngineProcess em sys.frozen + win32.
+
+    Preserva o comportamento macOS/Linux intacto e adiciona suporte a Windows:
+    candidate_paths com PySide6/QtWebEngineProcess.exe, PySide6/Qt/bin/QtWebEngineProcess.exe,
+    QtWebEngineProcess.exe e resources_candidates com PySide6/resources, PySide6/Qt/resources,
+    resources, buscando qtwebengine_locales tambem em PySide6/translations/qtwebengine_locales.
+    """
+    import sys as _sys
+
+    from tomus.gui.app import _apply_webengine_defenses
+
+    fake_meipass = tmp_path / "meipass"
+    (fake_meipass / "PySide6").mkdir(parents=True)
+    (fake_meipass / "PySide6" / "QtWebEngineProcess.exe").write_bytes(b"fake")
+    locales_dir = fake_meipass / "PySide6" / "resources" / "qtwebengine_locales"
+    locales_dir.mkdir(parents=True)
+    (locales_dir / "en-US.pak").write_bytes(b"fake")
+    (fake_meipass / "PySide6" / "resources" / "qtwebengine_resources.pak").write_bytes(b"fake")
+
+    monkeypatch.setattr(_sys, "platform", "win32", raising=False)
+    monkeypatch.setattr(_sys, "frozen", True, raising=False)
+    monkeypatch.setattr(_sys, "_MEIPASS", str(fake_meipass), raising=False)
+
+    captured: dict[str, str] = {}
+    monkeypatch.setattr("os.environ", captured)
+
+    _apply_webengine_defenses()
+
+    assert captured.get("QTWEBENGINE_DISABLE_SANDBOX") == "1"
+    assert (
+        captured.get("QTWEBENGINEPROCESS_PATH")
+        == str(fake_meipass / "PySide6" / "QtWebEngineProcess.exe")
+    )
+    assert captured.get("QTWEBENGINE_LOCALES_PATH") == str(locales_dir)
 
 
 def test_web_bridge_pipeline_event_with_destination_and_sha256():
@@ -216,7 +253,9 @@ def test_is_safe_path_com_strings_e_varios_caminhos():
 
 def test_openPdf_com_strings_em_source_target(tmp_path, monkeypatch):
     """openPdf deve funcionar quando source_dir e target_dir são strings (inclusive vazias)."""
+    import os as _os
     import subprocess
+
     from tomus.gui.bridge import WebBridge
 
     cfg = AppConfig()
@@ -229,12 +268,16 @@ def test_openPdf_com_strings_em_source_target(tmp_path, monkeypatch):
     pdf_path.write_bytes(b"%PDF-1.4 fake pdf content")
 
     monkeypatch.setattr(subprocess, "Popen", lambda cmd: cmd)
+    # No Windows (win32), open_file_in_os usa os.startfile: mockar para não abrir o arquivo de verdade.
+    if sys.platform == "win32":
+        monkeypatch.setattr(_os, "startfile", lambda path: None)
     bridge.openPdf(str(pdf_path))  # não deve lançar AttributeError
 
 
 def test_revealPath_com_strings_em_source_target(tmp_path, monkeypatch):
     """revealPath deve funcionar quando source_dir e target_dir são strings."""
     import subprocess
+
     from tomus.gui.bridge import WebBridge
 
     cfg = AppConfig()

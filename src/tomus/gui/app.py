@@ -53,6 +53,16 @@ def _apply_webengine_defenses() -> None:
                 meipass / "QtWebEngineProcess",
                 meipass / "QtWebEngineProcess.app" / "Contents" / "MacOS" / "QtWebEngineProcess",
             ]
+            if sys.platform == "win32":
+                # No Windows, o QtWebEngineProcess é um executável .exe distribuído
+                # dentro da pasta PySide6 (ou raiz) do bundle congelado (PyInstaller).
+                candidate_paths.extend(
+                    [
+                        meipass / "PySide6" / "QtWebEngineProcess.exe",
+                        meipass / "PySide6" / "Qt" / "bin" / "QtWebEngineProcess.exe",
+                        meipass / "QtWebEngineProcess.exe",
+                    ]
+                )
             for candidate in candidate_paths:
                 if candidate.exists():
                     # QTWEBENGINEPROCESS_PATH (sem underscore) é o nome esperado pelo Qt.
@@ -68,6 +78,16 @@ def _apply_webengine_defenses() -> None:
                 meipass / "PySide6" / "Qt" / "lib" / "QtWebEngineCore.framework" / "Versions" / "Resources" / "Resources",
                 meipass / "PySide6" / "QtWebEngineCore.framework" / "Versions" / "Resources" / "Resources",
             ]
+            if sys.platform == "win32":
+                # No Windows, os recursos do WebEngine (.pak / icudtl.dat) ficam em
+                # pastas "resources" diretas do PySide6 (ou raiz do bundle congelado).
+                resources_candidates.extend(
+                    [
+                        meipass / "PySide6" / "resources",
+                        meipass / "PySide6" / "Qt" / "resources",
+                        meipass / "resources",
+                    ]
+                )
             for resources_path in resources_candidates:
                 if resources_path.exists() and (resources_path / "qtwebengine_resources.pak").exists():
                     os.environ.setdefault("QTWEBENGINE_RESOURCES_PATH", str(resources_path))
@@ -75,6 +95,12 @@ def _apply_webengine_defenses() -> None:
                     locales_path = resources_path / "qtwebengine_locales"
                     if locales_path.exists() and (locales_path / "en-US.pak").exists():
                         os.environ.setdefault("QTWEBENGINE_LOCALES_PATH", str(locales_path))
+                    # No Windows, também buscar qtwebengine_locales em
+                    # PySide6/translations/qtwebengine_locales (padrão da roda PySide6 no Windows).
+                    if sys.platform == "win32":
+                        translations_locales = meipass / "PySide6" / "translations" / "qtwebengine_locales"
+                        if translations_locales.exists() and (translations_locales / "en-US.pak").exists():
+                            os.environ.setdefault("QTWEBENGINE_LOCALES_PATH", str(translations_locales))
                     break
 
 

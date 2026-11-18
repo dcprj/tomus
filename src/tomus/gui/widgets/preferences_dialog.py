@@ -1366,7 +1366,9 @@ class PreferencesDialog(QDialog):
         text = tomli_w.dumps(toml_data)
         self._config_path.write_text(text, encoding="utf-8")
         try:
-            os.chmod(self._config_path, CONFIG_FILE_MODE)
+            from tomus.gui.os_integration import secure_chmod_600
+
+            secure_chmod_600(self._config_path)
         except OSError:
             pass
 

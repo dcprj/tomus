@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -60,7 +61,26 @@ def _get_converter():
     try:
         from docling.document_converter import DocumentConverter  # type: ignore
 
-        _CONVERTER = DocumentConverter()
+        if sys.platform == "win32":
+            # Windows: evite o parser nativo threadado docling-parse
+            # (access violation intermitente em docling_parse/pdf_parser.py,
+            # get_task -> docling_parse_backend.py:455 iter_pages).
+            from docling.backend.pypdfium2_backend import (  # type: ignore
+                PyPdfiumDocumentBackend,
+            )
+            from docling.datamodel.base_models import InputFormat  # type: ignore
+            from docling.document_converter import PdfFormatOption  # type: ignore
+
+            _CONVERTER = DocumentConverter(
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(
+                        backend=PyPdfiumDocumentBackend
+                    )
+                }
+            )
+        else:
+            # macOS/Linux: comportamento padrão (sem alterar backend).
+            _CONVERTER = DocumentConverter()
         return _CONVERTER
     except Exception as exc:
         _logger.warning("Docling DocumentConverter indisponível no ambiente: %s", exc)

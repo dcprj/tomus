@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -343,6 +344,22 @@ groq_api_key = ""
 """
 
 
+def _aplicar_permissao_config(path: Path) -> None:
+    """Aplicar permissão restrita (0600) ao arquivo de configuração.
+
+    No Windows (sys.platform == "win32") o os.chmod tem efeito limitado sobre
+    as ACLs do NTFS, portanto a operação é pulada propositalmente. Em qualquer
+    plataforma, OSError (ex.: arquivo bloqueado ou sem privilégio) é tratado
+    com segurança para não impedir a criação do arquivo TOML.
+    """
+    if sys.platform == "win32":
+        return
+    try:
+        os.chmod(path, CONFIG_FILE_MODE)
+    except OSError:
+        pass
+
+
 def init_config_file(local: bool = False) -> Path:
     """Criar o arquivo config.toml comentado com permissão 0600.
 
@@ -357,5 +374,5 @@ def init_config_file(local: bool = False) -> Path:
 
     content = generate_config_template()
     target.write_text(content, encoding="utf-8")
-    os.chmod(target, CONFIG_FILE_MODE)
+    _aplicar_permissao_config(target)
     return target
