@@ -52,7 +52,7 @@ jobs:
         shell: pwsh
         run: |
           python -m venv .venv
-          echo "${{ github.workspace }}\.venv\Scripts" >> $env:GITHUB_PATH
+          Add-Content -Path $env:GITHUB_PATH -Value "${{ github.workspace }}\.venv\Scripts" -Encoding UTF8
 
       - name: Instalar dependências Python (Windows)
         shell: pwsh

@@ -74,18 +74,12 @@ Exemplos: `win/build-smoke`, `mac/dmg-layout`, `feat/openalex`, `fix/cv2-openssl
 - `packaging/windows_installer.iss` (Inno Setup, `MyAppVersion`, `SetupIconFile`, `OutputBaseFilename`)
 - `dist/Tomus.exe/` e `dist/*.exe` (artefatos de build, não versionados)
 - `packaging/icons/icon.ico` (ícone Windows)
-- `.github/workflows/ci.yml` (job `build-windows`, runner `windows-latest`)
+- `.github/workflows/ci.yml` (testes de PR em runner `windows-latest`)
+- `.github/workflows/release.yml` (futuro job `build-windows` do instalador, ainda ausente)
 
 ### Proteção dos pins do `pyproject.toml` (marcadores PEP 508)
 
-Dependências específicas de SO devem usar marcadores PEP 508 no `pyproject.toml` para evitar que uma mudança em um SO quebre o build do outro. Exemplo de padrão:
-
-```toml
-# Exemplo de pin com marcador PEP 508 (não alterar sem consenso das duas equipes)
-"opencv-python-headless>=4.5.1.48,<4.11; sys_platform == 'darwin'",
-```
-
-Qualquer alteração de versão ou adição de dependência específica de SO deve ser acordada por ambos os Chefes e registrada no PR antes do merge.
+Dependências **compartilhadas pelos dois SOs** (como `opencv-python-headless>=4.5.1.48,<4.11`, usado pelo RapidOCR tanto no macOS quanto no Windows) **não devem ser alteradas nem restringidas com marcadores PEP 508 de SO sem consenso de ambas as equipes**. Marcadores PEP 508 aplicam-se apenas a pacotes realmente exclusivos de um SO (ex.: um pacote que existe só no macOS ou só no Windows). Qualquer alteração de versão ou adição de dependência específica de SO deve ser acordada por ambos os Chefes e registrada no PR antes do merge.
 
 ---
 
@@ -95,11 +89,10 @@ O job `build-windows` está **ausente** do `.github/workflows/release.yml` (apen
 
 1. **Job `build-windows` ausente em `release.yml`**: criar job paralelo no runner `windows-latest`.
 2. **`_apply_webengine_defenses` em `app.py`**: garantir que as defesas do QtWebEngine (`QTWEBENGINE_DISABLE_SANDBOX`, `QTWEBENGINEPROCESS_PATH`, caminhos de recursos) funcionem no Windows congelado.
-3. **PyInstaller + onnxruntime / RapidOCR / docling-slim / upx**: coletar DLLs do onnxruntime, metadados do docling-slim, configurar upx e excluir `pkg_resources` no `packaging/pyinstaller.spec`.
-4. **`smoke_check_windows.py`**: criar smoke check equivalente ao macOS para o bundle Windows (verificar ausência de `pkg_resources`, presença de DLLs essenciais, boot do executável por 5s sem erro).
-5. **Unificar `openPdf`/`revealPath` de `bridge.py` com `os_integration.py`**: padronizar abertura de arquivos e revelação de pasta entre SO.
-6. **`secure_chmod_600` e `MAX_PATH`**: aplicar permissões seguras (`chmod 600`) em arquivos de credenciais e lidar com o limite de caminho longo do Windows (`MAX_PATH`).
-7. **Validação obrigatória no instalador real `Setup.exe`**: o instalador Inno Setup gerado deve ser validado após a build (execução silenciosa, atalhos, desinstalação limpa).
+3. **PyInstaller + onnxruntime / RapidOCR / docling-slim / upx + `smoke_check_windows.py`**: coletar DLLs do onnxruntime, metadados do docling-slim, configurar upx, excluir `pkg_resources` no `packaging/pyinstaller.spec` e criar o smoke check equivalente ao macOS para o bundle Windows (verificar ausência de `pkg_resources`, presença de DLLs essenciais, boot do executável por 5s sem erro).
+4. **Unificar `openPdf`/`revealPath` de `bridge.py` com `os_integration.py`**: padronizar abertura de arquivos e revelação de pasta entre SO.
+5. **`secure_chmod_600` e `MAX_PATH`**: unificar `src/tomus/core/config.py` e `src/tomus/gui/widgets/preferences_dialog.py` usando `os_integration.secure_chmod_600()` para ignorar chmod POSIX no Windows, e verificar o limite de caminho longo do Windows (`MAX_PATH` de 260 chars) na árvore CAPES.
+6. **Validação obrigatória no instalador real `Setup.exe`/`Tomus.exe`**: após a build do instalador Inno Setup, testar o fluxo completo com PDF nativo + PDF escaneado (OCR) + `openPdf` + `revealPath` + tela de Preferências/chaves + geração de `tomus.log`.
 
 > Nota: esses 6 alvos são o escopo do futuro job `build-windows` no CI. Eles estão listados aqui para alinhamento entre equipes Mac e Windows.
 

@@ -863,7 +863,7 @@ O provedor Groq oferece uma das maiores capacidades operacionais gratuitas do me
 - **Data do Registro:** 2026-11-18
 - **Origem:** Pós-release v1.3.1 (Chefe / Sentinela / Lince)
 - **Responsáveis:** Lince (Extractors) & Atlas (Foundation)
-- **Escopo:** `src/tomus/extractors/`, `src/tomus/core/config.py`, `src/tomus/gui/widgets/preferences_dialog.py`, `docs/ALINHAMENTO_EQUIPES.md`
+- **Escopo:** `src/tomus/core/enrichers.py`, `src/tomus/core/key_validator.py`, `src/tomus/core/config.py`, `src/tomus/gui/widgets/preferences_dialog.py`, `docs/ALINHAMENTO_EQUIPES.md`
 - **Descrição:** Substituir/complementar o endpoint `mailto` legado (aposentado pela OpenAlex) por autenticação opcional via `openalex_api_key`. O DOI custa zero (consulta pública gratuita); a busca por título compartilha cota de 0,10 USD/dia por IP. O Stage 3 de enriquecimento deve ser protegido em `try/except` para falha graciosa sem interromper o pipeline. Não obrigatório para a v1.3.1.
 
 ### Visão v2.0.0+
