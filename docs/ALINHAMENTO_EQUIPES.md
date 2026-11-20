@@ -3,10 +3,11 @@
 ## Baseline Atual
 
 - **Branch de referência:** `main`
-- **Commit atual da baseline:** `3403c18` (merge: aplica hotfix v1.3.1 — smoke check CI corrigido)
-- **Tag de release vigente:** `v1.3.1`
-- **Último release publicado:** v1.3.1 (GitHub Releases, asset `Tomus-1.3.1-macOS.dmg`)
-- **Data do alinhamento:** 2026-11-18
+- **Commit atual da baseline:** `7e5f3c6` (merge PR #7 — CI build-windows corrigido)
+- **Tag de release vigente:** `v1.3.2`
+- **Último release publicado:** v1.3.2 (GitHub Releases, assets `Tomus-1.3.2-macOS.dmg` e `Tomus_Setup_v1.3.2_Windows_x64.exe`)
+- **Data do alinhamento:** 2026-11-20
+- **PRs integrados:** #1 a #7
 
 ---
 
@@ -83,18 +84,18 @@ Dependências **compartilhadas pelos dois SOs** (como `opencv-python-headless>=4
 
 ---
 
-## 6 Alvos Windows Mapeados na v1.3.1
+## Alvos Windows Entregues na v1.3.2
 
-O job `build-windows` está **ausente** do `.github/workflows/release.yml` (apenas `build-macos` existe). Os 6 alvos Windows a serem mapeados e implementados no futuro job `build-windows` são:
+O job `build-windows` está **presente** tanto em `.github/workflows/ci.yml` (testes em `windows-latest` a cada PR) quanto em `.github/workflows/release.yml` (build + smoke check + upload do instalador nas tags `v*`). Os alvos Windows foram entregues na v1.3.2:
 
-1. **Job `build-windows` ausente em `release.yml`**: criar job paralelo no runner `windows-latest`.
-2. **`_apply_webengine_defenses` em `app.py`**: garantir que as defesas do QtWebEngine (`QTWEBENGINE_DISABLE_SANDBOX`, `QTWEBENGINEPROCESS_PATH`, caminhos de recursos) funcionem no Windows congelado.
-3. **PyInstaller + onnxruntime / RapidOCR / docling-slim / upx + `smoke_check_windows.py`**: coletar DLLs do onnxruntime, metadados do docling-slim, configurar upx, excluir `pkg_resources` no `packaging/pyinstaller.spec` e criar o smoke check equivalente ao macOS para o bundle Windows (verificar ausência de `pkg_resources`, presença de DLLs essenciais, boot do executável por 5s sem erro).
-4. **Unificar `openPdf`/`revealPath` de `bridge.py` com `os_integration.py`**: padronizar abertura de arquivos e revelação de pasta entre SO.
-5. **`secure_chmod_600` e `MAX_PATH`**: unificar `src/tomus/core/config.py` e `src/tomus/gui/widgets/preferences_dialog.py` usando `os_integration.secure_chmod_600()` para ignorar chmod POSIX no Windows, e verificar o limite de caminho longo do Windows (`MAX_PATH` de 260 chars) na árvore CAPES.
-6. **Validação obrigatória no instalador real `Setup.exe`/`Tomus.exe`**: após a build do instalador Inno Setup, testar o fluxo completo com PDF nativo + PDF escaneado (OCR) + `openPdf` + `revealPath` + tela de Preferências/chaves + geração de `tomus.log`.
+1. **Job `build-windows`**: presente em `ci.yml` e `release.yml` no runner `windows-latest` (Python 3.11).
+2. **Defesas do QtWebEngine no Windows**: `src/tomus/gui/app.py` injeta `QTWEBENGINE_DISABLE_SANDBOX=1` e resolve `QtWebEngineProcess` dentro de `sys._MEIPASS` (`QTWEBENGINEPROCESS_PATH`, `QTWEBENGINE_PROCESS_PATH`, `QTWEBENGINE_RESOURCES_PATH`) no bundle congelado.
+3. **PyInstaller + smoke check Windows**: `packaging/build_windows.ps1` + `packaging/smoke_check_windows.py` (ausência de `pkg_resources`/`pyi_rth_pkgres`, DLLs do onnxruntime, `docling_slim`, `QtWebEngineProcess.exe`, boot offscreen por 5s sem erro) e `packaging/windows_installer.iss` (Inno Setup, `PrivilegesRequired=lowest`, `SolidCompression=no`, `x64compatible`, `unins000.exe`).
+4. **Integração com SO unificada**: `src/tomus/gui/os_integration.py` padroniza `open` (macOS), `os.startfile` / `SHOpenFolderAndSelectItems` via ctypes (Windows) e `xdg-open` (Linux).
+5. **Instalador Windows por usuário**: `Tomus_Setup_v1.3.2_Windows_x64.exe` instala em `%LocalAppData%\Programs\Tomus` sem privilégios de administrador, com atalhos no Menu Iniciar (opcional na Área de Trabalho) e desinstalador `unins000.exe`.
+6. **Release v1.3.2 publicada**: assets `Tomus-1.3.2-macOS.dmg` (macOS) e `Tomus_Setup_v1.3.2_Windows_x64.exe` (Windows) disponíveis em https://github.com/dcprj/tomus/releases/tag/v1.3.2.
 
-> Nota: esses 6 alvos são o escopo do futuro job `build-windows` no CI. Eles estão listados aqui para alinhamento entre equipes Mac e Windows.
+> Nota: esses itens constituem o escopo Windows da frente de empacotamento e estão integrados ao `main` (commit `7e5f3c6`) e ao release `v1.3.2`.
 
 ---
 

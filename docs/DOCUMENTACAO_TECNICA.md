@@ -1,6 +1,6 @@
 # Documentação Técnica e Arquitetura do Tomus
 
-> **Versão da Especificação:** 1.3.1  
+> **Versão da Especificação:** 1.3.2  
 > **Status:** Ativa / Homologada  
 > **Autores:** Dario Pinheiro (Arquiteto-Chefe & Mantenedor) e Equipe de Engenharia Tomus  
 > **Licença:** Código Aberto sob [MIT License](https://github.com/dcprj/tomus/blob/main/LICENSE)  
@@ -10,12 +10,12 @@
 
 ## 1. Visão Geral e Filosofia Arquitetural
 
-O **Tomus** é uma aplicação desktop de alta fidelidade desenvolvida primordialmente para macOS (com suporte arquitetural multiplataforma em camadas desacopladas), concebida para sanar o problema da entropia documental em acervos científicos e acadêmicos.
+O **Tomus** é uma aplicação desktop de alta fidelidade desenvolvida para **macOS e Windows** (suporte multiplataforma em camadas desacopladas), concebida para sanar o problema da entropia documental em acervos científicos e acadêmicos.
 
 A grande maioria dos pesquisadores, professores e instituições acumula centenas ou milhares de arquivos em formato PDF com denominações crípticas (e.g., `download (1).pdf`, `artigo_final_v3.pdf`, `1-s2.0-S0140673620301835-main.pdf`), espalhados em pastas sem hierarquia ontológica.
 
 O Tomus atua como uma esteira autônoma e determinística de engenharia da informação, combinando:
-1. **Extração de Texto Híbrida e Local:** Camada textual embutida (PyMuPDF / pdfplumber) aliada ao reconhecimento óptico de caracteres acelerado por hardware no macOS (*Apple Vision Framework* via Neural Engine) e fallback OCR baseado em layout.
+1. **Extração de Texto Híbrida e Local:** Camada textual embutida (PyMuPDF) aliada ao OCR seletivo local multiplataforma via **Docling + RapidOCR + ONNXRuntime** (backend `PyPdfiumDocumentBackend` no Windows, padrão do Docling no macOS), com fallback seguro que retorna texto vazio sem quebrar o processo.
 2. **Identificadores Persistentes da Ciência:** Resolução exata de metadados via regex e APIs REST de identificadores globais (DOI via CrossRef e ISBN-10/ISBN-13 com validação de checksum via Google Books API).
 3. **Classificação Ontológica Oficial:** Mapeamento em 4 níveis da tabela de áreas do conhecimento **CAPES/CNPq** (*Grande Área › Área Básica › Subárea › Especialidade*).
 4. **Inteligência Artificial Local-First (BYOK):** Inferência semântica com múltiplos provedores em nuvem via TLS direto (*Bring Your Own Key*), operando com pool rotativo multi-chave, circuit breaker para erro 429 (*Too Many Requests*) e cascata automática de fallback.
@@ -42,7 +42,7 @@ flowchart TD
 
 ## 2. Stack Tecnológica e Decisões de Engenharia
 
-O projeto adota uma stack moderna, minimalista e pragmática, priorizando robustez, velocidade de execução e baixo consumo de recursos no macOS.
+O projeto adota uma stack moderna, minimalista e pragmática, priorizando robustez, velocidade de execução e baixo consumo de recursos no macOS e no Windows.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -51,18 +51,19 @@ O projeto adota uma stack moderna, minimalista e pragmática, priorizando robust
 │   HTML5 Semântico │ CSS Moderno (Design Tokens) │ Vanilla JavaScript  │
 ├────────────────────────────────────────────────────────────────────────┤
 │                     Camada de Orquestração & CLI                       │
-│        Click 8.1+ │ Rich 13.0+ │ Threads de Trabalho Qt (QThread)      │
+│        Typer + Rich │ Threads de Trabalho Qt (QThread)                 │
 ├────────────────────────────────────────────────────────────────────────┤
 │                       Camada do Motor Central (Core)                   │
 │   Pipeline Reativo │ Pydantic v2 (Schemas) │ SQLite (Cache & Hash)    │
 │   Pool Multi-Chave & Circuit Breaker │ Rotação Automática de Fallback │
 ├────────────────────────────────────────────────────────────────────────┤
 │                 Camada de Extração Textual & Visão                     │
-│   PyMuPDF (fitz) │ pdfplumber │ Apple Vision Framework (PyObjC)        │
-│   Docling / RapidOCR Fallback │ Identificadores (DOI / ISBN / CrossRef)│
+│   PyMuPDF (fitz) │ Docling │ RapidOCR │ ONNXRuntime                   │
+│   PyPdfiumDocumentBackend (Windows) │ Identificadores (DOI / ISBN)   │
 ├────────────────────────────────────────────────────────────────────────┤
 │                  Camada de Armazenamento e Sistema Operacional         │
-│   pathlib │ shutil (Atomic I/O) │ macOS Finder Bridge (open / reveal)  │
+│   pathlib │ shutil (Atomic I/O) │ os_integration.py (open / os.startfile│
+│   SHOpenFolderAndSelectItems via ctypes no Windows / xdg-open no Linux)│
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -70,19 +71,18 @@ O projeto adota uma stack moderna, minimalista e pragmática, priorizando robust
 
 | Componente | Tecnologia / Biblioteca | Função no Sistema | Justificativa da Decisão Técnica |
 | :--- | :--- | :--- | :--- |
-| **Linguagem & Runtime** | Python 3.12+ (CPython) | Núcleo de execução do software | Suporte a tipos genéricos modernos (`X \| Y`), alta performance e compatibilidade perfeita com ecossistema de dados. |
-| **Framework Gráfico** | `PySide6` (Qt for Python 6.8+) | Shell desktop nativo do macOS | Fornece ciclo de vida de aplicação nativa macOS, menus globais, integração com `QThread`, atalhos de teclado e janelas nativas. |
-| **Renderizador Web** | `PySide6.QtWebEngineWidgets` | Visualização da bancada interativa | Permite interface com alta densidade de informação, aceleração gráfica via GPU, CSS Grid/Flexbox e tipografia avançada sem bugs de layout. |
-| **Ponte IPC (Qt-JS)** | `PySide6.QtWebChannel` | Canal de transporte seguro entre Python e Web | Comunicação assíncrona bidirecional tipada via JSON, eliminando servidores HTTP locais (`localhost`) e eliminando vetores de ataque CSRF. |
+| **Linguagem & Runtime** | Python 3.11+ (CPython) | Núcleo de execução do software | `requires-python = ">=3.11"` em `pyproject.toml`; suporte a tipos genéricos modernos (`X \| Y`), alta performance e compatibilidade com ecossistema de dados. |
+| **Framework Gráfico** | `PySide6` (Qt for Python 6.8+) | Shell desktop nativo macOS e Windows | Ciclo de vida de aplicação nativa, menus globais, integração com `QThread`, atalhos de teclado e janelas nativas nos dois sistemas. |
+| **Renderizador Web** | `PySide6.QtWebEngineWidgets` | Visualização da bancada interativa | Interface com alta densidade de informação, aceleração gráfica via GPU, CSS Grid/Flexbox e tipografia avançada sem bugs de layout. |
+| **Ponte IPC (Qt-JS)** | `PySide6.QtWebChannel` | Canal de transporte seguro entre Python e Web | Comunicação assíncrona bidirecional tipada via JSON, eliminando servidores HTTP locais (`localhost`) e vetores de ataque CSRF. |
 | **Validação de Dados** | `pydantic` (v2.10+) | Modelagem estrita de metadados e schemas LLM | Validação de alta velocidade escrita em Rust, serialização segura e sanitização de respostas de modelos de linguagem. |
 | **Extração de PDF** | `PyMuPDF` (`fitz` 1.25+) | Parser de documento, texto vetorial e imagens | A mais rápida biblioteca de processamento de PDFs para Python; processa centenas de páginas por segundo sem vazamento de memória. |
-| **Extração Complementar**| `pdfplumber` (0.11+) | Análise de layout estruturado e tabelas | Auxilia na extração de texto quando blocos vetoriais necessitam de inspeção geométrica de caixas delimitadoras (*bounding boxes*). |
-| **OCR Nativo no macOS**| Apple Vision (`VNRecognizeTextRequest`) via `pyobjc` | OCR local em PDFs escaneados | 3 a 5 vezes mais rápido que o Tesseract; utiliza a Neural Engine dos chips Apple Silicon (M1/M2/M3/M4) com zero binários externos. |
-| **OCR de Layout (Docling / RapidOCR)** | `docling` + `opencv-python-headless` (< 4.11) e `rapidocr` | OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2) | `cv2.setNumThreads(0)` e `OPENCV_FOR_THREADS_NUM=1` evitam contenção de threads do Apple GCD com onnxruntime em bundles congelados PyInstaller no macOS; fallback seguro retorna texto vazio sem quebrar o processo. |
+| **OCR de Layout (Docling / RapidOCR)** | `docling` + `opencv-python-headless` (< 4.11), `rapidocr` e `onnxruntime` | OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2) | No Windows usa `PyPdfiumDocumentBackend` do docling (evita access violation intermitente do parser nativo docling-parse); `cv2.setNumThreads(0)` e `OPENCV_FOR_THREADS_NUM=1` evitam contenção de threads com onnxruntime em bundles congelados PyInstaller; fallback seguro retorna texto vazio sem quebrar o processo. |
 | **Cliente HTTP / APIs**| `httpx` (0.28+) com HTTP/2 e TLS 1.3 | Comunicação com provedores de IA e metadados | Suporte nativo a chamadas síncronas e assíncronas, pools de conexão e controle fino de timeouts para evitar travamentos de rede. |
 | **Persistência de Cache**| `sqlite3` (embutido na stdlib) | Cache local de extração e classificação | Banco relacional serverless, ACID, sem dependências externas, garantindo recuperação instantânea de sessões e integridade de dados. |
-| **CLI & Terminal** | `click` (8.1+) + `rich` (13.9+) | Interface de linha de comando para automação | Permite execução headless em servidores, pipelines de laboratório e automações via shell script com logs coloridos. |
-| **Empacotamento macOS**| `pyinstaller` (6.11+) + `create-dmg` | Geração de `.app` e imagem de disco `.dmg` | Gera executável autocontido para macOS com assinatura de código e arquitetura universal. |
+| **CLI & Terminal** | `typer` + `rich` | Interface de linha de comando para automação | Ponto de entrada `tomus = "tomus.cli.main:app"` em `pyproject.toml`; execução headless, pipelines de laboratório e automações via shell script/PowerShell com logs coloridos. |
+| **Empacotamento macOS**| `pyinstaller` (6.11+) + `create-dmg` / `hdiutil` | Geração de `.app` e imagem de disco `.dmg` | `packaging/build_macos.sh` + `packaging/smoke_check_macos.py`; `.app` assinado ad-hoc e DMG com atalho para `/Applications`. |
+| **Empacotamento Windows**| `pyinstaller` + Inno Setup (`ISCC`) | Geração do instalador `.exe` | `packaging/build_windows.ps1` + `packaging/smoke_check_windows.py` + `packaging/windows_installer.iss` (`PrivilegesRequired=lowest`, `SolidCompression=no`, `x64compatible`, `unins000.exe`). |
 
 ---
 
@@ -93,10 +93,10 @@ O código-fonte do Tomus é estruturado sob o pacote principal `tomus`, com estr
 ```
 src/tomus/
 ├── cli/                 # Interface de Linha de Comando (CLI)
-│   ├── main.py          # Ponto de entrada Click e subcomandos (run, config, cache)
+│   ├── main.py          # Ponto de entrada Typer + Rich (subcomandos run, config, cache)
 │   └── presenter.py     # Renderização visual no terminal com Rich (tabelas, progresso)
 ├── core/                # Motor de Negócio e Engenharia (agnóstico de interface)
-│   ├── config.py        # Configuração Pydantic (TOML, pool de chaves, fallbacks)
+│   ├── config.py        # Configuração Pydantic (TOML, pool de chaves, fallbacks, caminhos por SO)
 │   ├── llm.py           # Provedores de IA (Gemini, Groq, NVIDIA, DeepSeek, Claude)
 │   ├── models.py        # Schemas Pydantic (ClassificationResult, DocumentEntry)
 │   ├── namer.py         # Algoritmos de higienização de nomes e ABNT NBR 6023
@@ -105,9 +105,8 @@ src/tomus/
 │   ├── taxonomy.py      # Árvore oficial CAPES/CNPq de 4 níveis e normalização
 │   └── cache.py         # Cache de extração e classificação em SQLite
 ├── extractors/          # Motores de Ingestão de Conteúdo e Visão
-│   ├── text_extractor.py# Extração vetorial inteligente via PyMuPDF e pdfplumber
-│   ├── apple_vision.py  # OCR nativo macOS acelerado pela Neural Engine
-│   ├── ocr_docling.py   # OCR e parser de layout avançado com fallback gracioso
+│   ├── text_extractor.py# Extração vetorial inteligente via PyMuPDF
+│   ├── ocr_docling.py   # OCR seletivo via Docling + RapidOCR/ONNXRuntime (PyPdfiumDocumentBackend no Windows)
 │   └── identifiers.py   # Varredura e resolução de DOI (CrossRef) e ISBN (Google Books)
 ├── storage/             # Operações de Disco, Integridade e Companions
 │   ├── organizer.py     # Execução atômica, LibraryIndex 3 camadas, duplicatas/ e obsoletos/
@@ -116,6 +115,7 @@ src/tomus/
     ├── app.py           # Ponto de entrada PySide6 e inicialização do loop de eventos
     ├── main_window.py   # Janela principal QMainWindow contendo QWebEngineView
     ├── bridge.py        # Ponte QWebChannel (Slots e Signals expostos ao JavaScript)
+    ├── os_integration.py# Integração com SO: open / os.startfile / SHOpenFolderAndSelectItems (ctypes, Windows) / xdg-open
     ├── worker.py        # QThread de processamento assíncrono em segundo plano
     ├── widgets/         # Componentes auxiliares (Preferências, Cache, Toolbar nativa)
     └── web/             # Aplicação Web Frontend desacoplada
@@ -149,7 +149,7 @@ sequenceDiagram
     alt PDF tem camada de texto legível
         Extract-->>Pipe: Amostra Textual Obtida
     else PDF é Imagem Escaneada
-        Extract->>Extract: Executar Apple Vision OCR (Hardware Nativo)
+        Extract->>Extract: Executar OCR Local (Docling + RapidOCR/ONNXRuntime)
         Extract-->>Pipe: Texto Recuperado via OCR
     end
 
@@ -252,7 +252,7 @@ stateDiagram-v2
     RevisaoManual --> [*]
 ```
 
-### 6.1 Provedores Oficiais e Modelos Homologados (v1.3.1)
+### 6.1 Provedores Oficiais e Modelos Homologados (v1.3.2)
 
 1. **Google Gemini (`GeminiProvider`):**
    * *Modelo Padrão:* `gemini-3.5-flash`
@@ -324,13 +324,27 @@ Como ferramenta que opera diretamente sobre arquivos do usuário no disco rígid
 4. **Isolamento de Memória IPC:**
    * A ponte `QWebChannel` restringe os métodos invocáveis aos slots explicitamente decorados com `@Slot` na classe `WebBridge`. Nenhuma execução de código arbitrário (`eval`) é permitida no lado Python a partir de eventos da interface.
 
-5. **Empacotamento macOS (OpenSSL + QtWebEngineProcess):**
-   * No bundle congelado (PyInstaller), `src/tomus/gui/app.py` injeta `QTWEBENGINE_DISABLE_SANDBOX=1` e resolve o caminho canônico do `QtWebEngineProcess.app` dentro de `sys._MEIPASS` (variantes `PySide6/Qt/.../Helpers/QtWebEngineProcess.app/...` e `QtWebEngineProcess.app/...`), definindo `QTWEBENGINEPROCESS_PATH` e `QTWEBENGINE_PROCESS_PATH` antes de instanciar `QWebEnginePage`. Também configura `QTWEBENGINE_RESOURCES_PATH` para os arquivos `.pak` e `icudtl.dat`.
-   * O aviso `urllib3 v2 only supports OpenSSL` é filtrado via `warnings.filterwarnings("ignore", ...)` em `src/tomus/__init__.py` e `src/tomus/cli/main.py` para evitar ruído de inicialização no macOS.
+5. **Empacotamento (PyInstaller + smoke check):**
+   * **macOS:** `packaging/build_macos.sh` executa PyInstaller sobre `packaging/pyinstaller.spec`, corrige caminhos do `QtWebEngineProcess`, aplica assinatura ad-hoc (`codesign`) e gera o `.app` e a imagem de disco `Tomus-1.3.2-macOS.dmg` (via `create-dmg` ou `hdiutil`). Validado por `packaging/smoke_check_macos.py` (ausência de `pkg_resources`/`pyi_rth_pkgres`, `libavcodec` em `Contents/Frameworks`, `docling_slim` e boot offscreen por 5s sem erro).
+   * **Windows:** `packaging/build_windows.ps1` executa PyInstaller, o smoke check `packaging/smoke_check_windows.py` e compila o instalador com Inno Setup (`packaging/windows_installer.iss`): `PrivilegesRequired=lowest` (por usuário, sem senha/administrador), `SolidCompression=no`, `x64compatible`, ícone e atalhos no Menu Iniciar (opcional na Área de Trabalho), gerando `Tomus_Setup_v1.3.2_Windows_x64.exe` com desinstalador `unins000.exe`.
+   * **Comum (macOS/Windows):** `src/tomus/gui/app.py` injeta `QTWEBENGINE_DISABLE_SANDBOX=1` e resolve `QtWebEngineProcess` dentro de `sys._MEIPASS` (`QTWEBENGINEPROCESS_PATH`, `QTWEBENGINE_PROCESS_PATH`, `QTWEBENGINE_RESOURCES_PATH`); o aviso `urllib3 v2 only supports OpenSSL` é filtrado para evitar ruído de inicialização.
+   * **CI / Release:** `.github/workflows/ci.yml` executa testes (`pytest`) nos runners `macos-latest` e `windows-latest` (Python 3.11) a cada PR; `.github/workflows/release.yml` roda `build-macos` + `build-windows` e o smoke check correspondente nas tags `v*`, publicando os artefatos `.dmg` e `.exe` no release do GitHub.
 
 ---
 
-## 9. Suíte de Testes e Garantia de Qualidade (QA)
+## 9. Caminhos de Configuração, Cache, Logs e Desinstalação
+
+O Tomus segue convenções de diretório de usuário específicas de cada sistema operacional, sem caminhos de usuário reais hard-coded:
+
+* **Configuração:** `config.toml` (permissão `0600` via `secure_chmod_600` no macOS/Linux; operação ignorada com segurança no Windows) em `~/.config/tomus/` (macOS/Linux) ou `%USERPROFILE%\.config\tomus` (Windows).
+* **Cache:** banco SQLite de extração e classificação indexado por SHA-256 em `~/.cache/tomus/` (macOS/Linux) ou `%USERPROFILE%\.cache\tomus` (Windows).
+* **Logs:** `tomus.log` gravado ao lado do executável/bundle e nas pastas de cache do usuário.
+* **Desinstalação limpa no macOS:** arraste `Tomus.app` para o Lixo e, opcionalmente, remova `~/.config/tomus`, `~/.cache/tomus` e `~/.tomus`.
+* **Desinstalação limpa no Windows:** use **Configurações > Aplicativos > Aplicativos instalados** (ou execute `unins000.exe` na pasta de instalação) e, opcionalmente, remova `%USERPROFILE%\.config\tomus`, `%USERPROFILE%\.cache\tomus` e `%USERPROFILE%\.tomus`.
+
+---
+
+## 10. Suíte de Testes e Garantia de Qualidade (QA)
 
 A estabilidade da aplicação é mantida por uma suíte de testes automatizados com `pytest`, cobrindo todos os módulos vitais:
 
@@ -344,7 +358,7 @@ A estabilidade da aplicação é mantida por uma suíte de testes automatizados 
 
 ---
 
-## 10. Considerações Finais e Extensibilidade
+## 11. Considerações Finais e Extensibilidade
 
 O Tomus foi concebido sob princípios de baixo acoplamento. Novos provedores de IA podem ser adicionados simplesmente herdando da classe base abstrata `BaseLLMProvider` em `src/tomus/core/llm.py` e implementando o método `classify_text()`.
 

@@ -224,7 +224,7 @@
 
       <div class="nav-actions">
         <a href="index.html#download" class="btn btn-primary btn-sm">
-          <span>Baixar .dmg</span>
+          <span>Baixar v1.3.2</span>
         </a>
       </div>
     </div>
@@ -233,7 +233,7 @@
   <main class="doc-page">
     <div class="doc-container">
       <header class="doc-header">
-        <div class="doc-badge">Especificação de Engenharia v1.3.1</div>
+        <div class="doc-badge">Especificação de Engenharia v1.3.2</div>
         <h1 class="doc-title">Documentação Técnica e Arquitetura do Tomus</h1>
         <div class="doc-meta">
           <span><strong>Autores:</strong> Dario Pinheiro e Equipe Tomus</span>
@@ -246,8 +246,8 @@
 
       <article class="doc-content">
         <h2>1. Visão Geral e Filosofia Arquitetural</h2>
-        <p>O <strong>Tomus</strong> é uma aplicação desktop de alta fidelidade desenvolvida primordialmente para macOS (com suporte arquitetural multiplataforma em camadas desacopladas), concebida para sanar o problema da entropia documental em acervos científicos e acadêmicos.</p>
-        <p>A grande maioria dos pesquisadores e instituições acumula centenas de arquivos PDF com denominações crípticas (e.g. <code>download.pdf</code>, <code>artigo_final_v2.pdf</code>). O Tomus atua como uma esteira autônoma de engenharia da informação, combinando extração textual híbrida (PyMuPDF + Apple Vision OCR), resolução de identificadores bibliográficos (DOI e ISBN), taxonomia oficial de áreas do conhecimento <strong>CAPES/CNPq</strong> e modelos de linguagem com pool multi-chave e fallback em cascata.</p>
+        <p>O <strong>Tomus</strong> é uma aplicação desktop de alta fidelidade desenvolvida para <strong>macOS e Windows</strong> (suporte multiplataforma em camadas desacopladas), concebida para sanar o problema da entropia documental em acervos científicos e acadêmicos.</p>
+        <p>A grande maioria dos pesquisadores e instituições acumula centenas de arquivos PDF com denominações crípticas (e.g. <code>download.pdf</code>, <code>artigo_final_v2.pdf</code>). O Tomus atua como uma esteira autônoma de engenharia da informação, combinando extração textual híbrida (PyMuPDF + OCR local via Docling/RapidOCR/ONNXRuntime), resolução de identificadores bibliográficos (DOI e ISBN), taxonomia oficial de áreas do conhecimento <strong>CAPES/CNPq</strong> e modelos de linguagem com pool multi-chave e fallback em cascata.</p>
 
         <div class="doc-callout">
           <strong>Princípios Inegociáveis do Tomus:</strong>
@@ -271,13 +271,18 @@
           <tbody>
             <tr>
               <td><strong>Linguagem &amp; Runtime</strong></td>
-              <td>Python 3.12+ (CPython)</td>
-              <td>Motor central com tipagem estrita moderna e alta performance.</td>
+              <td>Python 3.11+ (CPython)</td>
+              <td>Motor central com tipagem estrita moderna e alta performance (<code>requires-python &gt;=3.11</code>).</td>
             </tr>
             <tr>
               <td><strong>Shell Desktop</strong></td>
               <td><code>PySide6</code> (Qt for Python 6.8+)</td>
-              <td>Janelas nativas macOS, ciclo de vida de app, menus globais e multithreading via <code>QThread</code>.</td>
+              <td>Janelas nativas macOS e Windows, ciclo de vida de app, menus globais e multithreading via <code>QThread</code>.</td>
+            </tr>
+            <tr>
+              <td><strong>CLI &amp; Terminal</strong></td>
+              <td><code>typer</code> + <code>rich</code></td>
+              <td>Interface de linha de comando (<code>tomus = "tomus.cli.main:app"</code>) para automação headless e scripts/PowerShell.</td>
             </tr>
             <tr>
               <td><strong>Bancada Visual</strong></td>
@@ -291,13 +296,18 @@
             </tr>
             <tr>
               <td><strong>Extração Vetorial</strong></td>
-              <td><code>PyMuPDF</code> (<code>fitz</code> 1.25+) + <code>pdfplumber</code></td>
+              <td><code>PyMuPDF</code> (<code>fitz</code> 1.25+)</td>
               <td>Parser de documentos PDF veloz, extração de texto vetorial e metadados embutidos.</td>
             </tr>
             <tr>
-              <td><strong>OCR Local no macOS</strong></td>
-              <td>Apple Vision (<code>VNRecognizeTextRequest</code>)</td>
-              <td>Reconhecimento de texto em scans acelerado pela Neural Engine dos chips Apple Silicon.</td>
+              <td><strong>OCR Local (multiplataforma)</strong></td>
+              <td><code>Docling</code> + <code>RapidOCR</code> + <code>ONNXRuntime</code></td>
+              <td>OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2); <code>PyPdfiumDocumentBackend</code> no Windows, padrão do Docling no macOS; fallback seguro sem quebrar o processo.</td>
+            </tr>
+            <tr>
+              <td><strong>Integração com SO</strong></td>
+              <td><code>os_integration.py</code></td>
+              <td><code>open</code> (macOS), <code>os.startfile</code> / <code>SHOpenFolderAndSelectItems</code> via ctypes (Windows) e <code>xdg-open</code> (Linux).</td>
             </tr>
             <tr>
               <td><strong>Validação de Schemas</strong></td>
@@ -343,8 +353,8 @@ flowchart TD
 
     subgraph L3 ["3. Camada de Ingestão, Visão & Inteligência Artificial"]
         direction LR
-        Extract["PyMuPDF / pdfplumber<br><b>(Texto Vetorial)</b>"]
-        Vision["Apple Vision OCR<br><b>(Hardware Nativo)</b>"]
+        Extract["PyMuPDF<br><b>(Texto Vetorial)</b>"]
+        Vision["OCR Local (Docling + RapidOCR)<br><b>(macOS + Windows)</b>"]
         ID["Identificadores<br><b>(DOI & ISBN)</b>"]
         LLM["Motor Multi-Provedor<br><b>(Pool & Fallback)</b>"]
         Extract ~~~ Vision
@@ -367,9 +377,9 @@ flowchart TD
         <h2>4. O Pipeline de Processamento (Esteira de Documentos)</h2>
         <p>A esteira de catalogação executa as seguintes etapas determinísticas para cada arquivo:</p>
         <ol>
-          <li><strong>Varredura e Detecção de Extensões:</strong> O scanner descobre PDFs e ignora arquivos espúrios como <code>.webloc</code> ou arquivos de sistema <code>.DS_Store</code>.</li>
+          <li><strong>Varredura e Detecção de Extensões:</strong> O scanner descobre PDFs e ignora arquivos espúrios como <code>.webloc</code> ou <code>.DS_Store</code> (macOS) e <code>Thumbs.db</code> (Windows).</li>
           <li><strong>Extração de Texto Vetorial:</strong> Amostragem das primeiras páginas via PyMuPDF.</li>
-          <li><strong>OCR Acelerado por Hardware:</strong> Se a amostragem indicar ausência de camada de texto (documento escaneado), o Tomus aciona o Apple Vision OCR nativo no macOS.</li>
+          <li><strong>OCR Local Multiplataforma:</strong> Se a amostragem indicar ausência de camada de texto (documento escaneado), o Tomus aciona o OCR local via Docling + RapidOCR/ONNXRuntime (<code>PyPdfiumDocumentBackend</code> no Windows, padrão do Docling no macOS).</li>
           <li><strong>Radar de Identificadores (DOI / ISBN):</strong> Busca por expressões regulares de DOI e ISBN com validação de checksum e consulta automática às APIs oficiais (CrossRef e Google Books).</li>
           <li><strong>Consulta ao Cache SHA-256:</strong> Se o hash do texto já foi classificado anteriormente, o resultado é recuperado em menos de 1 milissegundo.</li>
           <li><strong>Inferência Semântica via LLM:</strong> Se não estiver em cache, o Tomus consulta o pool de modelos de inteligência artificial com injeção estruturada da taxonomia CAPES.</li>
@@ -406,7 +416,7 @@ flowchart TD
           </div>
         </div>
 
-        <h3>Provedores Homologados na Versão 1.3.1</h3>
+        <h3>Provedores Homologados na Versão 1.3.2</h3>
         <ul>
           <li><strong>Google Gemini:</strong> Modelo <code>gemini-3.5-flash</code> (Provedor primário padrão, alta janela de contexto).</li>
           <li><strong>Groq:</strong> Modelo <code>llama-3.3-70b-versatile</code> (1º Fallback gratuito, 1.000 requisições/dia, latência ultrabaixa).</li>
@@ -415,9 +425,8 @@ flowchart TD
           <li><strong>DeepSeek:</strong> Modelo <code>deepseek-flash</code> (Excelente custo-benefício e rapidez).</li>
         </ul>
 
-        <h3>5.5 OCR de Layout e Empacotamento macOS</h3>
-        <p><strong>OCR de Layout (Docling / RapidOCR):</strong> O Tomus utiliza <code>opencv-python-headless</code> (&lt; 4.11) com <code>cv2.setNumThreads(0)</code> e <code>OPENCV_FOR_THREADS_NUM=1</code> para evitar contenção de threads do Apple GCD com onnxruntime durante o OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2 páginas), com fallback seguro que retorna texto vazio sem quebrar o processo.</p>
-        <p><strong>Empacotamento macOS (OpenSSL + QtWebEngineProcess):</strong> No bundle congelado (PyInstaller), o aplicativo injeta <code>QTWEBENGINE_DISABLE_SANDBOX=1</code> e resolve o caminho canônico do <code>QtWebEngineProcess.app</code> dentro de <code>sys._MEIPASS</code>, definindo <code>QTWEBENGINEPROCESS_PATH</code>, <code>QTWEBENGINE_PROCESS_PATH</code> e <code>QTWEBENGINE_RESOURCES_PATH</code> antes de instanciar <code>QWebEnginePage</code>. O aviso <code>urllib3 v2 only supports OpenSSL</code> é filtrado para evitar ruído de inicialização no macOS.</p>
+        <h3>5.5 OCR de Layout (Docling / RapidOCR)</h3>
+        <p><strong>OCR de Layout:</strong> O Tomus utiliza <code>opencv-python-headless</code> (&lt; 4.11) com <code>cv2.setNumThreads(0)</code> e <code>OPENCV_FOR_THREADS_NUM=1</code> para evitar contenção de threads com onnxruntime durante o OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2 páginas), com fallback seguro que retorna texto vazio sem quebrar o processo. No Windows, o Docling usa o backend <code>PyPdfiumDocumentBackend</code> para evitar a access violation intermitente do parser nativo docling-parse; no macOS mantém o comportamento padrão do Docling.</p>
 
         <h2>6. ABNT NBR 6023 Normativa</h2>
         <p>A formatação de referências do Tomus segue com exatidão a norma brasileira <strong>ABNT NBR 6023</strong>:</p>
@@ -428,9 +437,20 @@ flowchart TD
           <li><strong>Edição:</strong> Sanitização contra duplicações, assegurando saídas canônicas como <code>2. ed.</code> ou <code>3. ed.</code>.</li>
         </ul>
 
-        <h2>7. Segurança de I/O e Isolamento no macOS</h2>
-        <p>O Tomus adota a função <code>_is_safe_path()</code> para validar rigorosamente todas as operações de abertura de PDFs e revelação no Finder. Qualquer tentativa de Path Traversal (e.g. <code>../../</code>) que aponte para fora das pastas autorizadas ou que tente tocar em diretórios confidenciais (como <code>~/.ssh</code> ou <code>~/.aws</code>) é abortada preventivamente.</p>
-        <p>Além disso, o menu de contexto padrão do navegador (<em>Back, Reload, View Source</em>) foi desativado no <code>QWebEngineView</code> para garantir uma experiência de software desktop sólida, profissional e sem anomalias visuais.</p>
+        <h2>7. Segurança de I/O e Integração com o Sistema Operacional</h2>
+        <p>O Tomus adota a função <code>_is_safe_path()</code> para validar rigorosamente todas as operações de abertura de PDFs e revelação no gerenciador de arquivos. Qualquer tentativa de Path Traversal (e.g. <code>../../</code>) que aponte para fora das pastas autorizadas ou que tente tocar em diretórios confidenciais (como <code>~/.ssh</code> ou <code>~/.aws</code>) é abortada preventivamente.</p>
+        <p>A camada de SO é encapsulada em <code>src/tomus/gui/os_integration.py</code>: <code>open</code> (macOS), <code>os.startfile</code> e <code>SHOpenFolderAndSelectItems</code> via ctypes (Windows) e <code>xdg-open</code> (Linux). O menu de contexto padrão do navegador (<em>Back, Reload, View Source</em>) foi desativado no <code>QWebEngineView</code> para garantir uma experiência de software desktop sólida, profissional e sem anomalias visuais.</p>
+
+        <h2>8. Empacotamento, CI e Desinstalação</h2>
+        <p><strong>macOS:</strong> <code>packaging/build_macos.sh</code> executa PyInstaller sobre <code>packaging/pyinstaller.spec</code>, corrige caminhos do <code>QtWebEngineProcess</code>, aplica assinatura ad-hoc (<code>codesign</code>) e gera o <code>.app</code> e a imagem de disco <code>Tomus-1.3.2-macOS.dmg</code> (via <code>create-dmg</code> ou <code>hdiutil</code>), validado por <code>packaging/smoke_check_macos.py</code>.</p>
+        <p><strong>Windows:</strong> <code>packaging/build_windows.ps1</code> executa PyInstaller, o smoke check <code>packaging/smoke_check_windows.py</code> e compila o instalador com Inno Setup (<code>packaging/windows_installer.iss</code>): <code>PrivilegesRequired=lowest</code> (instalação por usuário, sem senha/administrador), <code>SolidCompression=no</code>, <code>x64compatible</code>, atalhos no Menu Iniciar (opcional na Área de Trabalho) e desinstalador <code>unins000.exe</code>, gerando <code>Tomus_Setup_v1.3.2_Windows_x64.exe</code>.</p>
+        <p><strong>CI / Release:</strong> o workflow <code>.github/workflows/ci.yml</code> executa testes (<code>pytest</code>) nos runners <code>macos-latest</code> e <code>windows-latest</code> (Python 3.11) a cada PR; o <code>.github/workflows/release.yml</code> roda <code>build-macos</code> + <code>build-windows</code> e o smoke check correspondente nas tags <code>v*</code>, publicando os artefatos <code>.dmg</code> e <code>.exe</code> no release do GitHub.</p>
+        <p><strong>Desinstalação limpa:</strong> no macOS, arraste <code>Tomus.app</code> para o Lixo e, opcionalmente, remova <code>~/.config/tomus</code>, <code>~/.cache/tomus</code> e <code>~/.tomus</code>. No Windows, use **Configurações > Aplicativos > Aplicativos instalados** (ou execute <code>unins000.exe</code> na pasta de instalação) e, opcionalmente, remova <code>%USERPROFILE%\.config\tomus</code>, <code>%USERPROFILE%\.cache\tomus</code> e <code>%USERPROFILE%\.tomus</code>.</p>
+
+        <h2>9. Caminhos de Configuração, Cache e Logs</h2>
+        <p><strong>Configuração:</strong> <code>config.toml</code> (permissão <code>0600</code> via <code>secure_chmod_600</code> no macOS/Linux; ignorado com segurança no Windows) em <code>~/.config/tomus/</code> (macOS/Linux) ou <code>%USERPROFILE%\.config\tomus</code> (Windows).</p>
+        <p><strong>Cache:</strong> banco SQLite de extração e classificação indexado por SHA-256 em <code>~/.cache/tomus/</code> (macOS/Linux) ou <code>%USERPROFILE%\.cache\tomus</code> (Windows).</p>
+        <p><strong>Logs:</strong> <code>tomus.log</code> gravado ao lado do executável/bundle e nas pastas de cache do usuário.</p>
       </article>
     </div>
   </main>

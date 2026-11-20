@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Manual do Usuário do Tomus — Guia prático, didático e passo a passo para organizar acervos acadêmicos de PDFs no macOS.">
+  <meta name="description" content="Manual do Usuário do Tomus — Guia prático, didático e passo a passo para organizar acervos acadêmicos de PDFs no macOS e Windows.">
   <title>Manual do Usuário — Tomus</title>
   
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -183,7 +183,7 @@
 
       <div class="nav-actions">
         <a href="index.html#download" class="btn btn-primary btn-sm">
-          <span>Baixar .dmg</span>
+          <span>Baixar v1.3.2</span>
         </a>
       </div>
     </div>
@@ -192,12 +192,12 @@
   <main class="doc-page">
     <div class="doc-container">
       <header class="doc-header">
-        <div class="doc-badge">Guia Didático do Usuário v1.3.1</div>
+        <div class="doc-badge">Guia Didático do Usuário v1.3.2</div>
         <h1 class="doc-title">Manual do Usuário do Tomus</h1>
         <div class="doc-meta">
           <span><strong>Para:</strong> Pesquisadores, Professores, Estudantes e Bibliotecários</span>
           <span>•</span>
-          <span><strong>Sistema:</strong> macOS 14+</span>
+          <span><strong>Sistema:</strong> macOS 14+ e Windows 10/11 64 bits</span>
           <span>•</span>
           <span><strong>Linguagem:</strong> Acessível e Direta</span>
         </div>
@@ -208,20 +208,47 @@
         <p>Seja bem-vindo ao <strong>Tomus</strong>! Ele foi concebido para eliminar o caos de pastas lotadas de PDFs com nomes estranhos (como <code>artigo_versao2.pdf</code> ou <code>download.pdf</code>). Com poucos cliques, o Tomus examina seus arquivos, descobre os dados da obra (título, autor, ano) e organiza tudo em pastas temáticas segundo a classificação oficial da <strong>CAPES/CNPq</strong>, gerando ainda a citação completa na norma <strong>ABNT NBR 6023</strong>.</p>
         
         <div class="tip-box">
-          <strong>Segurança em primeiro lugar:</strong> Seus arquivos PDF <strong>nunca saem do seu Mac</strong>. Toda a manipulação de arquivos e a leitura de documentos é realizada localmente no seu computador.
+          <strong>Segurança em primeiro lugar:</strong> Seus arquivos PDF <strong>nunca saem do seu computador</strong>. Toda a manipulação de arquivos e a leitura de documentos é realizada localmente.
         </div>
 
-        <h2>2. Instalação Passo a Passo no macOS</h2>
+        <h2>2. Instalação Passo a Passo (macOS e Windows)</h2>
+
+        <h3>2.1 Instalação no macOS</h3>
         <ol>
-          <li>Baixe o arquivo de instalação <code>Tomus-1.3.1-macOS.dmg</code> na página oficial do projeto.</li>
+          <li>Baixe o arquivo de instalação <code>Tomus-1.3.2-macOS.dmg</code> na página oficial do projeto.</li>
           <li>Dê um duplo clique no arquivo <code>.dmg</code> baixado para abrir a janela de instalação.</li>
           <li>Arraste o ícone do <strong>Tomus</strong> para a pasta <strong>Aplicativos</strong>.</li>
           <li>Abra o Tomus pelo Launchpad ou pelo Finder.</li>
+          <li><strong>Primeira abertura (Gatekeeper):</strong> se o macOS alertar que o desenvolvedor não pôde ser verificado, clique em <strong>Abrir Mesmo Assim</strong> em <em>Ajustes do Sistema › Privacidade e Segurança</em>. Você só precisará fazer isso uma vez.</li>
         </ol>
-        
+
+        <h3>2.2 Instalação no Windows</h3>
+        <p>O instalador para Windows (<code>Tomus_Setup_v1.3.2_Windows_x64.exe</code>) é gerado com <strong>Inno Setup</strong> e é uma instalação <strong>por usuário</strong>: não exige senha nem privilégios de administrador.</p>
+        <ol>
+          <li>Baixe o instalador oficial <code>Tomus_Setup_v1.3.2_Windows_x64.exe</code> na seção de lançamentos (*Releases*) do GitHub.</li>
+          <li>Dê um duplo clique no arquivo <code>.exe</code> baixado para abrir o assistente do Inno Setup.</li>
+          <li>Siga o assistente: aceite os termos de licença, escolha a pasta de destino (padrão: <code>%LocalAppData%\Programs\Tomus</code>) e marque, se desejar, o atalho opcional na <strong>Área de Trabalho</strong>. Atalhos são criados automaticamente no <strong>Menu Iniciar</strong>.</li>
+          <li>Conclua a instalação e inicie o Tomus pelo Menu Iniciar ou pelo atalho da Área de Trabalho.</li>
+        </ol>
         <div class="warning-box">
-          <strong>Aviso do macOS na 1ª abertura:</strong> Se o sistema alertar que o aplicativo é de desenvolvedor não verificado, clique em OK, abra os <em>Ajustes do Sistema › Privacidade e Segurança</em>, role até o final da tela e clique em <strong>Abrir Mesmo Assim</strong>. Você só precisará fazer isso uma vez!
+          <strong>Aviso do Windows Defender SmartScreen na primeira execução:</strong> Como o Tomus é um aplicativo comunitário distribuído sem certificado pago Authenticode EV, o SmartScreen pode exibir um aviso na primeira execução (tanto durante o instalador quanto ao abrir o aplicativo). Para prosseguir, clique em <strong>Mais informações</strong> e, em seguida, em <strong>Executar assim mesmo</strong>.
         </div>
+
+        <h2>3. Como Desinstalar o Tomus</h2>
+        <h3>Windows</h3>
+        <ol>
+          <li>Abra <strong>Configurações &gt; Aplicativos &gt; Aplicativos instalados</strong> (ou <strong>Painel de Controle &gt; Programas e Recursos</strong>).</li>
+          <li>Selecione <strong>Tomus</strong> na lista e clique em <strong>Desinstalar</strong>.</li>
+          <li>Alternativamente, execute <code>unins000.exe</code> na pasta de instalação do Tomus (padrão: <code>%LocalAppData%\Programs\Tomus</code>).</li>
+        </ol>
+        <p><strong>Limpeza opcional de dados locais:</strong> a desinstalação remove o programa, mas mantém seus dados de usuário. Se desejar, delete manualmente as pastas <code>%USERPROFILE%\.config\tomus</code>, <code>%USERPROFILE%\.cache\tomus</code> e <code>%USERPROFILE%\.tomus</code>.</p>
+
+        <h3>macOS</h3>
+        <ol>
+          <li>Arraste o aplicativo <strong>Tomus.app</strong> da pasta <strong>Aplicativos</strong> para o <strong>Lixo</strong>.</li>
+          <li>Esvazie o Lixo para concluir a remoção.</li>
+        </ol>
+        <p><strong>Limpeza opcional de dados locais:</strong> se desejar, delete manualmente as pastas <code>~/.config/tomus</code>, <code>~/.cache/tomus</code> e <code>~/.tomus</code>.</p>
 
         <h2>3. Como Obter suas Chaves de Inteligência Artificial (API Keys)</h2>
         <p>Uma <strong>chave de API</strong> é como uma senha de acesso que permite ao Tomus se conectar aos cérebros de inteligência artificial diretamente, sem nenhum intermediário. A maioria dos provedores oferece <strong>planos gratuitos muito generosos</strong> para você usar sem gastar nada.</p>
@@ -319,7 +346,7 @@
           <li><strong>Inspetor de Documentos:</strong> Clique em qualquer documento para ver a capa, a ficha catalográfica e a <strong>citação pronta na ABNT NBR 6023</strong>.</li>
           <li><strong>Filtros de Duplicatas e Obsoletos:</strong> Use os filtros <strong>Duplicatas</strong> (<code>duplicatas/</code>, para cópias idênticas da mesma edição) e <strong>Obsoletos</strong> (<code>obsoletos/</code>) na barra lateral. Sempre que surge uma edição mais recente de uma obra já catalogada, o Tomus promove a nova versão para a árvore temática e arquiva a edição anterior em <code>obsoletos/</code>. Cada um desses itens gera uma ficha <code>.md</code> explicativa com front matter YAML em português do Brasil, incluindo <code>camada_deteccao</code> (L3_IMPRESSAO_DIGITAL, L2_IDENTIFICADOR, etc.) e <code>caminho_canonico</code> relativo à raiz da biblioteca, para você saber exatamente qual é a obra canônica e onde ela está.</li>
           <li><strong>Copiar Citação com 1 Clique:</strong> Clique no botão <em>Copiar Citação</em> e cole diretamente no seu arquivo do Word, Google Docs ou editor LaTeX. O título virá destacado em negrito normativo sem erros de edição.</li>
-          <li><strong>Abrir PDF e Revelar no Finder:</strong> Clique nos botões dedicados do inspetor para abrir o arquivo no leitor padrão do macOS ou para ver a pasta exata no Finder.</li>
+          <li><strong>Abrir PDF e Revelar no gerenciador de arquivos:</strong> Clique nos botões dedicados do inspetor para abrir o arquivo no leitor padrão do seu computador ou para ver a pasta exata onde ele foi guardado (Finder no macOS, Explorador de Arquivos no Windows).</li>
         </ul>
 
         <h2>6. O que Fazer com Itens em "Revisão Manual"?</h2>
@@ -338,7 +365,7 @@
           </div>
           <div class="glossary-item">
             <div class="glossary-term">Apple Vision OCR</div>
-            <div class="glossary-def">Tecnologia avançada nativa do Mac que reconhece caracteres e lê textos dentro de fotos e páginas escaneadas usando o próprio processador do computador.</div>
+            <div class="glossary-def">Motor de reconhecimento óptico de caracteres executado localmente no seu computador (macOS e Windows), usado para transcrever páginas digitalizadas sem enviar dados para a nuvem.</div>
           </div>
           <div class="glossary-item">
             <div class="glossary-term">BYOK (Bring Your Own Key)</div>
@@ -380,7 +407,7 @@
           <img src="site_assets/tomus_emblem.png" alt="Tomus" class="footer-logo">
           <span class="footer-brand-name">Tomus</span>
         </div>
-        <p class="footer-desc">Bancada de catalogação científica e organizador acadêmico de PDFs para macOS.</p>
+        <p class="footer-desc">Bancada de catalogação científica e organizador acadêmico de PDFs para macOS e Windows.</p>
         <p class="footer-license">Código Aberto sob licença <a href="https://github.com/dcprj/tomus/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a>.</p>
       </div>
       <div class="footer-nav">
