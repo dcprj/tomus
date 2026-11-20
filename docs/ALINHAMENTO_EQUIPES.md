@@ -137,7 +137,7 @@ O job `build-windows` está **presente** tanto em `.github/workflows/ci.yml` (te
 **Status:** AGUARDANDO RETORNO DO CHEFE MACOS (decisão conjunta obrigatória via AGENTS.md Seção 5.6 antes de qualquer alteração em `pyproject.toml`).
 
 ### Evidência direta comprovada no Windows v1.3.2
-Arquivo de log: `~/.tomus\tomus.log` (equivalente a `~/.tomus/tomus.log` no macOS) + build-windows run 44742327545:
+Arquivo de log: `%USERPROFILE%\.tomus\tomus.log` (equivalente a `~/.tomus/tomus.log` no macOS) + build-windows run 44742327545:
 
 * **5/5 PDFs escaneados falharam no Docling** em `AutoImageProcessor` (após gastar 36,25s e baixar 163,81 MB de `docling-layout-heron` da HuggingFace na primeira execução) e foram **100% processados pelo fallback RapidOCR 3.10.0 + onnxruntime**.
 * **Causa-raiz identificada pelo Córtex:** `pyinstaller-hooks-contrib` 2026.10 busca `torchvision._C` / `torchvision.image` enquanto `torchvision` 0.29.2 usa `_C_stable` / `image_stable` (deixando 0 binários nativos do torchvision no bundle) somado a imports dinâmicos do `transformers` 5.23.0 / `huggingface_hub` 1.33.0.
