@@ -5,6 +5,14 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adota versionamento semântico ([Semantic Versioning](https://semver.org/lang/pt-BR/)).
 
+## [1.3.2] - 2026-11-20
+
+### Empacotamento Windows e CI cross-OS (v1.3.2)
+- **`.github/workflows/release.yml`**: workflow renomeado para `Release Tomus (macOS + Windows)`; adicionado job `build-windows` (windows-latest) com checkout, setup-python, venv isolado, instalação de dependências (`-e .[dev]`, `pyinstaller`), testes offscreen, Inno Setup (ISCC.exe via PATH/Program Files/x86 com fallback `choco install innosetup`), execução de `packaging\build_windows.ps1` (PyInstaller + smoke_check_windows.py + ISCC.exe com `/DMyAppVersion`) e upload do artifact `tomus-windows-installer`. O job `release` agora depende de `build-macos` e `build-windows` e publica ambos os artifacts (`.dmg` e `.exe`) via `softprops/action-gh-release@v2`.
+- **`packaging/build_windows.ps1`**: leitura dinâmica da versão de `pyproject.toml` (fallback `1.3.2`); detecção do ISCC.exe incluindo caminhos x86 (`C:\Program Files (x86)\Inno Setup 6\ISCC.exe` e `7\ISCC.exe`); passagem de `/DMyAppVersion=$VERSION` e validação com `Test-Path` do instalador `dist\Tomus_Setup_v${VERSION}_Windows_x64.exe`.
+- **Portabilidade Windows**: correções de GUI/WebEngine, storage, config e backend OCR no Windows (`win/fix-portability-and-gui`); empacotamento, smoke check Windows e correção Explorer (`win/packaging-windows`).
+- **CI cross-OS**: build-macos e build-windows passando 100% no PR de integração.
+
 ## [1.3.1] - 2026-11-16
 
 ### Correções de Empacotamento macOS / CI (Hotfix)

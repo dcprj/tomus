@@ -5,6 +5,12 @@
 $ErrorActionPreference = "Stop"
 $ROOT = (Get-Location).Path
 $PY = Join-Path $ROOT ".venv\Scripts\python.exe"
+$VERSION = "1.3.2"
+try {
+    $VERSION = & $PY -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
+} catch {
+    Write-Host "Não foi possível ler a versão de pyproject.toml; usando fallback 1.3.2"
+}
 $SPEC = Join-Path $ROOT "packaging\pyinstaller.spec"
 $ISS = Join-Path $ROOT "packaging\windows_installer.iss"
 $DIST_TOMLUS = Join-Path $ROOT "dist\Tomus"
@@ -39,16 +45,25 @@ if ($cmd) {
     Write-Host "ISCC encontrado no PATH: $ISCC"
 }
 
-# 2) Inno Setup 7
+# 2) Inno Setup 7 (x64)
 if (-not $ISCC -and (Test-Path "C:\Program Files\Inno Setup 7\ISCC.exe")) {
     $ISCC = "C:\Program Files\Inno Setup 7\ISCC.exe"
-    Write-Host "ISCC encontrado (Inno Setup 7): $ISCC"
+    Write-Host "ISCC encontrado (Inno Setup 7 x64): $ISCC"
 }
-
-# 3) Inno Setup 6
+# 3) Inno Setup 7 (x86)
+if (-not $ISCC -and (Test-Path "C:\Program Files (x86)\Inno Setup 7\ISCC.exe")) {
+    $ISCC = "C:\Program Files (x86)\Inno Setup 7\ISCC.exe"
+    Write-Host "ISCC encontrado (Inno Setup 7 x86): $ISCC"
+}
+# 4) Inno Setup 6 (x64)
 if (-not $ISCC -and (Test-Path "C:\Program Files\Inno Setup 6\ISCC.exe")) {
     $ISCC = "C:\Program Files\Inno Setup 6\ISCC.exe"
-    Write-Host "ISCC encontrado (Inno Setup 6): $ISCC"
+    Write-Host "ISCC encontrado (Inno Setup 6 x64): $ISCC"
+}
+# 5) Inno Setup 6 (x86)
+if (-not $ISCC -and (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) {
+    $ISCC = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+    Write-Host "ISCC encontrado (Inno Setup 6 x86): $ISCC"
 }
 
 if (-not $ISCC) {
@@ -57,12 +72,18 @@ if (-not $ISCC) {
 }
 
 Write-Host "=== [4/4] Compilação do instalador Inno Setup ===" -ForegroundColor Cyan
-& $ISCC $ISS
+$INSTALLER = Join-Path $ROOT "dist\Tomus_Setup_v${VERSION}_Windows_x64.exe"
+& $ISCC $ISS /DMyAppVersion=$VERSION
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Inno Setup falhou com código $LASTEXITCODE"
     exit 1
 }
 
+if (-not (Test-Path $INSTALLER)) {
+    Write-Error "Instalador não encontrado: $INSTALLER"
+    exit 1
+}
+
 Write-Host "=== Build Windows concluído com sucesso ===" -ForegroundColor Green
 Write-Host "Executável: $EXE"
-Write-Host "Instalador: $(Join-Path $ROOT "dist\Tomus_Setup_v1.3.1_Windows_x64.exe")"
+Write-Host "Instalador: $INSTALLER"
