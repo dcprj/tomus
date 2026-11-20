@@ -1,8 +1,8 @@
 # Manual do Usuário do Tomus
 
 > **Guia Oficial de Uso & Boas Práticas**  
-> **Versão do Aplicativo:** 1.3.1  
-> **Sistema Operacional:** macOS 14 (Sonoma) ou superior (Apple Silicon M1/M2/M3/M4 e processadores Intel)  
+> **Versão do Aplicativo:** 1.3.2  
+> **Sistema Operacional:** macOS 14+ e Windows 10/11 64 bits  
 > **Autor:** Dario Pinheiro e Equipe Tomus  
 > **Suporte Comunitário:** [github.com/dcprj/tomus](https://github.com/dcprj/tomus)
 
@@ -16,7 +16,7 @@ Se você é pesquisador, professor, pós-graduando, estudante universitário ou 
 
 O **Tomus** foi criado exatamente para resolver essa dor, de forma automatizada, elegante e com rigor científico:
 
-1. **Ele examina os seus PDFs:** Lê o conteúdo textual e, se o documento for um livro ou artigo antigo escaneado, utiliza a inteligência visual do seu próprio computador Mac para transcrever o texto.
+1. **Ele examina os seus PDFs:** Lê o conteúdo textual e, se o documento for um livro ou artigo antigo escaneado, utiliza o motor de OCR local do seu computador (PyMuPDF + Docling + RapidOCR/ONNXRuntime, em macOS e Windows) para transcrever o texto.
 2. **Ele identifica a obra com precisão:** Localiza títulos, autores, ano de publicação, editoras ou revistas científicas.
 3. **Ele organiza seu acervo por assuntos:** Agrupa seus arquivos na taxonomia oficial de áreas do conhecimento da **CAPES/CNPq** (por exemplo: *Ciências Humanas › Filosofia › Epistemologia*).
 4. **Ele padroniza o nome dos arquivos:** Renomeia cada arquivo de forma clara e profissional: `Autor - Título - Ano.pdf`.
@@ -25,17 +25,57 @@ O **Tomus** foi criado exatamente para resolver essa dor, de forma automatizada,
 
 ---
 
-## 2. Como Instalar o Tomus no seu Mac
+## 2. Como Instalar o Tomus (macOS e Windows)
+
+O Tomus é distribuído como instaladores nativos prontos para uso. Não é necessário instalar Python nem configurar ambientes complexos. Escolha o instalador correspondente ao seu sistema operacional.
+
+### 2.1 Instalação no macOS
 
 A instalação do Tomus no macOS é rápida e segue o padrão amigável da Apple:
 
-1. **Baixe o instalador oficial:** Acesse a página do projeto ou a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus-1.3.1-macOS.dmg`.
+1. **Baixe o instalador oficial:** Acesse a página do projeto ou a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus-1.3.2-macOS.dmg`.
 2. **Abra o arquivo `.dmg`:** Dê um duplo clique no arquivo baixado. Uma janela se abrirá mostrando o ícone do **Tomus** ao lado da pasta **Aplicativos** (*Applications*).
 3. **Arraste e solte:** Arraste o ícone do Tomus para dentro da pasta Aplicativos.
 4. **Inicie o aplicativo:** Abra o seu *Launchpad* ou a pasta Aplicativos no Finder e clique no Tomus.
 5. **Primeira abertura (Aviso de Segurança do macOS):**
    * Por se tratar de um aplicativo de código aberto distribuído pela comunidade acadêmica, na primeira vez em que você abri-lo o macOS pode exibir uma mensagem informando que o desenvolvedor não pôde ser verificado pelo Gatekeeper.
    * Caso isso ocorra, clique em **OK**, abra os **Ajustes do Sistema** do seu Mac, vá até a aba **Privacidade e Segurança**, role até o final da página e clique no botão **Abrir Mesmo Assim**. Esta etapa só precisa ser feita uma única vez.
+
+### 2.2 Instalação no Windows
+
+O instalador para Windows (`Tomus_Setup_v1.3.2_Windows_x64.exe`) é gerado com **Inno Setup** e é uma instalação **por usuário**: não exige senha nem privilégios de administrador.
+
+1. **Baixe o instalador oficial:** Acesse a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus_Setup_v1.3.2_Windows_x64.exe`.
+2. **Execute o instalador:** Dê um duplo clique no arquivo `.exe` baixado para abrir o assistente do Inno Setup.
+3. **Siga o assistente:** aceite os termos de licença, escolha a pasta de destino (padrão: `%LocalAppData%\Programs\Tomus`) e marque, se desejar, a criação de um atalho opcional na **Área de Trabalho**. Atalhos são criados automaticamente no **Menu Iniciar**.
+4. **Conclua a instalação:** clique em **Concluir** e inicie o Tomus pelo Menu Iniciar ou pelo atalho da Área de Trabalho.
+
+> **Aviso do Windows Defender SmartScreen na primeira execução:** Como o Tomus é um aplicativo comunitário distribuído sem certificado pago Authenticode EV, o Windows Defender SmartScreen pode exibir um aviso na primeira execução (tanto durante o instalador quanto ao abrir o aplicativo pela primeira vez). Isso é esperado para apps independentes sem certificado EV. Para prosseguir, clique em **Mais informações** e, em seguida, em **Executar assim mesmo**.
+
+---
+
+## 2.3 Como Desinstalar o Tomus
+
+### Windows
+
+1. Abra **Configurações > Aplicativos > Aplicativos instalados** (ou **Painel de Controle > Programas e Recursos**).
+2. Selecione **Tomus** na lista e clique em **Desinstalar**.
+3. Alternativamente, execute `unins000.exe` diretamente na pasta de instalação do Tomus (padrão: `%LocalAppData%\Programs\Tomus`).
+
+> **Limpeza opcional de dados locais:** A desinstalação remove o programa, mas mantém seus dados de usuário. Se quiser remover também configurações, cache e logs, delete manualmente as pastas:
+> * `%USERPROFILE%\.config\tomus`
+> * `%USERPROFILE%\.cache\tomus`
+> * `%USERPROFILE%\.tomus`
+
+### macOS
+
+1. Arraste o aplicativo **Tomus.app** da pasta **Aplicativos** para o **Lixo**.
+2. Esvazie o Lixo para concluir a remoção.
+
+> **Limpeza opcional de dados locais:** Se quiser remover também configurações, cache e logs, delete manualmente as pastas:
+> * `~/.config/tomus`
+> * `~/.cache/tomus`
+> * `~/.tomus`
 
 ---
 
@@ -138,7 +178,7 @@ O Tomus possui um radar inteligente de códigos **ISBN** (aquele código de barr
 
 Existem duas formas muito simples:
 
-* **Pelo Menu de Preferências do Tomus:** Na janela principal do Tomus, clique no ícone de engrenagem no rodapé da barra lateral ou abra pelo menu superior: **Tomus › Preferências** (atalho: `Cmd + ,`). Na aba de Chaves, cole suas chaves nos campos correspondentes e clique em **Salvar**.
+* **Pelo Menu de Preferências do Tomus:** Na janela principal do Tomus, clique no ícone de engrenagem no rodapé da barra lateral ou abra pelo menu superior: **Tomus › Preferências** (atalho: `Cmd + ,` no macOS; no Windows, acesse via menu superior ou barra lateral de Preferências/Configurações). Na aba de Chaves, cole suas chaves nos campos correspondentes e clique em **Salvar**.
 * **Validação Automática:** Ao colar sua chave, o Tomus realiza um teste de conexão discreto de 1 segundo para garantir que ela está ativa e sem erros de digitação.
 
 ---
@@ -172,7 +212,7 @@ Logo abaixo, clique no botão **Destino** e escolha a pasta onde você deseja qu
 ### Passo 3: Escolher o Modo de Operação (Copiar vs. Mover)
 Você pode escolher entre dois botões:
 * **Copiar (Modo Recomendado):** O Tomus deixa seus arquivos originais exatamente onde estão, intactos, e faz uma cópia organizada para a pasta de destino. É o modo mais seguro, pois você nunca perde nada.
-* **Mover:** O Tomus transfere os arquivos originais para o novo destino. Use apenas se o espaço em disco do seu Mac estiver no limite.
+* **Mover:** O Tomus transfere os arquivos originais para o novo destino. Use apenas se o espaço em disco do seu computador estiver no limite.
 
 ### Passo 4: Ajustar as Opções
 * **Varredura Recursiva:** Se marcada, o Tomus não olha apenas os arquivos soltos na pasta de origem, mas também vasculha todas as subpastas internas.
@@ -214,9 +254,9 @@ Ao clicar sobre qualquer linha da tabela, o painel direito (o **Inspetor de Docu
 * Capa do livro ou a miniatura da primeira página do artigo.
 * Ficha catalográfica completa: Grande Área, Área Básica, Subárea, Tipo (Livro, Artigo, Tese, Capítulo) e Grau de Confiança da identificação.
 * **Citação Pronta ABNT NBR 6023:** A referência bibliográfica formatada segundo as normas da ABNT, com título da obra em negrito, nomes em caixa alta e sem repetições.
-  * Basta clicar no botão **Copiar Citação**. O texto vai para a área de transferência do Mac e você pode colar direto no seu trabalho acadêmico.
-* **Botão "Abrir PDF":** Abre o arquivo organizado imediatamente no visualizador padrão do Mac (como o Pré-Visualização / *Preview*).
-* **Botão "Revelar no Finder":** Abre a pasta exata no Finder onde o arquivo foi guardado, destacando-o na tela.
+  * Basta clicar no botão **Copiar Citação**. O texto vai para a área de transferência do seu computador e você pode colar direto no seu trabalho acadêmico.
+* **Botão "Abrir PDF":** Abre o arquivo organizado imediatamente no visualizador padrão do seu computador.
+* **Botão "Revelar no gerenciador de arquivos":** Abre a pasta exata onde o arquivo foi guardado, destacando-o na tela (Finder no macOS, Explorador de Arquivos no Windows).
 
 ---
 
@@ -250,7 +290,7 @@ Para garantir total clareza, reunimos abaixo os termos técnicos presentes no ap
 
 * **ABNT NBR 6023:** Norma oficial da Associação Brasileira de Normas Técnicas que estabelece as regras universais para apresentação de referências e citações em trabalhos científicos no Brasil.
 * **API Key (Chave de API):** Código identificador alfanumérico pessoal que serve como credencial para acessar serviços digitais de inteligência artificial ou bases de dados.
-* **Apple Vision OCR:** Tecnologia nativa do sistema operacional macOS da Apple que reconhece letras e palavras gravadas em fotos e folhas digitalizadas com auxílio dos núcleos de hardware do computador (Neural Engine).
+* **OCR local (PyMuPDF + Docling + RapidOCR/ONNXRuntime):** Motor de reconhecimento óptico de caracteres executado localmente no seu computador (macOS e Windows), usado para transcrever páginas digitalizadas sem enviar dados para a nuvem.
 * **BYOK (*Bring Your Own Key*):** Modelo de arquitetura onde o usuário utiliza suas próprias credenciais junto aos provedores de serviços, garantindo que nenhum servidor terceiro tenha controle sobre seus acessos ou seus dados.
 * **CAPES/CNPq:** Principais órgãos federais de fomento à pesquisa e pós-graduação no Brasil. O Tomus adota a tabela oficial desses órgãos que classifica todo o saber humano em 8 Grandes Áreas e centenas de subáreas.
 * **Circuit Breaker:** Mecanismo de proteção em engenharia de software que desativa temporariamente uma via de comunicação quando ela falha repetidas vezes (como quando uma cota gratuita atinge o limite), evitando lentidão e redirecionando a tarefa para outra via disponível.
@@ -261,7 +301,7 @@ Para garantir total clareza, reunimos abaixo os termos técnicos presentes no ap
 * **LLM (*Large Language Model*):** Modelo de linguagem de grande porte (inteligência artificial como Gemini, Claude, Llama ou DeepSeek) capaz de compreender nuances de textos, resumir ideias e identificar autoria e títulos.
 * **OCR (*Optical Character Recognition*):** Reconhecimento Óptico de Caracteres; tecnologia que converte imagens de páginas impressas ou manuscritas em texto digital selecionável e pesquisável.
 * **Pydantic:** Biblioteca de software utilizada no Tomus para validar e garantir que os dados retornados pela inteligência artificial cheguem sem defeitos, campos nulos ou formatações inconsistentes.
-* **PySide6 / Qt:** Conjunto de ferramentas de engenharia de software de padrão industrial para criação de interfaces gráficas desktop nativas, fluidas e seguras no macOS.
+* **PySide6 / Qt:** Conjunto de ferramentas de engenharia de software de padrão industrial para criação de interfaces gráficas desktop nativas, fluidas e seguras (macOS e Windows).
 * **SHA-256 (Hash Criptográfico):** Uma espécie de "impressão digital" digital única calculada a partir dos dados de um arquivo. Dois arquivos só terão o mesmo código SHA-256 se forem rigorosamente idênticos, até o último ponto. O Tomus usa essa tecnologia para detectar duplicatas sem cometer enganos.
 * **Subárea e Especialidade:** Divisões mais específicas dentro de uma área do conhecimento na taxonomia CAPES (exemplo: dentro de *História*, a subárea *História do Brasil* e a especialidade *Brasil República*).
 * **TLS (*Transport Layer Security*):** Protocolo criptográfico de segurança que protege a comunicação entre o seu computador e os servidores dos provedores de IA, garantindo que ninguém na rede consiga espionar as informações transmitidas.

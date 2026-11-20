@@ -5,7 +5,7 @@
 # Tomus — Organizador Acadêmico de PDFs
 
 [![Licença MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-blue.svg)](LICENSE)
-[![Plataformas](https://img.shields.io/badge/Plataformas-macOS-green.svg)](#como-baixar-e-instalar)
+[![Plataformas](https://img.shields.io/badge/Plataformas-macOS%20%7C%20Windows-green.svg)](#como-baixar-e-instalar)
 [![100% Gratuito](https://img.shields.io/badge/Software-100%25%20Gratuito-orange.svg)](#-apoie-o-projeto-doação-voluntária)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python/)
 
@@ -30,17 +30,21 @@ Ele organiza seus documentos diretamente em seu computador conforme a taxonomia 
 
 ## 📥 Como Baixar e Instalar
 
-Você não precisa instalar Python nem configurar ambientes complexos para usar o Tomus. Baixe o instalador pronto para macOS na seção de **[Releases](https://github.com/dcprj/tomus/releases)**:
+Você não precisa instalar Python nem configurar ambientes complexos para usar o Tomus. Baixe o instalador nativo pronto para **macOS** ou **Windows** na seção de **[Releases](https://github.com/dcprj/tomus/releases)** (tag `v1.3.2`):
 
-| Sistema Operacional | Formato do Pacote | Link de Download Direto |
+| Sistema Operacional | Formato do Pacote | Link de Download Direto (v1.3.2) |
 | :--- | :--- | :--- |
-| **macOS** (Apple Silicon / Intel) | `.dmg` (Arrastar para `/Applications`) | [Baixar Tomus para macOS (.dmg)](https://github.com/dcprj/tomus/releases/latest) |
+| **macOS** (Apple Silicon / Intel) | `.dmg` (arraste para `/Applications`) | [Baixar Tomus-1.3.2-macOS.dmg](https://github.com/dcprj/tomus/releases/download/v1.3.2/Tomus-1.3.2-macOS.dmg) |
+| **Windows 10/11** (x64) | `.exe` (Inno Setup, sem administrador) | [Baixar Tomus_Setup_v1.3.2_Windows_x64.exe](https://github.com/dcprj/tomus/releases/download/v1.3.2/Tomus_Setup_v1.3.2_Windows_x64.exe) |
+
+> [!TIP]
+> Sempre prefira os assets oficiais da release [v1.3.2](https://github.com/dcprj/tomus/releases/tag/v1.3.2) ou da página [latest](https://github.com/dcprj/tomus/releases/latest). Não execute instaladores de fontes terceiras.
 
 ---
 
 ### 🍎 1. Instalação no macOS
 
-1. Baixe o arquivo oficial `Tomus-1.3.1-macOS.dmg` (ou versão mais recente).
+1. Baixe o arquivo oficial `Tomus-1.3.2-macOS.dmg`.
 2. Dê duplo clique no arquivo `.dmg` baixado para abri-lo.
 3. Arraste o ícone do aplicativo para a pasta **Applications (Aplicativos)**.
 
@@ -52,6 +56,67 @@ Você não precisa instalar Python nem configurar ambientes complexos para usar 
 >   ```bash
 >   xattr -cr /Applications/Tomus.app
 >   ```
+
+---
+
+### 🪟 2. Instalação no Windows
+
+O instalador para Windows é gerado com **Inno Setup** (`Tomus_Setup_v1.3.2_Windows_x64.exe`) e é uma instalação **por usuário**: não exige senha nem privilégios de administrador.
+
+1. Baixe o arquivo oficial `Tomus_Setup_v1.3.2_Windows_x64.exe`.
+2. Dê duplo clique no instalador. O assistente do Inno Setup será aberto.
+3. Siga o assistente: aceite os termos, escolha a pasta de destino (padrão: `%LocalAppData%\Programs\Tomus`) e marque, se desejar, o atalho opcional na **Área de Trabalho**. Atalhos são criados automaticamente no **Menu Iniciar**.
+4. Conclua a instalação e inicie o Tomus pelo Menu Iniciar ou pelo atalho da Área de Trabalho.
+
+> [!IMPORTANT]
+> **Aviso do Windows Defender SmartScreen na primeira execução:**  
+> Como o Tomus é um aplicativo comunitário distribuído sem certificado pago Authenticode EV, o Windows Defender SmartScreen pode exibir um aviso na primeira execução (tanto durante o instalador quanto ao abrir o aplicativo pela primeira vez). Isso é esperado para apps independentes sem certificado EV. Para prosseguir:
+> * Clique em **Mais informações** e, em seguida, em **Executar assim mesmo**.
+> * Essa confirmação costuma ser necessária apenas na primeira abertura.
+
+---
+
+### 🐍 3. Instalação via Python / Terminal (Desenvolvedores)
+
+Se você é desenvolvedor ou prefere executar o Tomus via ambiente Python:
+
+**macOS / Linux:**
+```bash
+# Clonar o repositório
+git clone https://github.com/dcprj/tomus.git
+cd tomus
+
+# Criar e ativar ambiente virtual
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Instalar dependências
+pip install -e ".[dev]"
+
+# Iniciar a interface gráfica (Desktop GUI)
+tomus-gui
+# ou:
+tomus gui
+```
+
+**Windows (PowerShell):**
+```powershell
+# Clonar o repositório
+git clone https://github.com/dcprj/tomus.git
+cd tomus
+
+# Criar e ativar ambiente virtual
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+
+# Instalar dependências
+pip install -e ".[dev]"
+
+# Iniciar a interface gráfica (Desktop GUI)
+tomus-gui
+# ou:
+tomus gui
+```
 
 ---
 
@@ -119,9 +184,9 @@ Se o Tomus foi útil para sua dissertação, tese ou organização bibliográfic
 
 O Tomus adota uma política de **Transparência Técnica e Ética Integral** sobre como os seus documentos são manipulados:
 
-* **Arquivos PDF 100% no seu Disco Local:** O arquivo binário do PDF integral, seus capítulos completos e dados brutos de pesquisa **nunca saem do seu computador** nem são enviados para servidores em nuvem. A extração inicial e o OCR (via Apple Vision no macOS) rodam exclusivamente no processador e na memória do seu Mac.
+* **Arquivos PDF 100% no seu Disco Local:** O arquivo binário do PDF integral, seus capítulos completos e dados brutos de pesquisa **nunca saem do seu computador** nem são enviados para servidores em nuvem. A extração inicial e o OCR rodam exclusivamente no processador e na memória da sua máquina, de forma multiplataforma (macOS e Windows), via **PyMuPDF + Docling + RapidOCR/ONNXRuntime**.
 * **Envio Estrito de Dados de Catalogação para a IA:** Para determinar a área do conhecimento na taxonomia CAPES e formatar a citação ABNT NBR 6023, o Tomus extrai um **recorte textual reduzido** (amostra das primeiras e últimas páginas, como folha de rosto, sumário e ficha catalográfica) e o submete via HTTPS/TLS diretamente à API do provedor de IA configurado por você (Google Gemini, Claude, DeepSeek, Groq ou NVIDIA NIM).
-* **Modelo BYOK (Bring Your Own Key):** Suas chaves de autenticação de API residem no seu computador (com permissão `0600`) e a comunicação é ponto a ponto direta com o provedor escolhido. O Tomus **não possui servidores intermediários** e **não realiza nenhuma telemetria** ou coleta de dados analíticos.
+* **Modelo BYOK (Bring Your Own Key):** Suas chaves de autenticação de API residem no seu computador (com permissão `0600` no macOS/Linux; armazenadas na pasta do perfil do usuário no Windows) e a comunicação é ponto a ponto direta com o provedor escolhido. O Tomus **não possui servidores intermediários** e **não realiza nenhuma telemetria** ou coleta de dados analíticos.
 * **Controlador dos Dados:** Perante a Lei Geral de Proteção de Dados (LGPD - Lei nº 13.709/2018), o usuário atua como único Controlador dos documentos e conteúdos que submeter ao processamento.
 
 ---

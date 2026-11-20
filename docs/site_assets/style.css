@@ -363,7 +363,8 @@ code {
   box-shadow: 0 16px 36px -8px rgba(11, 25, 44, 0.4), 0 0 0 1px var(--navy-900);
 }
 
-.btn-apple-icon {
+.btn-apple-icon,
+.btn-windows-icon {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
@@ -385,6 +386,13 @@ code {
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.72);
   font-weight: 400;
+}
+
+.hero-download-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .hero-guarantees {
@@ -1115,6 +1123,10 @@ code {
 }
 
 .download-btn-wrap {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
   margin-bottom: 48px;
 }
 
@@ -1164,6 +1176,9 @@ code {
   text-align: left;
   max-width: 820px;
   margin: 0 auto;
+}
+.gatekeeper-callout + .gatekeeper-callout {
+  margin-top: 16px;
 }
 
 .callout-header {
@@ -1228,6 +1243,35 @@ code {
 
 .btn-copy-code:hover {
   background: rgba(255, 255, 255, 0.3);
+}
+
+/* Bloco objetivo: Instalação e Desinstalação (Windows) */
+.download-notes {
+  margin-top: 32px;
+  padding: 20px 24px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.download-notes p {
+  margin: 0 0 10px;
+  line-height: 1.6;
+}
+.download-notes p:last-child {
+  margin-bottom: 0;
+}
+.download-notes strong {
+  color: var(--navy-900);
+}
+.download-notes h4 {
+  margin: 0 0 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--navy-900);
 }
 
 /* ==========================================================================
