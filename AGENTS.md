@@ -24,7 +24,7 @@
 - **`Sentinela` (AppSec & Quality Specialist):** Segurança da informação, auditoria contra injeção de prompt, sanitização de caminhos e validação de suítes de testes.
 - **`Farol` (Release & GitOps Manager):** GitOps, versionamento, changelogs e empacotamento de releases.
 
-**Regra Universal para Especialistas:** Nenhum especialista repassa ordens a outros agentes. Cada um executa estritamente o que o `Chefe` solicitar dentro do seu papel e reporta o resultado de volta ao `Chefe`.
+**Regra Universal para Especialistas:** Nenhum especialista repassa ordens a outros agentes. Cada um executa estritamente o que o `Chefe` solicitar dentro do seu papel e **ao concluir qualquer tarefa ou ação, executa via terminal/shell o comando `maestri ask Chefe <resumo>` (observação: `maestri` é um executável CLI no PATH, não uma tool interna do OpenCode)** para reportar o resultado de volta ao `Chefe`.
 
 ---
 

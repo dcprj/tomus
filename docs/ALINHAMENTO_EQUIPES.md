@@ -108,3 +108,24 @@ O job `build-windows` está **ausente** do `.github/workflows/release.yml` (apen
 - **Item relacionado:** `[FEAT-ENRICH-01]` Suporte Opcional a `openalex_api_key` (OpenAlex) substituindo/complementando o mailto legado (ver `docs/backlog.md`).
 
 ---
+
+## Registro Cronológico — 2026-11-18: Aceite e Status Inicial da Frente Windows
+
+- **Status:** Aceite formal da Frente Windows.
+- **Concordância total:** A Frente Windows concorda integralmente com:
+  - `AGENTS.md` — Seção 5 (Sincronização Contínua Entre Equipes Mac <-> Windows);
+  - `docs/ALINHAMENTO_EQUIPES.md` (baseline vigente, alinhamento de 2026-11-18);
+  - `docs/backlog.md` — item `[FEAT-ENRICH-01]` OpenAlex;
+  - `.github/PULL_REQUEST_TEMPLATE.md`;
+  - `.github/workflows/ci.yml`;
+  - preservação dos pins compartilhados do `pyproject.toml` e do job `build-macos` (sem marcadores PEP 508 de SO sem consenso de ambas as equipes).
+- **Status das branches:**
+  - `win/fix-portability-and-gui` (`7ed3375`): 259/259 testes verdes.
+  - `win/packaging-windows` (`c4fa23d`): validada no mundo real em 490 PDFs com `Setup.exe`, 0 erros, 38 OCR, `Abrir PDF` e `Mostrar na pasta` OK.
+- **Achados reais:**
+  1. Periódicos "Micro Sistemas" L2/L3 e ISBN `9780123456786`.
+  2. `MAX_PATH` de 290 chars (caminho longo do Windows na árvore CAPES).
+  3. `AutoImageProcessor` com fallback `RapidOCR`.
+- **Ordem de PRs contra `main` após merge de `docs/team-sync`:**
+  `win/fix-portability-and-gui` → `win/packaging-windows` → `win/ci-build-windows`.
+---
