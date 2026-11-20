@@ -421,7 +421,7 @@ code {
 }
 
 /* ==========================================================================
-/* ==========================================================================
+ * ==========================================================================
    WORKBENCH MOCKUP (JANELA NATIVA TOMUS v1.3.2 — 3 PAINÉS + TOOLBAR)
    Escopo: .mockup-window (zero colisao com globais da navbar/cards)
    ========================================================================== */
@@ -784,7 +784,7 @@ code {
    ========================================================================== */
 .mockup-window .window-workbench {
   display: grid;
-  grid-template-columns: 215px 1fr 315px;
+  grid-template-columns: 208px 1fr 308px;
   flex: 1;
   min-height: 0;
   background: #f4f3f0;
@@ -888,9 +888,7 @@ code {
 
 .mockup-window .wb-tree-node,
 .mockup-window .wb-sub-node {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: block;
   padding: 4.5px 7px;
   border-radius: 5px;
   font-size: 11px;
@@ -899,12 +897,20 @@ code {
   cursor: default;
 }
 
-.mockup-window .wb-tree-node:hover,
-.mockup-window .wb-sub-node:hover {
+.mockup-window .wb-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4.5px 7px;
+  border-radius: 5px;
+}
+
+.mockup-window .wb-tree-node:hover > .wb-tree-row,
+.mockup-window .wb-sub-node:hover > .wb-tree-row {
   background: #edeae0;
 }
 
-.mockup-window .wb-tree-node.active {
+.mockup-window .wb-tree-node.active > .wb-tree-row {
   background: #eef6ff;
   color: var(--navy-900);
   font-weight: 800;
@@ -1013,7 +1019,7 @@ code {
 }
 
 .mockup-window .doc-table td {
-  padding: 6px 10px;
+  padding: 6px 6px;
   border-bottom: 1px solid #efeae0;
   vertical-align: middle;
   overflow: hidden;
@@ -1037,21 +1043,21 @@ code {
 }
 
 /* Larguras recalibradas: soma ~600px em desktop >= 1200px */
-.mockup-window .col-status   { width: 90px;  }
-.mockup-window .col-title    { width: 170px; }
-.mockup-window .col-authors  { width: 120px; }
-.mockup-window .col-year     { width: 48px;  text-align: right; font-family: var(--font-mono); }
-.mockup-window .col-area     { width: 120px; }
-.mockup-window .col-type     { width: 68px;  }
-.mockup-window .col-confidence { width: 70px; text-align: right; font-family: var(--font-mono); }
+.mockup-window .col-status   { width: 98px;  }
+.mockup-window .col-title    { width: 158px; }
+.mockup-window .col-authors  { width: 104px; }
+.mockup-window .col-year     { width: 40px;  text-align: right; font-family: var(--font-mono); }
+.mockup-window .col-area     { width: 112px; }
+.mockup-window .col-type     { width: 44px;  }
+.mockup-window .col-confidence { width: 58px; text-align: right; font-family: var(--font-mono); }
 
 .mockup-window .status-pill {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
+  gap: 4px;
+  padding: 2px 6px;
   border-radius: 9999px;
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 800;
   white-space: nowrap;
 }
@@ -1143,7 +1149,8 @@ code {
 
 .mockup-window .kv-grid {
   display: grid;
-  grid-template-columns: 78px 1fr;
+  grid-template-columns: 100px 1fr;
+  column-gap: 8px;
   row-gap: 5px;
   font-size: 11px;
 }
@@ -1159,6 +1166,7 @@ code {
   font-weight: 700;
   margin: 0;
   font-size: 10.5px;
+  min-width: 0;
 }
 .mockup-window .mono-truncate {
   font-family: var(--font-mono);
