@@ -338,7 +338,7 @@ O Tomus segue convenções de diretório de usuário específicas de cada sistem
 
 * **Configuração:** `config.toml` (permissão `0600` via `secure_chmod_600` no macOS/Linux; operação ignorada com segurança no Windows) em `~/.config/tomus/` (macOS/Linux) ou `%USERPROFILE%\.config\tomus` (Windows).
 * **Cache:** banco SQLite de extração e classificação indexado por SHA-256 em `~/.cache/tomus/` (macOS/Linux) ou `%USERPROFILE%\.cache\tomus` (Windows).
-* **Logs:** `tomus.log` gravado ao lado do executável/bundle e nas pastas de cache do usuário.
+* **Logs:** na GUI, o log é gravado em `~/.tomus/tomus.log` (macOS/Linux) ou `%USERPROFILE%\.tomus\tomus.log` (Windows) via `setup_logging()` com fallback silencioso para `NullHandler` em caso de falha de permissão (nunca dentro do bundle/.exe em Program Files); na CLI, o padrão de `setup_logging` grava `tomus.log` no diretório de execução.
 * **Desinstalação limpa no macOS:** arraste `Tomus.app` para o Lixo e, opcionalmente, remova `~/.config/tomus`, `~/.cache/tomus` e `~/.tomus`.
 * **Desinstalação limpa no Windows:** use **Configurações > Aplicativos > Aplicativos instalados** (ou execute `unins000.exe` na pasta de instalação) e, opcionalmente, remova `%USERPROFILE%\.config\tomus`, `%USERPROFILE%\.cache\tomus` e `%USERPROFILE%\.tomus`.
 

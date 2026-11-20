@@ -450,7 +450,7 @@ flowchart TD
         <h2>9. Caminhos de Configuração, Cache e Logs</h2>
         <p><strong>Configuração:</strong> <code>config.toml</code> (permissão <code>0600</code> via <code>secure_chmod_600</code> no macOS/Linux; ignorado com segurança no Windows) em <code>~/.config/tomus/</code> (macOS/Linux) ou <code>%USERPROFILE%\.config\tomus</code> (Windows).</p>
         <p><strong>Cache:</strong> banco SQLite de extração e classificação indexado por SHA-256 em <code>~/.cache/tomus/</code> (macOS/Linux) ou <code>%USERPROFILE%\.cache\tomus</code> (Windows).</p>
-        <p><strong>Logs:</strong> <code>tomus.log</code> gravado ao lado do executável/bundle e nas pastas de cache do usuário.</p>
+        <p><strong>Logs:</strong> na GUI, o log é gravado em <code>~/.tomus/tomus.log</code> (macOS/Linux) ou <code>%USERPROFILE%\.tomus\tomus.log</code> (Windows) via <code>setup_logging()</code> com fallback silencioso para <code>NullHandler</code> em caso de falha de permissão (nunca dentro do bundle/.exe em Program Files); na CLI, o padrão de <code>setup_logging</code> grava <code>tomus.log</code> no diretório de execução.</p>
       </article>
     </div>
   </main>

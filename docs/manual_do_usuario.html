@@ -225,7 +225,7 @@
         <h3>2.2 Instalação no Windows</h3>
         <p>O instalador para Windows (<code>Tomus_Setup_v1.3.2_Windows_x64.exe</code>) é gerado com <strong>Inno Setup</strong> e é uma instalação <strong>por usuário</strong>: não exige senha nem privilégios de administrador.</p>
         <ol>
-          <li>Baixe o instalador oficial <code>Tomus_Setup_v1.3.2_Windows_x64.exe</code> na seção de lançamentos (*Releases*) do GitHub.</li>
+          <li>Baixe o instalador oficial <code>Tomus_Setup_v1.3.2_Windows_x64.exe</code> na seção de lançamentos <em>Releases</em> do GitHub.</li>
           <li>Dê um duplo clique no arquivo <code>.exe</code> baixado para abrir o assistente do Inno Setup.</li>
           <li>Siga o assistente: aceite os termos de licença, escolha a pasta de destino (padrão: <code>%LocalAppData%\Programs\Tomus</code>) e marque, se desejar, o atalho opcional na <strong>Área de Trabalho</strong>. Atalhos são criados automaticamente no <strong>Menu Iniciar</strong>.</li>
           <li>Conclua a instalação e inicie o Tomus pelo Menu Iniciar ou pelo atalho da Área de Trabalho.</li>
@@ -234,7 +234,7 @@
           <strong>Aviso do Windows Defender SmartScreen na primeira execução:</strong> Como o Tomus é um aplicativo comunitário distribuído sem certificado pago Authenticode EV, o SmartScreen pode exibir um aviso na primeira execução (tanto durante o instalador quanto ao abrir o aplicativo). Para prosseguir, clique em <strong>Mais informações</strong> e, em seguida, em <strong>Executar assim mesmo</strong>.
         </div>
 
-        <h2>3. Como Desinstalar o Tomus</h2>
+        <h2>2.3 Como Desinstalar o Tomus</h2>
         <h3>Windows</h3>
         <ol>
           <li>Abra <strong>Configurações &gt; Aplicativos &gt; Aplicativos instalados</strong> (ou <strong>Painel de Controle &gt; Programas e Recursos</strong>).</li>
@@ -324,7 +324,7 @@
         </div>
 
         <h3>Onde Colocar as Chaves no Tomus?</h3>
-        <p>No Tomus, abra o menu superior <strong>Tomus › Preferências</strong> (ou pressione <code>Cmd + ,</code>). Cole suas chaves nos campos correspondentes e clique em <strong>Salvar</strong>. O Tomus testa automaticamente a conexão para você não ter surpresas durante a organização.</p>
+        <p>No Tomus, cole suas chaves no menu de <strong>Preferências</strong>: clique no ícone de engrenagem na barra lateral ou abra pelo menu superior <strong>Tomus › Preferências</strong> (atalho: <code>Cmd + ,</code> no macOS; no Windows, acesse via menu superior ou barra lateral de Preferências/Configurações). Clique em <strong>Salvar</strong>. O Tomus testa automaticamente a conexão para você não ter surpresas durante a organização.</p>
 
         <h2>4. Operando a Bancada do Tomus</h2>
         <ol>
@@ -364,7 +364,7 @@
             <div class="glossary-def">Código de acesso pessoal que funciona como uma credencial segura para conectar seu aplicativo diretamente a um serviço na nuvem (como Gemini ou Claude).</div>
           </div>
           <div class="glossary-item">
-            <div class="glossary-term">Apple Vision OCR</div>
+            <div class="glossary-term">OCR local (PyMuPDF + Docling + RapidOCR/ONNXRuntime)</div>
             <div class="glossary-def">Motor de reconhecimento óptico de caracteres executado localmente no seu computador (macOS e Windows), usado para transcrever páginas digitalizadas sem enviar dados para a nuvem.</div>
           </div>
           <div class="glossary-item">

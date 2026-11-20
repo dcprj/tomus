@@ -54,7 +54,7 @@ O instalador para Windows (`Tomus_Setup_v1.3.2_Windows_x64.exe`) é gerado com *
 
 ---
 
-## Como Desinstalar o Tomus
+## 2.3 Como Desinstalar o Tomus
 
 ### Windows
 
@@ -178,7 +178,7 @@ O Tomus possui um radar inteligente de códigos **ISBN** (aquele código de barr
 
 Existem duas formas muito simples:
 
-* **Pelo Menu de Preferências do Tomus:** Na janela principal do Tomus, clique no ícone de engrenagem no rodapé da barra lateral ou abra pelo menu superior: **Tomus › Preferências** (atalho: `Cmd + ,`). Na aba de Chaves, cole suas chaves nos campos correspondentes e clique em **Salvar**.
+* **Pelo Menu de Preferências do Tomus:** Na janela principal do Tomus, clique no ícone de engrenagem no rodapé da barra lateral ou abra pelo menu superior: **Tomus › Preferências** (atalho: `Cmd + ,` no macOS; no Windows, acesse via menu superior ou barra lateral de Preferências/Configurações). Na aba de Chaves, cole suas chaves nos campos correspondentes e clique em **Salvar**.
 * **Validação Automática:** Ao colar sua chave, o Tomus realiza um teste de conexão discreto de 1 segundo para garantir que ela está ativa e sem erros de digitação.
 
 ---

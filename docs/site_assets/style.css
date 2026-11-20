@@ -1123,6 +1123,10 @@ code {
 }
 
 .download-btn-wrap {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  flex-wrap: wrap;
   margin-bottom: 48px;
 }
 
@@ -1172,6 +1176,9 @@ code {
   text-align: left;
   max-width: 820px;
   margin: 0 auto;
+}
+.gatekeeper-callout + .gatekeeper-callout {
+  margin-top: 16px;
 }
 
 .callout-header {
