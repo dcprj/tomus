@@ -6,7 +6,7 @@
 
 [![Licença MIT](https://img.shields.io/badge/Licen%C3%A7a-MIT-blue.svg)](LICENSE)
 [![Plataformas](https://img.shields.io/badge/Plataformas-macOS%20%7C%20Windows-green.svg)](#como-baixar-e-instalar)
-[![100% Gratuito](https://img.shields.io/badge/Software-100%25%20Gratuito-orange.svg)](#-apoie-o-projeto-doação-voluntária)
+[![100% Gratuito](https://img.shields.io/badge/Software-100%25%20Gratuito-orange.svg)](#apoie-o-projeto-doação-voluntária)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python/)
 
 O **Tomus** é uma aplicação desktop acadêmica livre e gratuita projetada para automatizar a triagem, enriquecimento bibliográfico, padronização de nomes e catalogação temática de acervos de PDFs.
@@ -32,6 +32,10 @@ Ele organiza seus documentos diretamente em seu computador conforme a taxonomia 
 
 Você não precisa instalar Python nem configurar ambientes complexos para usar o Tomus. Baixe o instalador nativo pronto para **macOS** ou **Windows** na seção de **[Releases](https://github.com/dcprj/tomus/releases)** (tag `v1.3.2`):
 
+**Requisitos de plataforma:**
+* **macOS 14+** (Apple Silicon ou Intel)
+* **Windows 10/11** (64 bits)
+
 | Sistema Operacional | Formato do Pacote | Link de Download Direto (v1.3.2) |
 | :--- | :--- | :--- |
 | **macOS** (Apple Silicon / Intel) | `.dmg` (arraste para `/Applications`) | [Baixar Tomus-1.3.2-macOS.dmg](https://github.com/dcprj/tomus/releases/download/v1.3.2/Tomus-1.3.2-macOS.dmg) |
@@ -42,7 +46,7 @@ Você não precisa instalar Python nem configurar ambientes complexos para usar 
 
 ---
 
-### 🍎 1. Instalação no macOS
+### 1. Instalação no macOS
 
 1. Baixe o arquivo oficial `Tomus-1.3.2-macOS.dmg`.
 2. Dê duplo clique no arquivo `.dmg` baixado para abri-lo.
@@ -59,7 +63,7 @@ Você não precisa instalar Python nem configurar ambientes complexos para usar 
 
 ---
 
-### 🪟 2. Instalação no Windows
+### 2. Instalação no Windows
 
 O instalador para Windows é gerado com **Inno Setup** (`Tomus_Setup_v1.3.2_Windows_x64.exe`) e é uma instalação **por usuário**: não exige senha nem privilégios de administrador.
 
@@ -76,7 +80,30 @@ O instalador para Windows é gerado com **Inno Setup** (`Tomus_Setup_v1.3.2_Wind
 
 ---
 
-### 🐍 3. Instalação via Python / Terminal (Desenvolvedores)
+### 3. Desinstalação (macOS e Windows)
+
+**macOS**
+1. Arraste o aplicativo **Tomus.app** da pasta **Aplicativos** para o **Lixo**.
+2. Esvazie o Lixo para concluir a remoção.
+
+> **Limpeza opcional de dados locais:** A desinstalação remove o programa, mas mantém seus dados de usuário. Se quiser remover também configurações, cache e logs, delete manualmente as pastas:
+> * `~/.config/tomus`
+> * `~/.cache/tomus`
+> * `~/.tomus`
+
+**Windows**
+1. Abra **Configurações > Aplicativos > Aplicativos instalados**.
+2. Selecione **Tomus** na lista e clique em **Desinstalar**.
+3. Alternativamente, execute `unins000.exe` diretamente na pasta de instalação do Tomus (padrão: `%LocalAppData%\Programs\Tomus`).
+
+> **Limpeza opcional de dados locais:** A desinstalação remove o programa, mas mantém seus dados de usuário. Se quiser remover também configurações, cache e logs, delete manualmente as pastas:
+> * `%USERPROFILE%\.config\tomus`
+> * `%USERPROFILE%\.cache\tomus`
+> * `%USERPROFILE%\.tomus`
+
+---
+
+### 4. Instalação via Python / Terminal (Desenvolvedores)
 
 Se você é desenvolvedor ou prefere executar o Tomus via ambiente Python:
 
@@ -108,30 +135,6 @@ cd tomus
 # Criar e ativar ambiente virtual
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-
-# Instalar dependências
-pip install -e ".[dev]"
-
-# Iniciar a interface gráfica (Desktop GUI)
-tomus-gui
-# ou:
-tomus gui
-```
-
----
-
-### 💻 2. Instalação via Python / Terminal (Desenvolvedores)
-
-Se você é desenvolvedor ou prefere executar o Tomus via ambiente Python:
-
-```bash
-# Clonar o repositório
-git clone https://github.com/dcprj/tomus.git
-cd tomus
-
-# Criar e ativar ambiente virtual
-python3 -m venv .venv
-source .venv/bin/activate
 
 # Instalar dependências
 pip install -e ".[dev]"
