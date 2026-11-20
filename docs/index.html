@@ -131,7 +131,7 @@
             <div class="window-title">
               <span class="window-app-name">Tomus v1.3.2</span>
               <span class="window-sep">—</span>
-              <span class="window-doc-path">~/Documentos/Acervo_Academico</span>
+              <span class="window-doc-path">~/Documentos/Biblioteca_Tomus</span>
             </div>
             <div class="window-actions">
               <span class="badge-status-ready">Concluído · v1.3.2</span>
@@ -225,26 +225,26 @@
                 <div class="wb-section-title">ÁRVORE CAPES/CNPq</div>
                 <div class="wb-section-sub">Grande Área › Área Básica › Subárea</div>
                 <ul class="wb-tree">
-                  <li class="wb-tree-node active">
+                  <li class="wb-tree-group">
                     <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                     <span class="node-text">Ciências Humanas</span><span class="node-count">30</span>
-                  </li>
-                  <ul class="wb-sub-tree">
-                    <li class="wb-sub-node active">
-                      <span class="sub-line">├</span><span class="sub-text">Filosofia</span><span class="sub-count">20</span>
-                    </li>
-                    <ul class="wb-sub-sub-tree">
-                      <li class="wb-sub-node selected">
-                        <span class="sub-line">└</span><span class="sub-text">Ética</span><span class="sub-count">12</span>
+                    <ul class="wb-sub-tree">
+                      <li class="wb-sub-node">
+                        <span class="sub-line">├</span><span class="sub-text">Filosofia</span><span class="sub-count">20</span>
+                        <ul class="wb-sub-sub-tree">
+                          <li class="wb-sub-node">
+                            <span class="sub-line">└</span><span class="sub-text">Ética</span><span class="sub-count">12</span>
+                          </li>
+                          <li class="wb-sub-node">
+                            <span class="sub-line">└</span><span class="sub-text">Filosofia Política</span><span class="sub-count">8</span>
+                          </li>
+                        </ul>
                       </li>
                       <li class="wb-sub-node">
-                        <span class="sub-line">└</span><span class="sub-text">Filosofia Política</span><span class="sub-count">8</span>
+                        <span class="sub-line">├</span><span class="sub-text">História</span><span class="sub-count">10</span>
                       </li>
                     </ul>
-                    <li class="wb-sub-node">
-                      <span class="sub-line">├</span><span class="sub-text">História</span><span class="sub-count">10</span>
-                    </li>
-                  </ul>
+                  </li>
                   <li class="wb-tree-node">
                     <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
                     <span class="node-text">Ciências Exatas e da Terra</span><span class="node-count">42</span>
@@ -324,13 +324,12 @@
 
             <!-- Coluna 3: Inspetor — Ficha Catalográfica e ABNT NBR 6023 -->
             <aside class="wb-inspector">
-              <div class="inspector-card">
-                <!-- Tag de status -->
-                <div class="inspector-header">
-                  <span class="status-pill-lg pill-organized" id="inspStatusBadge">
-                    <span class="dot">●</span><span class="badge-text">Organizado (99% Confiança)</span>
-                  </span>
-                </div>
+              <!-- Tag de status -->
+              <div class="inspector-header">
+                <span class="status-pill-lg pill-organized" id="inspStatusBadge">
+                  <span class="dot">●</span><span class="badge-text">Organizado (99% Confiança)</span>
+                </span>
+              </div>
 
                 <!-- Referência ABNT NBR 6023 (corrigida: autor normal, título em negrito, sem itálico) -->
                 <div class="insp-card abnt-card">
@@ -374,7 +373,6 @@
                     <dt>Companheiro .md</dt><dd class="mono-truncate" title="Rawls - Uma Teoria da Justiça - 1971.md">Rawls - Uma Teoria da Justiça - 1971.md</dd>
                   </dl>
                 </div>
-              </div>
             </aside>
           </div>
 
