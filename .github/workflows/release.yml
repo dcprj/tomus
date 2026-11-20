@@ -1,4 +1,4 @@
-name: Release Tomus macOS
+name: Release Tomus (macOS + Windows)
 
 on:
   push:
@@ -66,10 +66,80 @@ jobs:
           path: dist/*.dmg
           retention-days: 30
 
+  build-windows:
+    runs-on: windows-latest
+    shell: pwsh
+
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Garantir Inno Setup (ISCC.exe)
+        run: |
+          $iscc = Get-Command "ISCC.exe" -ErrorAction SilentlyContinue
+          if (-not $iscc) {
+            $paths = @(
+              "C:\Program Files\Inno Setup 7\ISCC.exe",
+              "C:\Program Files\Inno Setup 6\ISCC.exe",
+              "C:\Program Files (x86)\Inno Setup 7\ISCC.exe",
+              "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+            )
+            $found = $false
+            foreach ($p in $paths) {
+              if (Test-Path $p) {
+                $found = $true
+                break
+              }
+            }
+            if (-not $found) {
+              Write-Host "ISCC.exe não encontrado; instalando Inno Setup via choco..."
+              choco install innosetup -y --no-progress
+            }
+          }
+
+      - name: Criar ambiente virtual isolado
+        run: |
+          python -m venv .venv
+          echo "${GITHUB_WORKSPACE}\.venv\Scripts" >> $env:GITHUB_PATH
+
+      - name: Instalar dependências Python
+        run: |
+          .\.venv\Scripts\pip install --upgrade pip
+          .\.venv\Scripts\pip install -e '.[dev]'
+          .\.venv\Scripts\pip install pyinstaller
+
+      - name: Executar testes
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          .\.venv\Scripts\pytest.exe tests/ -m 'not slow' -q
+
+      - name: Build Windows (PyInstaller + Inno Setup)
+        run: |
+          .\packaging\build_windows.ps1
+
+      - name: Listar artifacts gerados
+        run: |
+          echo "=== Arquivos em dist/ ==="
+          ls -la dist/ 2>$null || echo "dist/ não encontrado"
+
+      - name: Upload artifact (Windows installer)
+        uses: actions/upload-artifact@v4
+        with:
+          name: tomus-windows-installer
+          path: dist/Tomus_Setup_*.exe
+          retention-days: 30
+
   release:
-    needs: build-macos
+    needs: [build-macos, build-windows]
     runs-on: ubuntu-latest
-    if: always() && startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
 
@@ -83,16 +153,24 @@ jobs:
           name: tomus-macos-dmg
           path: release-assets/macos
 
+      - name: Baixar artifacts (Windows installer)
+        uses: actions/download-artifact@v4
+        with:
+          name: tomus-windows-installer
+          path: release-assets/windows
+
       - name: Listar assets disponíveis para release
         run: |
           echo "=== Assets disponíveis ==="
           ls -la release-assets/macos/ 2>/dev/null || true
+          ls -la release-assets/windows/ 2>/dev/null || true
 
       - name: Criar ou Atualizar Release no GitHub
         uses: softprops/action-gh-release@v2
         with:
           files: |
             release-assets/macos/*.dmg
+            release-assets/windows/*.exe
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

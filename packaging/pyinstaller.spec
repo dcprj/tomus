@@ -234,8 +234,8 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleName": "Tomus",
             "CFBundleDisplayName": "Tomus — Organizador Acadêmico de PDFs",
-            "CFBundleVersion": "1.3.1",
-            "CFBundleShortVersionString": "1.3.1",
+            "CFBundleVersion": "1.3.2",
+            "CFBundleShortVersionString": "1.3.2",
             "CFBundlePackageType": "APPL",
             "CFBundleSignature": "????",
             "LSMinimumSystemVersion": "12.0.0",
