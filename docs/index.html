@@ -118,10 +118,10 @@
         </div>
       </div>
 
-      <!-- WORKBENCH MOCKUP DE ALTA FIDELIDADE -->
+      <!-- WORKBENCH MOCKUP DE ALTA FIDELIDADE (Tomus v1.3.2) -->
       <div class="mockup-window-wrap">
         <div class="mockup-window">
-          <!-- macOS Window Titlebar -->
+          <!-- Barra de título / moldura da janela -->
           <div class="window-titlebar">
             <div class="window-traffic-lights">
               <span class="traffic-dot dot-close"></span>
@@ -129,142 +129,272 @@
               <span class="traffic-dot dot-expand"></span>
             </div>
             <div class="window-title">
-              <span class="window-app-name">Tomus</span>
+              <span class="window-app-name">Tomus v1.3.2</span>
               <span class="window-sep">—</span>
               <span class="window-doc-path">~/Documentos/Acervo_Academico</span>
             </div>
             <div class="window-actions">
-              <span class="badge-status-ready">Pronto para Varredura</span>
+              <span class="badge-status-ready">Concluído · v1.3.2</span>
             </div>
           </div>
 
-          <!-- Window Inner Content (3 Painéis) -->
+          <!-- Toolbar real da v1.3.2 (2 linhas) -->
+          <div class="topbar">
+            <div class="topbar-row row-primary">
+              <div class="brand">
+                <img src="site_assets/tomus_emblem.png" alt="Tomus" class="brand-icon">
+                <span class="brand-name">Tomus</span>
+              </div>
+              <div class="path-group">
+                <label class="path-label">Origem</label>
+                <div class="path-box" title="Caminho ilustrativo neutro">~/Downloads/PDFs</div>
+                <button class="btn btn-outline" type="button">Procurar</button>
+              </div>
+              <div class="path-group">
+                <label class="path-label">Destino</label>
+                <div class="path-box" title="Caminho ilustrativo neutro">~/Documentos/Biblioteca_Tomus</div>
+                <button class="btn btn-outline" type="button">Procurar</button>
+              </div>
+              <button class="btn btn-primary" id="btnOrganizeDemo" type="button" aria-pressed="false">
+                <span id="organizeLabelDemo">Organizar Acervo</span>
+              </button>
+            </div>
+            <div class="topbar-row row-secondary">
+              <div class="control-item">
+                <label class="control-label">Modelo</label>
+                <div class="select-wrapper">
+                  <select class="select-pill" disabled>
+                    <option>Gemini (gemini-3.5-flash)</option>
+                  </select>
+                </div>
+              </div>
+              <div class="badge-pill badge-key-active" title="Chave de API configurada">
+                <span class="dot">●</span><span class="badge-text">Chave Ativa</span>
+              </div>
+              <div class="divider-vertical"></div>
+              <div class="segmented-control" role="group" aria-label="Modo de Operação">
+                <button class="segmented-btn active" type="button">Copiar</button>
+                <button class="segmented-btn" type="button">Mover</button>
+              </div>
+              <div class="checkbox-group">
+                <label class="checkbox-label"><input type="checkbox" checked><span>Recursivo</span></label>
+                <label class="checkbox-label"><input type="checkbox"><span>Simulação (Dry-Run)</span></label>
+              </div>
+              <div class="toolbar-spacer"></div>
+              <div class="action-buttons">
+                <button class="btn btn-outline btn-sm" type="button" title="Preferências">Preferências</button>
+                <button class="btn btn-outline btn-sm" type="button" title="Cache SQLite">Cache</button>
+                <button class="btn btn-outline btn-sm" type="button" title="Sobre">Sobre</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Corpo: 3 painéis (sidebar | tabela | inspetor) -->
           <div class="window-workbench">
-            <!-- Coluna 1: Árvore CAPES / Filtros -->
-            <div class="wb-sidebar">
-              <div class="wb-sidebar-header">Taxonomia CAPES/CNPq</div>
-              <ul class="wb-tree">
-                <li class="wb-tree-node active">
-                  <span class="node-arrow">▼</span>
-                  <span class="node-folder">📁</span>
-                  <span class="node-text">Ciências Humanas</span>
-                  <span class="node-count">38</span>
-                </li>
-                <ul class="wb-sub-tree">
-                  <li class="wb-sub-node active">
-                    <span class="sub-line">├─</span>
-                    <span class="node-folder">📁</span>
-                    <span class="sub-text">Filosofia</span>
-                    <span class="sub-count">19</span>
+            <!-- Coluna 1: Filtros de status + árvore CAPES/CNPq -->
+            <aside class="wb-sidebar">
+              <div class="wb-section">
+                <div class="wb-section-title">FILTROS &amp; TAXONOMIA</div>
+                <div class="wb-section-sub">VISÃO DE STATUS</div>
+                <ul class="filter-list">
+                  <li class="filter-item active" data-filter="all">
+                    <span class="filter-name">Todos os Itens</span><span class="count-pill badge-blue">104</span>
                   </li>
-                  <li class="wb-sub-node">
-                    <span class="sub-line">├─</span>
-                    <span class="node-folder">📁</span>
-                    <span class="sub-text">História</span>
-                    <span class="sub-count">11</span>
+                  <li class="filter-item" data-filter="organized">
+                    <span class="filter-name">Organizados</span><span class="count-pill badge-green">96</span>
                   </li>
-                  <li class="wb-sub-node">
-                    <span class="sub-line">└─</span>
-                    <span class="node-folder">📁</span>
-                    <span class="sub-text">Sociologia</span>
-                    <span class="sub-count">8</span>
+                  <li class="filter-item" data-filter="manual_review">
+                    <span class="filter-name">Revisão Manual</span><span class="count-pill badge-amber">4</span>
+                  </li>
+                  <li class="filter-item" data-filter="duplicate_skipped">
+                    <span class="filter-name">Duplicatas</span><span class="count-pill badge-blue">2</span>
+                  </li>
+                  <li class="filter-item" data-filter="ignored_non_pdf">
+                    <span class="filter-name">Ignorados</span><span class="count-pill badge-gray">2</span>
+                  </li>
+                  <li class="filter-item" data-filter="error">
+                    <span class="filter-name">Erros</span><span class="count-pill badge-red">0</span>
+                  </li>
+                  <li class="filter-item" data-filter="obsolete">
+                    <span class="filter-name">Obsoletos</span><span class="count-pill badge-gray">0</span>
                   </li>
                 </ul>
-                <li class="wb-tree-node">
-                  <span class="node-arrow">▶</span>
-                  <span class="node-folder">📁</span>
-                  <span class="node-text">Ciências Exatas e da Terra</span>
-                  <span class="node-count">42</span>
-                </li>
-                <li class="wb-tree-node">
-                  <span class="node-arrow">▶</span>
-                  <span class="node-folder">📁</span>
-                  <span class="node-text">Ciências Sociais Aplicadas</span>
-                  <span class="node-count">24</span>
-                </li>
-              </ul>
-            </div>
-
-            <!-- Coluna 2: Grade de Obras Classificadas -->
-            <div class="wb-main-table">
-              <div class="table-header-row">
-                <span class="th col-status">Status</span>
-                <span class="th col-title">Obra Catalogada</span>
-                <span class="th col-author">Autor(es)</span>
-                <span class="th col-year">Ano</span>
-                <span class="th col-conf">Confiança</span>
               </div>
-
-              <div class="table-body">
-                <div class="table-row selected">
-                  <span class="col-status"><span class="pill pill-success">✔ Organizado</span></span>
-                  <span class="col-title"><strong>Uma Teoria da Justiça</strong></span>
-                  <span class="col-author">RAWLS, John</span>
-                  <span class="col-year">1971</span>
-                  <span class="col-conf"><span class="conf-high">99%</span></span>
-                </div>
-                <div class="table-row">
-                  <span class="col-status"><span class="pill pill-success">✔ Organizado</span></span>
-                  <span class="col-title"><strong>Vigiar e Punir: Nascimento da Prisão</strong></span>
-                  <span class="col-author">FOUCAULT, Michel</span>
-                  <span class="col-year">1975</span>
-                  <span class="col-conf"><span class="conf-high">98%</span></span>
-                </div>
-                <div class="table-row">
-                  <span class="col-status"><span class="pill pill-success">✔ Organizado</span></span>
-                  <span class="col-title"><strong>Estrutura das Revoluções Científicas</strong></span>
-                  <span class="col-author">KUHN, Thomas S.</span>
-                  <span class="col-year">1962</span>
-                  <span class="col-conf"><span class="conf-high">97%</span></span>
-                </div>
-                <div class="table-row">
-                  <span class="col-status"><span class="pill pill-review">⚠ Revisão</span></span>
-                  <span class="col-title">Caderno de Notas de Pesquisa Sem Título</span>
-                  <span class="col-author">—</span>
-                  <span class="col-year">2019</span>
-                  <span class="col-conf"><span class="conf-low">45%</span></span>
-                </div>
+              <div class="sidebar-divider"></div>
+              <div class="wb-section taxonomy-section">
+                <div class="wb-section-title">ÁRVORE CAPES/CNPq</div>
+                <div class="wb-section-sub">Grande Área › Área Básica › Subárea</div>
+                <ul class="wb-tree">
+                  <li class="wb-tree-node active">
+                    <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                    <span class="node-text">Ciências Humanas</span><span class="node-count">30</span>
+                  </li>
+                  <ul class="wb-sub-tree">
+                    <li class="wb-sub-node active">
+                      <span class="sub-line">├</span><span class="sub-text">Filosofia</span><span class="sub-count">20</span>
+                    </li>
+                    <ul class="wb-sub-sub-tree">
+                      <li class="wb-sub-node selected">
+                        <span class="sub-line">└</span><span class="sub-text">Ética</span><span class="sub-count">12</span>
+                      </li>
+                      <li class="wb-sub-node">
+                        <span class="sub-line">└</span><span class="sub-text">Filosofia Política</span><span class="sub-count">8</span>
+                      </li>
+                    </ul>
+                    <li class="wb-sub-node">
+                      <span class="sub-line">├</span><span class="sub-text">História</span><span class="sub-count">10</span>
+                    </li>
+                  </ul>
+                  <li class="wb-tree-node">
+                    <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                    <span class="node-text">Ciências Exatas e da Terra</span><span class="node-count">42</span>
+                  </li>
+                  <li class="wb-tree-node">
+                    <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                    <span class="node-text">Ciências Sociais Aplicadas</span><span class="node-count">24</span>
+                  </li>
+                  <li class="wb-tree-node">
+                    <svg class="node-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                    <span class="node-text">Linguística, Letras e Artes</span><span class="node-count">8</span>
+                  </li>
+                </ul>
               </div>
-            </div>
+            </aside>
 
-            <!-- Coluna 3: Ficha Catalográfica e ABNT NBR 6023 -->
-            <div class="wb-inspector">
+            <!-- Coluna 2: Barra de busca + tabela de 7 colunas -->
+            <section class="table-panel card">
+              <div class="search-bar">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                <input type="text" placeholder="Filtrar por título, autor, ano, DOI, ISBN ou nome original..." autocomplete="off" spellcheck="false">
+              </div>
+              <div class="table-scroll-container">
+                <table class="doc-table">
+                  <thead>
+                    <tr>
+                      <th class="col-status">Status</th>
+                      <th class="col-title">Título / Arquivo</th>
+                      <th class="col-authors">Autor(es)</th>
+                      <th class="col-year">Ano</th>
+                      <th class="col-area">Área Básica / Subárea</th>
+                      <th class="col-type">Tipo</th>
+                      <th class="col-confidence">Confiança</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr class="selected">
+                      <td class="col-status"><span class="status-pill pill-organized">Organizado</span></td>
+                      <td class="col-title"><strong>Uma Teoria da Justiça</strong></td>
+                      <td class="col-authors">RAWLS, John</td>
+                      <td class="col-year">1971</td>
+                      <td class="col-area">Filosofia › Ética</td>
+                      <td class="col-type">Livro</td>
+                      <td class="col-confidence"><span class="conf-value">99%</span></td>
+                    </tr>
+                    <tr>
+                      <td class="col-status"><span class="status-pill pill-organized">Organizado</span></td>
+                      <td class="col-title"><strong>Vigiar e Punir: Nascimento da Prisão</strong></td>
+                      <td class="col-authors">FOUCAULT, Michel</td>
+                      <td class="col-year">1975</td>
+                      <td class="col-area">Filosofia › Filosofia Política</td>
+                      <td class="col-type">Livro</td>
+                      <td class="col-confidence"><span class="conf-value">98%</span></td>
+                    </tr>
+                    <tr>
+                      <td class="col-status"><span class="status-pill pill-organized">Organizado</span></td>
+                      <td class="col-title"><strong>Estrutura das Revoluções Científicas</strong></td>
+                      <td class="col-authors">KUHN, Thomas S.</td>
+                      <td class="col-year">1962</td>
+                      <td class="col-area">História da Ciência › Filosofia da Ciência</td>
+                      <td class="col-type">Livro</td>
+                      <td class="col-confidence"><span class="conf-value">97%</span></td>
+                    </tr>
+                    <tr>
+                      <td class="col-status"><span class="status-pill pill-review">Revisão Manual</span></td>
+                      <td class="col-title">Caderno de Notas de Pesquisa Sem Título</td>
+                      <td class="col-authors">—</td>
+                      <td class="col-year">2019</td>
+                      <td class="col-area">—</td>
+                      <td class="col-type">—</td>
+                      <td class="col-confidence"><span class="conf-value">45%</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <!-- Coluna 3: Inspetor — Ficha Catalográfica e ABNT NBR 6023 -->
+            <aside class="wb-inspector">
               <div class="inspector-card">
-                <div class="inspector-badge">Fichamento ABNT NBR 6023</div>
-                <div class="abnt-citation-box">
-                  <p class="abnt-citation">
-                    <strong>RAWLS, John</strong>. <em>Uma Teoria da Justiça</em>. Tradução de Almiro Pisetta e Lenita Maria Rímoli Esteves. São Paulo: Martins Fontes, 1997. 708 p. ISBN 85-336-0681-X.
-                  </p>
+                <!-- Tag de status -->
+                <div class="inspector-header">
+                  <span class="status-pill-lg pill-organized" id="inspStatusBadge">
+                    <span class="dot">●</span><span class="badge-text">Organizado (99% Confiança)</span>
+                  </span>
                 </div>
-                
-                <div class="inspector-meta-grid">
-                  <div class="meta-row">
-                    <span class="meta-label">Grande Área:</span>
-                    <span class="meta-val">Ciências Humanas</span>
+
+                <!-- Referência ABNT NBR 6023 (corrigida: autor normal, título em negrito, sem itálico) -->
+                <div class="insp-card abnt-card">
+                  <div class="card-title-row">
+                    <span class="card-title">REFERÊNCIA ABNT NBR 6023</span>
                   </div>
-                  <div class="meta-row">
-                    <span class="meta-label">Área Básica:</span>
-                    <span class="meta-val">Filosofia (Ética / Política)</span>
+                  <div class="abnt-quote-box">
+                    <p class="abnt-citation-text" id="inspAbntCitation">
+                      RAWLS, John. <strong>Uma Teoria da Justiça</strong>. Tradução de Almiro Pisetta e Lenita Maria Rímoli Esteves. São Paulo: Martins Fontes, 1997. 708 p. ISBN 85-336-0681-X.
+                    </p>
                   </div>
-                  <div class="meta-row">
-                    <span class="meta-label">Arquivo Físico:</span>
-                    <span class="meta-val meta-code">Rawls - Uma Teoria da Justiça - 1971.pdf</span>
-                  </div>
-                  <div class="meta-row">
-                    <span class="meta-label">Companheiro:</span>
-                    <span class="meta-val meta-code">Rawls - Uma Teoria da Justiça - 1971.md</span>
+                  <div class="card-actions">
+                    <button class="btn btn-outline btn-sm" id="demoCopyBtn" type="button">
+                      <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                      Copiar Citação ABNT
+                    </button>
+                    <button class="btn btn-outline btn-sm" id="btnOpenPdfDemo" type="button" title="Abrir PDF organizado no leitor padrão">
+                      <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                      Abrir PDF
+                    </button>
+                    <button class="btn btn-outline btn-sm" id="btnRevealDemo" type="button" title="Mostrar arquivo na pasta de destino">
+                      <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                      Mostrar na Pasta
+                    </button>
                   </div>
                 </div>
 
-                <div class="inspector-actions">
-                  <button class="btn btn-inspect-copy" id="demoCopyBtn">
-                    <svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-                    <span>Copiar Citação Formatada</span>
-                  </button>
+                <!-- Metadados e taxonomia (key/value) -->
+                <div class="insp-card">
+                  <div class="card-title-row">
+                    <span class="card-title">CLASSIFICAÇÃO CAPES/CNPq</span>
+                  </div>
+                  <dl class="kv-grid">
+                    <dt>Grande Área</dt><dd>Ciências Humanas</dd>
+                    <dt>Área Básica</dt><dd>Filosofia</dd>
+                    <dt>Subárea</dt><dd>Ética</dd>
+                    <dt>Especialidade</dt><dd>—</dd>
+                    <dt>Tipo</dt><dd>Livro</dd>
+                    <dt>Confiança</dt><dd><span class="conf-value">99%</span></dd>
+                    <dt>Arquivo PDF</dt><dd class="mono-truncate" title="Rawls - Uma Teoria da Justiça - 1971.pdf">Rawls - Uma Teoria da Justiça - 1971.pdf</dd>
+                    <dt>Companheiro .md</dt><dd class="mono-truncate" title="Rawls - Uma Teoria da Justiça - 1971.md">Rawls - Uma Teoria da Justiça - 1971.md</dd>
+                  </dl>
                 </div>
               </div>
-            </div>
+            </aside>
           </div>
+
+          <!-- Barra de status inferior -->
+          <footer class="statusbar">
+            <div class="statusbar-left">
+              <span class="metric">Estágio: Concluído</span>
+              <span class="sep">|</span>
+              <span class="metric">104 / 104 processados</span>
+              <span class="sep">|</span>
+              <span class="metric">Restam: 0</span>
+              <span class="sep">|</span>
+              <span class="metric">média por arquivo: 0,8s</span>
+              <span class="sep">|</span>
+              <span class="metric">Total estimado: —</span>
+            </div>
+            <div class="statusbar-right">
+              <span class="quality-badge badge-amber">Revisão Manual 3,8% (4 de 104)</span>
+            </div>
+          </footer>
         </div>
       </div>
 
