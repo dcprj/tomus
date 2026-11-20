@@ -3,11 +3,11 @@
 ## Baseline Atual
 
 - **Branch de referência:** `main`
-- **Commit atual da baseline:** `7e5f3c6` (merge PR #7 — CI build-windows corrigido)
+- **Commit atual da baseline:** `67c0929` (merge PR #10 — paridade macOS + Windows no README.md)
 - **Tag de release vigente:** `v1.3.2`
 - **Último release publicado:** v1.3.2 (GitHub Releases, assets `Tomus-1.3.2-macOS.dmg` e `Tomus_Setup_v1.3.2_Windows_x64.exe`)
 - **Data do alinhamento:** 2026-11-20
-- **PRs integrados:** #1 a #7
+- **PRs integrados:** #1 a #10
 
 ---
 
@@ -76,7 +76,7 @@ Exemplos: `win/build-smoke`, `mac/dmg-layout`, `feat/openalex`, `fix/cv2-openssl
 - `dist/Tomus.exe/` e `dist/*.exe` (artefatos de build, não versionados)
 - `packaging/icons/icon.ico` (ícone Windows)
 - `.github/workflows/ci.yml` (testes de PR em runner `windows-latest`)
-- `.github/workflows/release.yml` (futuro job `build-windows` do instalador, ainda ausente)
+- `.github/workflows/release.yml` (job `build-windows` do instalador integrado desde PR #5/v1.3.2: build + smoke check + upload do instalador nas tags `v*`)
 
 ### Proteção dos pins do `pyproject.toml` (marcadores PEP 508)
 
@@ -129,4 +129,36 @@ O job `build-windows` está **presente** tanto em `.github/workflows/ci.yml` (te
   3. `AutoImageProcessor` com fallback `RapidOCR`.
 - **Ordem de PRs contra `main` após merge de `docs/team-sync`:**
   `win/fix-portability-and-gui` → `win/packaging-windows` → `win/ci-build-windows`.
+
 ---
+
+## Comunicado Aberto — 2026-11-20: Solicitação de Confirmação Conjunta sobre Docling no macOS (v1.3.2 → v1.3.3)
+
+**Status:** AGUARDANDO RETORNO DO CHEFE MACOS (decisão conjunta obrigatória via AGENTS.md Seção 5.6 antes de qualquer alteração em `pyproject.toml`).
+
+### Evidência direta comprovada no Windows v1.3.2
+Arquivo de log: `%USERPROFILE%\.tomus\tomus.log` (equivalente a `~/.tomus/tomus.log` no macOS) + build-windows run 44742327545:
+
+* **5/5 PDFs escaneados falharam no Docling** em `AutoImageProcessor` (após gastar 36,25s e baixar 163,81 MB de `docling-layout-heron` da HuggingFace na primeira execução) e foram **100% processados pelo fallback RapidOCR 3.10.0 + onnxruntime**.
+* **Causa-raiz identificada pelo Córtex:** `pyinstaller-hooks-contrib` 2026.10 busca `torchvision._C` / `torchvision.image` enquanto `torchvision` 0.29.2 usa `_C_stable` / `image_stable` (deixando 0 binários nativos do torchvision no bundle) somado a imports dinâmicos do `transformers` 5.23.0 / `huggingface_hub` 1.33.0.
+
+### Indícios observados no empacotamento e CI do macOS
+Build-macos job 136308824934:
+
+* Mesmo stack instalado no build-macos: `docling` 2.151.1, `transformers` 5.23.0, `torchvision` 0.29.2, `pyinstaller` 6.22.3, `pyinstaller-hooks-contrib` 2026.10.
+* Mesmos warnings no log do build-macos: `Hidden import torchvision._C not found` e `torchvision.image not found`.
+* Em `packaging/pyinstaller.spec` (L116), `collect_all('transformers')` está restrito a `sys.platform == win32` (não roda no macOS), e `packaging/smoke_check_macos.py` não executa OCR real em runtime (testa apenas presença de dist-info e boot offscreen 5s).
+* **Observação explícita:** sem log de runtime macOS neste host Windows, a falha em runtime no macOS é apenas uma inferência de alta probabilidade, **não prova direta**.
+
+### Solicitação ao Chefe da Equipe macOS
+
+1. **Confirmar empiricamente em hardware macOS**, executando o app empacotado `Tomus.app` v1.3.2 sobre 1 PDF escaneado (sem camada de texto) e verificando `~/.tomus/tomus.log` se aparece falha do Docling / fallback para RapidOCR ou se o Docling realmente extrai com sucesso no macOS.
+2. **Informar de volta por PR / atualização neste arquivo** (ou na Issue correspondente) sua avaliação conjunta sobre:
+   * **Opção B (recomendada pelo Córtex):** adotar PyMuPDF 200 DPI + RapidOCR/ONNXRuntime direto removendo `docling`/`torch`/`torchvision`/`transformers` do `pyproject.toml` e `pyinstaller.spec` (−680 MB / −42% no disco, instaladores ~240–350 MB, CI ~8 min, OCR 100% offline desde o 1º uso e `--self-test-ocr` real nos dois smoke checks); **OU**
+   * **Opção A:** corrigir o empacotamento completo de Docling/torchvision/transformers nos dois SOs (mantendo ~1,62 GB e build ~26 min) com `--self-test-ocr` comprovando execução sem fallback.
+
+### Compromisso da Frente Windows
+Nenhuma alteração em `pyproject.toml` (especialmente `docling`) ou no motor OCR compartilhado será iniciada antes do retorno e consenso formal entre ambos os Chefes.
+
+### Nota de contexto para a futura v1.3.3 (sem iniciar execução ainda)
+O teste Windows v1.3.2 também mapeou `[BUG-WIN-PATH]` / `[BUG-PIPE-RESILIENCE]` (caminho 281 chars em Oliva et al. sem `try/except` no Stage 5), `[BUG-WIN-EXIT]` (`TomusMainWindow` sem `closeEvent`), `[BUG-ENRICH-01]` (contaminação OpenAlex em livros), `[BUG-TAX-01]`, `[BUG-TXT-01]` e `[BUG-DEDUP-MS]` já especificados e aguardando alinhamento para abrir o ciclo v1.3.3.
