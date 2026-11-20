@@ -68,7 +68,6 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
-    shell: pwsh
 
     steps:
       - name: Checkout do código
