@@ -126,7 +126,7 @@ jobs:
       - name: Listar artifacts gerados
         run: |
           echo "=== Arquivos em dist/ ==="
-          ls -la dist/ 2>$null || echo "dist/ não encontrado"
+          if (Test-Path dist) { Get-ChildItem -Force dist } else { echo "dist/ não encontrado" }
 
       - name: Upload artifact (Windows installer)
         uses: actions/upload-artifact@v4
