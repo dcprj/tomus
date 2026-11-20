@@ -886,10 +886,21 @@ code {
   margin: 0;
 }
 
-.mockup-window .wb-tree-node,
+.mockup-window .wb-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4.5px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #52525b;
+  cursor: default;
+}
+
 .mockup-window .wb-sub-node {
   display: block;
-  padding: 4.5px 7px;
+  padding: 0;
   border-radius: 5px;
   font-size: 11px;
   font-weight: 600;
@@ -905,7 +916,10 @@ code {
   border-radius: 5px;
 }
 
-.mockup-window .wb-tree-node:hover > .wb-tree-row,
+.mockup-window .wb-tree-node:hover {
+  background: #edeae0;
+}
+
 .mockup-window .wb-sub-node:hover > .wb-tree-row {
   background: #edeae0;
 }
@@ -1008,11 +1022,11 @@ code {
 .mockup-window .doc-table th {
   background: #f4f3f0;
   color: #52525b;
-  font-size: 9.5px;
+  font-size: 9px;
   font-weight: 800;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  padding: 6px 10px;
+  letter-spacing: 0.03em;
+  padding: 6px 6px;
   border-bottom: 1px solid #dcd6c8;
   white-space: nowrap;
   user-select: none;
