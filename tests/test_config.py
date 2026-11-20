@@ -7,6 +7,7 @@ respeitando a precedência das fontes de configuração.
 from __future__ import annotations
 
 import os
+import sys
 
 import pytest
 
@@ -23,7 +24,8 @@ def test_init_config_file_local_creates_tomus_toml(tmp_path, monkeypatch):
 
     # Permissão restrita (apenas o dono lê/escreve)
     mode = os.stat(target).st_mode & 0o777
-    assert mode == 0o600
+    if sys.platform != "win32":
+        assert mode == 0o600
 
     # Conteúdo contém as seções esperadas
     content = target.read_text(encoding="utf-8")

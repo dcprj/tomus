@@ -8,18 +8,18 @@ from __future__ import annotations
 
 import json
 import logging
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, QUrl, Signal, Slot
-from PySide6.QtGui import QDesktopServices, QGuiApplication
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from tomus.core.config import AppConfig
 from tomus.core.llm import _sanitize_error_message
 from tomus.core.models import FileManifestEntry, PipelineEvent, ProcessStatus
+from tomus.gui.os_integration import open_file_in_os, reveal_in_file_manager
 from tomus.gui.worker import ManualTriageService, PipelineWorker
 
 _logger = logging.getLogger("tomus.gui.bridge")
@@ -366,11 +366,9 @@ class WebBridge(QObject):
             _logger.warning("rejeitado openPdf em caminho não seguro: %s", path)
             return
         p_resolved = p.resolve()
-        if sys.platform == "darwin":
-            # Abrir 100% infalível no leitor padrão do macOS via 'open'.
-            subprocess.Popen(["open", str(p_resolved)])
-        else:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(p_resolved)))
+        # Delegar abertura ao adaptador multiplataforma (macOS/Linux/Windows),
+        # preservando a validação de existência e _is_safe_path já feitas acima.
+        open_file_in_os(p_resolved)
 
     @Slot(str, str, result=str)
     def validateProviderKey(self, provider: str, key: str) -> str:
@@ -581,12 +579,9 @@ class WebBridge(QObject):
             return
         p_resolved = p.resolve()
         target = p_resolved if p_resolved.exists() else p_resolved.parent
-        if sys.platform == "darwin":
-            subprocess.Popen(["open", "-R", str(target)])
-        elif sys.platform == "win32":
-            subprocess.run(["explorer", f"/select,{target}"])
-        else:
-            subprocess.run(["xdg-open", str(target)])
+        # Delegar revelação ao adaptador multiplataforma (macOS/Linux/Windows),
+        # preservando a validação de existência e _is_safe_path já feitas acima.
+        reveal_in_file_manager(target)
 
     @Slot(str)
     def copyToClipboard(self, text: str) -> None:

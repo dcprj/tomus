@@ -319,19 +319,19 @@ def _resolve_canonical_paths(
     if target_dir is not None:
         try:
             canonical_rel = canonical_dest.resolve().relative_to(target_dir.resolve())
-            canonical_path = str(canonical_rel)
+            canonical_path = canonical_rel.as_posix()
         except ValueError:
-            canonical_path = str(canonical_dest.resolve())
+            canonical_path = canonical_dest.resolve().as_posix()
     else:
         if not canonical_dest.is_absolute():
-            canonical_path = str(canonical_dest)
+            canonical_path = canonical_dest.as_posix()
         else:
             try:
                 canonical_rel = canonical_dest.resolve().relative_to(Path.cwd().resolve())
-                canonical_path = str(canonical_rel)
+                canonical_path = canonical_rel.as_posix()
             except ValueError:
-                canonical_path = str(canonical_dest.resolve())
-    return canonical_path, str(Path(canonical_path).with_suffix(".md"))
+                canonical_path = canonical_dest.resolve().as_posix()
+    return canonical_path, Path(canonical_path).with_suffix(".md").as_posix()
 
 
 _CAMADA_DETECCAO_PT_BR: dict[str, str] = {
