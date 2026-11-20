@@ -446,18 +446,37 @@ def test_open_file_in_os_windows(monkeypatch, tmp_path):
 
 
 def test_reveal_in_file_manager_windows(monkeypatch, tmp_path):
-    """Windows deve chamar ``explorer /select,<caminho>``."""
+    """Windows deve tentar a Shell API nativa primeiro; no fallback chama ``explorer /select, <caminho>`` com ``/select,`` separado do caminho."""
     arquivo = tmp_path / "documento.pdf"
     arquivo.write_text("x")
     chamados: list[list[str]] = []
 
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr("subprocess.Popen", lambda cmd: chamados.append(cmd))
+    # Forçar o fallback: Shell API nativa indisponível.
+    monkeypatch.setattr("tomus.gui.os_integration._reveal_windows_shell", lambda p: False)
 
     from tomus.gui.os_integration import reveal_in_file_manager
 
     reveal_in_file_manager(arquivo)
-    assert chamados == [["explorer", f"/select,{arquivo.resolve()}"]]
+    assert chamados == [["explorer", "/select,", str(arquivo.resolve())]]
+
+
+def test_reveal_in_file_manager_windows_nativo_shell_api(monkeypatch, tmp_path):
+    """Windows nativo: _reveal_windows_shell retorna True e nenhum subprocess.Popen é chamado."""
+    arquivo = tmp_path / "documento.pdf"
+    arquivo.write_text("x")
+    chamados: list[list[str]] = []
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr("subprocess.Popen", lambda cmd: chamados.append(cmd))
+    # Shell API nativa disponível: não deve cair no fallback do Popen.
+    monkeypatch.setattr("tomus.gui.os_integration._reveal_windows_shell", lambda p: True)
+
+    from tomus.gui.os_integration import reveal_in_file_manager
+
+    reveal_in_file_manager(arquivo)
+    assert chamados == []
 
 
 def test_open_file_in_os_linux(monkeypatch, tmp_path):

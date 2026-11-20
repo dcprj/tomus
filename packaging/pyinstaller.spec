@@ -65,6 +65,7 @@ hiddenimports = [
     "docling.datamodel.base_models",
     "docling.datamodel.pipeline_options",
     "docling.backend.docling_parse_backend",
+    "docling.backend.pypdfium2_backend",
     "docling.pipeline.standard_pdf_pipeline",
     "rapidocr",
     "onnxruntime",
@@ -85,6 +86,8 @@ hiddenimports = [
     "docling_ibm_models.tesseract",
     "docling_ibm_models.granitevision",
     "docling_core",
+    # Módulo do projeto com interações específicas do Windows (Prisma: _reveal_windows_shell)
+    "tomus.gui.os_integration",
 ]
 
 # Coletar submódulos e arquivos de dados do Docling e motor de OCR
@@ -107,6 +110,21 @@ for pkg in ["docling", "docling-slim", "docling_core", "docling_parse", "docling
 # Coletar binários/DLLs do onnxruntime (essenciais no Windows para RapidOCR)
 binaries = []
 binaries += collect_dynamic_libs("onnxruntime")
+
+# No Windows, coletar TODOS os arquivos do transformers para resolver
+# AutoImageProcessor no Docling (evita "No class found" / ImportError no bundle congelado)
+if sys.platform == "win32":
+    try:
+        _transformers_all = collect_all("transformers")
+        datas += _transformers_all[0] if isinstance(_transformers_all, tuple) else _transformers_all
+        binaries += _transformers_all[1] if isinstance(_transformers_all, tuple) else []
+        hiddenimports += _transformers_all[2] if isinstance(_transformers_all, tuple) else []
+    except Exception:
+        pass
+    try:
+        datas += copy_metadata("transformers")
+    except Exception:
+        pass
 
 # Coletar TODOS os arquivos do QtWebEngine (QtWebEngineProcess.app, .pak, icudtl.dat)
 # Essenciais para evitar crash SIGABRT no WebContentsAdapter em bundles congelados
@@ -185,7 +203,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=sys.platform != "win32",  # UPX desativado apenas no Windows
     console=False,  # Sem janela de terminal/prompt de comando preta
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -201,7 +219,7 @@ coll = COLLECT(
     a.zipfiles,
     a.datas,
     strip=False,
-    upx=True,
+    upx=sys.platform != "win32",  # UPX desativado apenas no Windows
     upx_exclude=[],
     name="Tomus",
 )
