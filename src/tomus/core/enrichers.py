@@ -46,7 +46,7 @@ _RETRY_ATTEMPTS = 3
 
 _USER_AGENT = f"Tomus/{__version__} (https://github.com/dcprj/tomus)"
 
-__all__ = ["select_best_external_metadata"]
+__all__ = ["enrich_document_metadata", "select_best_external_metadata"]
 
 # ---------------------------------------------------------------------------
 # Normalização e helpers de correspondência textual (Item 16, BUG-ENRICH-01)
@@ -71,24 +71,44 @@ _ARTICLE_DOCUMENT_TYPES = {
 }
 
 
+def _strip_accents(text: str) -> str:
+    """Remover acentos via NFKD (decompõe e descarta marcas combinantes)."""
+    if not text:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in nfkd if not unicodedata.combining(ch))
+
+
 def _normalize_title_for_match(title: str) -> str:
     """Normalizar título para comparação (NFKD sem acentos, minúsculas, alfanumérico/espaços)."""
     if not title:
         return ""
-    nfkd = unicodedata.normalize("NFKD", title)
-    stripped = "".join(ch for ch in nfkd if not unicodedata.combining(ch))
+    stripped = _strip_accents(title)
     lowered = stripped.lower()
     alnum = re.sub(r"[^a-z0-9\s]+", " ", lowered)
     return re.sub(r"\s+", " ", alnum).strip()
 
 
 def _author_surnames(authors: Optional[list[str]]) -> set[str]:
-    """Extrair sobrenomes de uma lista de autores."""
+    """Extrair sobrenomes de uma lista de autores.
+
+    Suporta ``'Nome Sobrenome'`` (ultimo token) e ``'Sobrenome, Nome'``
+    (ultimo token ANTES da virgula), normalizado sem acento (NFKD) em
+    lowercase. Assim ``'Cohen, Rodrigo'`` do PDF casa com
+    ``'Rodrigo Cohen'`` das APIs externas.
+    """
     surnames: set[str] = set()
     for author in (authors or []):
-        parts = str(author).strip().split()
-        if parts:
-            surnames.add(parts[-1].lower())
+        raw = str(author).strip()
+        if not raw:
+            continue
+        if "," in raw:
+            surname_part = raw.split(",", 1)[0].strip()
+        else:
+            surname_part = raw.split()[-1]
+        surname = _strip_accents(surname_part).lower()
+        if surname:
+            surnames.add(surname)
     return surnames
 
 
@@ -542,7 +562,7 @@ def select_best_external_metadata(
                     "reference-book",
                 ):
                     base += 25.0
-                if m.source == "openalex" and dt in ("article", "journal-article"):
+                if m.source == "openalex" and dt in _ARTICLE_DOCUMENT_TYPES:
                     base -= 40.0
             if looks_like_article and m.source == "openalex":
                 base += 25.0
