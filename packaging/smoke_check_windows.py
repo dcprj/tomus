@@ -92,26 +92,29 @@ def check_heavy_ml_deps_absent() -> None:
 
     encontrados: list[str] = []
 
-    # Verificar dist-info e pastas/arquivos em DIST_DIR
-    for dep in _HEAVY_ML_DEPS:
-        # dist-info: torch-*.dist-info, transformers-*-*.dist-info, etc.
-        matches = list(DIST_DIR.rglob(f"{dep}-*-*.dist-info")) + list(
-            DIST_DIR.rglob(f"{dep}*.dist-info")
-        )
-        for m in matches:
-            encontrados.append(str(m.relative_to(DIST_DIR)))
-
-        # Pastas/arquivos diretos (ex: torch/, transformers/, docling/)
-        for pat in (f"{dep}", f"{dep}*"):
-            for m in DIST_DIR.rglob(pat):
+    # 1. Pastas/arquivos raiz do pacote: checar apenas base / dep
+    #    para base em (DIST_DIR, DIST_DIR / '_internal').
+    for base in (DIST_DIR, DIST_DIR / "_internal"):
+        for dep in _HEAVY_ML_DEPS:
+            m = base / dep
+            if m.exists():
                 rel = str(m.relative_to(DIST_DIR))
                 if rel not in encontrados:
                     encontrados.append(rel)
 
-    # Verificar no PYZ (chaves que comecem com o nome da dep)
+    # 2. Metadados dist-info: iterar *.dist-info na raiz e checar o nome base.
+    for m in DIST_DIR.rglob("*.dist-info"):
+        base_name = m.name.split("-")[0].lower().replace("-", "_")
+        if base_name in _HEAVY_ML_DEPS:
+            rel = str(m.relative_to(DIST_DIR))
+            if rel not in encontrados:
+                encontrados.append(rel)
+
+    # 3. No PYZ: checar apenas o nome de nível raiz da chave.
     for dep in _HEAVY_ML_DEPS:
         for key in pyz_keys:
-            if key == dep or key.startswith(dep + ".") or key.startswith(dep + "/"):
+            root = key.split(".")[0].split("/")[0]
+            if root == dep:
                 if key not in encontrados:
                     encontrados.append(key)
 
