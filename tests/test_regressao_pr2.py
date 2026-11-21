@@ -599,11 +599,11 @@ def test_dedup01_colecao_micro_sistemas_edicoes_n1_n2_n3_permanecem_canonicas(tm
 
 
 def test_dedup01_livro_edicao_2_nao_eh_fasciculo_de_periodico(tmp_path: Path):
-    """Livro nao serial ('Introducao a Psicologia Cognitiva (ed. 2)') continua nao sendo tratado como fasciculo de periodico."""
+    """Livro nao serial ('Introducao a Psicologia Cognitiva') com (ed. 2) no arquivo/filename continua nao sendo tratado como fasciculo de periodico."""
     organizer = LibraryOrganizer(tmp_path / "dst", file_operation="copy", dry_run=False)
 
     p1 = _fake_pdf(tmp_path / "src", "obra1.pdf", b"conteudo edicao 1")
-    p2 = _fake_pdf(tmp_path / "src", "obra2.pdf", b"conteudo edicao 2")
+    p2 = _fake_pdf(tmp_path / "src", "livro (ed. 2).pdf", b"conteudo edicao 2")
 
     e1 = organizer.add_organized(
         source_path=p1, grande_area="Ciências Humanas", area_basica="Psicologia",
@@ -615,7 +615,7 @@ def test_dedup01_livro_edicao_2_nao_eh_fasciculo_de_periodico(tmp_path: Path):
         source_path=p2, grande_area="Ciências Humanas", area_basica="Psicologia",
         subarea="Geral", especialidade="Geral", tipo="Livro",
         filename="Introducao a Psicologia Cognitiva (ed. 2) - 2021.pdf", sha256=_sha_of(p2),
-        classification={"authors": ["Autor, Um"], "title": "Introducao a Psicologia Cognitiva (ed. 2)", "year": 2021, "edition": "2. ed."},
+        classification={"authors": ["Autor, Um"], "title": "Introducao a Psicologia Cognitiva", "year": 2021, "edition": "2. ed."},
     )
 
     # Diferentes edicoes de um livro nao serial: a mais recente (2021) substitui,
