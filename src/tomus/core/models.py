@@ -76,6 +76,10 @@ class ExternalMetadata(BaseModel):
     document_type_hint: Optional[str] = None
     concepts: list[str] = Field(default_factory=list)
     match_score: float = 0.0
+    match_origin: str = Field(
+        default="text_search",
+        description="Origem do casamento externo: exact_doi, exact_isbn ou text_search",
+    )
 
 
 class LLMClassificationOutput(BaseModel):

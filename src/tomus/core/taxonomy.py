@@ -89,6 +89,27 @@ def _build_area_to_grande_area() -> dict[str, str]:
     return mapping
 
 
+def _build_subarea_to_owner_areas() -> dict[str, set[str]]:
+    """Mapear cada subárea controlada (exceto 'Geral') para suas Áreas Básicas proprietárias.
+
+    Lê ``taxonomy_capes.json['subareas']`` e devolve, por subárea controlada, o
+    conjunto de Áreas Básicas às quais ela pertence oficialmente. Usado para
+    rebaixar para ``'Geral'`` subáreas que não fazem sentido na Área Básica
+    informada (ex.: subárea de Psicologia usada em Administração).
+    """
+    owners: dict[str, set[str]] = defaultdict(set)
+    for area_basica, lista in _load_taxonomy().get("subareas", {}).items():
+        for subarea in lista:
+            if subarea == "Geral":
+                continue
+            owners[subarea].add(area_basica)
+    return dict(owners)
+
+
+# Subáreas controladas -> conjunto de Áreas Básicas oficiais proprietárias.
+SUBAREA_OWNERS: dict[str, set[str]] = _build_subarea_to_owner_areas()
+
+
 # Tabela de aliases de Áreas Básicas (rótulo dobrado -> rótulo canônico).
 # Permite resolver variações de acento, caixa e grafia informadas pelo LLM ou
 # pelo usuário, ex.: "ciencia da computacao" -> "Computação".
@@ -421,8 +442,23 @@ def normalize_and_resolve_taxonomy(
 
     # 4. Vocabulário controlado para Áreas Básicas mapeadas em taxonomy_capes.json.
     vocab = get_subareas(area_basica)
-    if vocab and subarea not in vocab:
-        subarea = "Geral"
+    if vocab:
+        if subarea not in vocab:
+            subarea = "Geral"
+    else:
+        # Área Básica sem vocabulário controlado de subáreas (ex.: Administração,
+        # Direito, Computação). Rebaixa para 'Geral' subáreas que pertencem
+        # exclusivamente a outra Área Básica ou que coincidem com outra Área
+        # Básica oficial.
+        if subarea != "Geral":
+            owners = SUBAREA_OWNERS.get(subarea)
+            if owners and area_basica not in owners:
+                subarea = "Geral"
+            else:
+                _, basica_por_dobra = _index_areas_basicas()
+                dono = basica_por_dobra.get(_fold_tax(subarea))
+                if dono is not None and dono[1] != area_basica:
+                    subarea = "Geral"
 
     return {
         "grande_area": grande_area,
@@ -485,4 +521,9 @@ def format_taxonomy_for_prompt() -> str:
         lines.append("Vocabulário controlado de Subáreas (use exatamente um destes valores quando aplicável):")
         for area_basica, lista in subareas.items():
             lines.append(f"- {area_basica}: {'; '.join(lista)}")
+    lines.append("")
+    lines.append("Nota: subáreas controladas de Psicologia (ex: 'Psicanálise', 'Avaliação Psicológica', "
+                 "'Psicologia Organizacional e do Trabalho') e de Medicina (ex: 'Psiquiatria', 'Neurologia', "
+                 "'Neurociências') são válidas somente dentro de suas próprias Áreas Básicas. Em qualquer outra "
+                 "Área Básica (ex.: Administração, Direito, Computação) use 'Geral'.")
     return "\n".join(lines)
