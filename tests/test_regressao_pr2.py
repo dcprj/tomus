@@ -112,7 +112,7 @@ def test_win_path_colisao_respeita_teto(tmp_path: Path):
         classification={"authors": ["Autor, Um"], "title": "T", "year": 2020},
     )
     # Mesmo nome base -> colisao resolvida com sufixo ' (2)' dentro do teto.
-    full2 = str(dest_dir / Path(e2.destination_path).name) if e2.destination_path else ""
+    full2 = e2.destination_path or ""
     assert full2 == "" or len(full2) <= WIN_SAFE_FULL_PATH_CHARS, f"colisao estourou teto: {len(full2)}"
     # Validar _resolve_collision diretamente com o nome base colidido.
     planned = {dest_dir / nome_base: _sha_of(p1)}
@@ -341,11 +341,13 @@ def test_tomusmainwindow_closeevent_desmonta_sem_excecao_offscreen():
     # closeEvent deve executar inteiro sem excecao, mesmo com web_page/web_view
     # possivelmente None em ambiente headless/offscreen sem Chromium real.
     try:
-        win.closeEvent(SimpleNamespace())
+        win.close()
     except Exception as exc:
         pytest.fail(f"closeEvent levantou excecao: {exc}")
     finally:
         win.deleteLater()
+        app.processEvents()
+        app.processEvents()
 
 
 # =========================================================================== #
@@ -597,7 +599,7 @@ def test_dedup01_colecao_micro_sistemas_edicoes_n1_n2_n3_permanecem_canonicas(tm
 
 
 def test_dedup01_livro_edicao_2_nao_eh_fasciculo_de_periodico(tmp_path: Path):
-    """Livro nao serial ('Obra (ed. 2)') continua nao sendo tratado como fasciculo de periodico."""
+    """Livro nao serial ('Introducao a Psicologia Cognitiva (ed. 2)') continua nao sendo tratado como fasciculo de periodico."""
     organizer = LibraryOrganizer(tmp_path / "dst", file_operation="copy", dry_run=False)
 
     p1 = _fake_pdf(tmp_path / "src", "obra1.pdf", b"conteudo edicao 1")
@@ -606,14 +608,14 @@ def test_dedup01_livro_edicao_2_nao_eh_fasciculo_de_periodico(tmp_path: Path):
     e1 = organizer.add_organized(
         source_path=p1, grande_area="Ciências Humanas", area_basica="Psicologia",
         subarea="Geral", especialidade="Geral", tipo="Livro",
-        filename="Obra - 2020.pdf", sha256=_sha_of(p1),
-        classification={"authors": ["Autor, Um"], "title": "Obra", "year": 2020, "edition": "1. ed."},
+        filename="Introducao a Psicologia Cognitiva - 2020.pdf", sha256=_sha_of(p1),
+        classification={"authors": ["Autor, Um"], "title": "Introducao a Psicologia Cognitiva", "year": 2020, "edition": "1. ed."},
     )
     e2 = organizer.add_organized(
         source_path=p2, grande_area="Ciências Humanas", area_basica="Psicologia",
         subarea="Geral", especialidade="Geral", tipo="Livro",
-        filename="Obra (ed. 2) - 2021.pdf", sha256=_sha_of(p2),
-        classification={"authors": ["Autor, Um"], "title": "Obra", "year": 2021, "edition": "2. ed."},
+        filename="Introducao a Psicologia Cognitiva (ed. 2) - 2021.pdf", sha256=_sha_of(p2),
+        classification={"authors": ["Autor, Um"], "title": "Introducao a Psicologia Cognitiva (ed. 2)", "year": 2021, "edition": "2. ed."},
     )
 
     # Diferentes edicoes de um livro nao serial: a mais recente (2021) substitui,
