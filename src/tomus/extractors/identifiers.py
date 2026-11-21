@@ -25,7 +25,12 @@ DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b")
 _TERMINAL_PUNCT = ".,;:!?)]}»’\"'"
 
 # Identificadores contaminantes a serem filtrados (Camada 2 / Sanidade Bibliográfica).
-ISBN_BLACKLIST = {"9786557826669"}
+ISBN_BLACKLIST = {
+    "9786557826669",
+    "9780123456786",
+    "9780000000002",
+    "9781234567897",
+}
 DOI_BLACKLIST = {"10.1590/1980-53148425", "10.56083/rcv5n6-015"}
 
 
@@ -38,10 +43,15 @@ def _clean_doi(candidate: str) -> str:
 
 
 def extract_doi(text: str) -> Optional[str]:
-    """Extrair o primeiro DOI válido de ``text``, ou ``None``."""
+    """Extrair o primeiro DOI válido de ``text``, ou ``None``.
+
+    Valida cada candidato com ``normalize_doi`` dentro do loop de extração:
+    se o primeiro candidato estiver na blacklist ou for inválido, continua
+    buscando os demais candidatos em vez de retornar um placeholder bloqueado.
+    """
     for match in DOI_RE.finditer(text):
         candidate = _clean_doi(match.group(0))
-        if candidate:
+        if candidate and normalize_doi(candidate) is not None:
             return candidate
     return None
 
@@ -56,7 +66,7 @@ def extract_isbn(text: str) -> Optional[str]:
     # sufixo 'X' (dígito verificador do ISBN-10).
     for match in re.finditer(r"\b[\d][\d\- ]{8,}[\dXx]\b", text):
         candidate = match.group(0).replace("-", "").replace(" ", "")
-        if _isbn.is_valid(candidate):
+        if normalize_isbn(candidate) is not None:
             return candidate
     return None
 
@@ -79,13 +89,29 @@ CIP_MARKERS = (
 )
 
 
+def _is_trivial_isbn_body(s13: str) -> bool:
+    """Rejeitar corpos triviais de ISBN-13.
+
+    Retorna True quando os 9 dígitos do corpo (``s13[3:12]``) são compostos
+    por um único dígito repetido (ex.: ``000000000``) ou pelas sequências
+    exatas ``012345678`` / ``123456789``.
+    """
+    body = s13[3:12]
+    if len(body) == 9 and len(set(body)) == 1:
+        return True
+    if body in ("012345678", "123456789"):
+        return True
+    return False
+
+
 def normalize_isbn(raw: Optional[str]) -> Optional[str]:
     """Normalizar ISBN para ISBN-13 canônico.
 
     Remove caracteres fora de ``[0-9Xx]``, valida o dígito verificador com
     ``stdnum.isbn.is_valid``, converte ISBN-10 para ISBN-13 via
     ``stdnum.isbn.to_isbn13(stdnum.isbn.compact(s))`` e filtra
-    ``ISBN_BLACKLIST``. Retorna ``None`` quando inválido ou listrado.
+    ``ISBN_BLACKLIST``. Rejeita ainda corpos triviais (dígito repetido ou
+    sequências exatas). Retorna ``None`` quando inválido ou listrado.
     """
     if not raw:
         return None
@@ -94,6 +120,8 @@ def normalize_isbn(raw: Optional[str]) -> Optional[str]:
         return None
     s13 = _isbn.to_isbn13(_isbn.compact(s))
     if s13 in ISBN_BLACKLIST:
+        return None
+    if _is_trivial_isbn_body(s13):
         return None
     return s13
 
