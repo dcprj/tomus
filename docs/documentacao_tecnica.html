@@ -247,7 +247,7 @@
       <article class="doc-content">
         <h2>1. Visão Geral e Filosofia Arquitetural</h2>
         <p>O <strong>Tomus</strong> é uma aplicação desktop de alta fidelidade desenvolvida para <strong>macOS e Windows</strong> (suporte multiplataforma em camadas desacopladas), concebida para sanar o problema da entropia documental em acervos científicos e acadêmicos.</p>
-        <p>A grande maioria dos pesquisadores e instituições acumula centenas de arquivos PDF com denominações crípticas (e.g. <code>download.pdf</code>, <code>artigo_final_v2.pdf</code>). O Tomus atua como uma esteira autônoma de engenharia da informação, combinando extração textual híbrida (PyMuPDF + OCR local via Docling/RapidOCR/ONNXRuntime), resolução de identificadores bibliográficos (DOI e ISBN), taxonomia oficial de áreas do conhecimento <strong>CAPES/CNPq</strong> e modelos de linguagem com pool multi-chave e fallback em cascata.</p>
+        <p>A grande maioria dos pesquisadores e instituições acumula centenas de arquivos PDF com denominações crípticas (e.g. <code>download.pdf</code>, <code>artigo_final_v2.pdf</code>). O Tomus atua como uma esteira autônoma de engenharia da informação, combinando extração textual híbrida (PyMuPDF + OCR local via RapidOCR/ONNXRuntime), resolução de identificadores bibliográficos (DOI e ISBN), taxonomia oficial de áreas do conhecimento <strong>CAPES/CNPq</strong> e modelos de linguagem com pool multi-chave e fallback em cascata.</p>
 
         <div class="doc-callout">
           <strong>Princípios Inegociáveis do Tomus:</strong>
@@ -301,8 +301,8 @@
             </tr>
             <tr>
               <td><strong>OCR Local (multiplataforma)</strong></td>
-              <td><code>Docling</code> + <code>RapidOCR</code> + <code>ONNXRuntime</code></td>
-              <td>OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2); <code>PyPdfiumDocumentBackend</code> no Windows, padrão do Docling no macOS; fallback seguro sem quebrar o processo.</td>
+              <td><code>RapidOCR</code> + <code>ONNXRuntime</code></td>
+              <td>OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2); fallback seguro sem quebrar o processo.</td>
             </tr>
             <tr>
               <td><strong>Integração com SO</strong></td>
@@ -354,7 +354,7 @@ flowchart TD
     subgraph L3 ["3. Camada de Ingestão, Visão & Inteligência Artificial"]
         direction LR
         Extract["PyMuPDF<br><b>(Texto Vetorial)</b>"]
-        Vision["OCR Local (Docling + RapidOCR)<br><b>(macOS + Windows)</b>"]
+        Vision["OCR Local (RapidOCR/ONNXRuntime)<br><b>(macOS + Windows)</b>"]
         ID["Identificadores<br><b>(DOI & ISBN)</b>"]
         LLM["Motor Multi-Provedor<br><b>(Pool & Fallback)</b>"]
         Extract ~~~ Vision
@@ -379,7 +379,7 @@ flowchart TD
         <ol>
           <li><strong>Varredura e Detecção de Extensões:</strong> O scanner descobre PDFs e ignora arquivos espúrios como <code>.webloc</code> ou <code>.DS_Store</code> (macOS) e <code>Thumbs.db</code> (Windows).</li>
           <li><strong>Extração de Texto Vetorial:</strong> Amostragem das primeiras páginas via PyMuPDF.</li>
-          <li><strong>OCR Local Multiplataforma:</strong> Se a amostragem indicar ausência de camada de texto (documento escaneado), o Tomus aciona o OCR local via Docling + RapidOCR/ONNXRuntime (<code>PyPdfiumDocumentBackend</code> no Windows, padrão do Docling no macOS).</li>
+          <li><strong>OCR Local Multiplataforma:</strong> Se a amostragem indicar ausência de camada de texto (documento escaneado), o Tomus aciona o OCR local via RapidOCR/ONNXRuntime.</li>
           <li><strong>Radar de Identificadores (DOI / ISBN):</strong> Busca por expressões regulares de DOI e ISBN com validação de checksum e consulta automática às APIs oficiais (CrossRef e Google Books).</li>
           <li><strong>Consulta ao Cache SHA-256:</strong> Se o hash do texto já foi classificado anteriormente, o resultado é recuperado em menos de 1 milissegundo.</li>
           <li><strong>Inferência Semântica via LLM:</strong> Se não estiver em cache, o Tomus consulta o pool de modelos de inteligência artificial com injeção estruturada da taxonomia CAPES.</li>
@@ -425,8 +425,8 @@ flowchart TD
           <li><strong>DeepSeek:</strong> Modelo <code>deepseek-flash</code> (Excelente custo-benefício e rapidez).</li>
         </ul>
 
-        <h3>5.5 OCR de Layout (Docling / RapidOCR)</h3>
-        <p><strong>OCR de Layout:</strong> O Tomus utiliza <code>opencv-python-headless</code> (&lt; 4.11) com <code>cv2.setNumThreads(0)</code> e <code>OPENCV_FOR_THREADS_NUM=1</code> para evitar contenção de threads com onnxruntime durante o OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2 páginas), com fallback seguro que retorna texto vazio sem quebrar o processo. No Windows, o Docling usa o backend <code>PyPdfiumDocumentBackend</code> para evitar a access violation intermitente do parser nativo docling-parse; no macOS mantém o comportamento padrão do Docling.</p>
+        <h3>5.5 OCR de Layout (RapidOCR/ONNXRuntime)</h3>
+        <p><strong>OCR de Layout:</strong> O Tomus utiliza <code>opencv-python-headless</code> (&lt; 4.11) com <code>cv2.setNumThreads(0)</code> e <code>OPENCV_FOR_THREADS_NUM=1</code> para evitar contenção de threads com onnxruntime durante o OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2 páginas), com fallback seguro que retorna texto vazio sem quebrar o processo.</p>
 
         <h2>6. ABNT NBR 6023 Normativa</h2>
         <p>A formatação de referências do Tomus segue com exatidão a norma brasileira <strong>ABNT NBR 6023</strong>:</p>

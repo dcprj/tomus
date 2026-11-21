@@ -15,7 +15,7 @@ O **Tomus** é uma aplicação desktop de alta fidelidade desenvolvida para **ma
 A grande maioria dos pesquisadores, professores e instituições acumula centenas ou milhares de arquivos em formato PDF com denominações crípticas (e.g., `download (1).pdf`, `artigo_final_v3.pdf`, `1-s2.0-S0140673620301835-main.pdf`), espalhados em pastas sem hierarquia ontológica.
 
 O Tomus atua como uma esteira autônoma e determinística de engenharia da informação, combinando:
-1. **Extração de Texto Híbrida e Local:** Camada textual embutida (PyMuPDF) aliada ao OCR seletivo local multiplataforma via **Docling + RapidOCR + ONNXRuntime** (backend `PyPdfiumDocumentBackend` no Windows, padrão do Docling no macOS), com fallback seguro que retorna texto vazio sem quebrar o processo.
+1. **Extração de Texto Híbrida e Local:** Camada textual embutida (PyMuPDF) aliada ao OCR seletivo local multiplataforma via **RapidOCR/ONNXRuntime**, com fallback seguro que retorna texto vazio sem quebrar o processo.
 2. **Identificadores Persistentes da Ciência:** Resolução exata de metadados via regex e APIs REST de identificadores globais (DOI via CrossRef e ISBN-10/ISBN-13 com validação de checksum via Google Books API).
 3. **Classificação Ontológica Oficial:** Mapeamento em 4 níveis da tabela de áreas do conhecimento **CAPES/CNPq** (*Grande Área › Área Básica › Subárea › Especialidade*).
 4. **Inteligência Artificial Local-First (BYOK):** Inferência semântica com múltiplos provedores em nuvem via TLS direto (*Bring Your Own Key*), operando com pool rotativo multi-chave, circuit breaker para erro 429 (*Too Many Requests*) e cascata automática de fallback.
@@ -58,8 +58,8 @@ O projeto adota uma stack moderna, minimalista e pragmática, priorizando robust
 │   Pool Multi-Chave & Circuit Breaker │ Rotação Automática de Fallback │
 ├────────────────────────────────────────────────────────────────────────┤
 │                 Camada de Extração Textual & Visão                     │
-│   PyMuPDF (fitz) │ Docling │ RapidOCR │ ONNXRuntime                   │
-│   PyPdfiumDocumentBackend (Windows) │ Identificadores (DOI / ISBN)   │
+│   PyMuPDF (fitz) │ RapidOCR │ ONNXRuntime                   │
+│   Identificadores (DOI / ISBN)                            │
 ├────────────────────────────────────────────────────────────────────────┤
 │                  Camada de Armazenamento e Sistema Operacional         │
 │   pathlib │ shutil (Atomic I/O) │ os_integration.py (open / os.startfile│
@@ -77,7 +77,7 @@ O projeto adota uma stack moderna, minimalista e pragmática, priorizando robust
 | **Ponte IPC (Qt-JS)** | `PySide6.QtWebChannel` | Canal de transporte seguro entre Python e Web | Comunicação assíncrona bidirecional tipada via JSON, eliminando servidores HTTP locais (`localhost`) e vetores de ataque CSRF. |
 | **Validação de Dados** | `pydantic` (v2.10+) | Modelagem estrita de metadados e schemas LLM | Validação de alta velocidade escrita em Rust, serialização segura e sanitização de respostas de modelos de linguagem. |
 | **Extração de PDF** | `PyMuPDF` (`fitz` 1.25+) | Parser de documento, texto vetorial e imagens | A mais rápida biblioteca de processamento de PDFs para Python; processa centenas de páginas por segundo sem vazamento de memória. |
-| **OCR de Layout (Docling / RapidOCR)** | `docling` + `opencv-python-headless` (< 4.11), `rapidocr` e `onnxruntime` | OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2) | No Windows usa `PyPdfiumDocumentBackend` do docling (evita access violation intermitente do parser nativo docling-parse); `cv2.setNumThreads(0)` e `OPENCV_FOR_THREADS_NUM=1` evitam contenção de threads com onnxruntime em bundles congelados PyInstaller; fallback seguro retorna texto vazio sem quebrar o processo. |
+| **OCR de Layout (RapidOCR/ONNXRuntime)** | `opencv-python-headless` (< 4.11), `rapidocr` e `onnxruntime` | OCR seletivo de páginas escaneadas (primeiras 8 e últimas 2) | `cv2.setNumThreads(0)` e `OPENCV_FOR_THREADS_NUM=1` evitam contenção de threads com onnxruntime em bundles congelados PyInstaller; fallback seguro retorna texto vazio sem quebrar o processo. |
 | **Cliente HTTP / APIs**| `httpx` (0.28+) com HTTP/2 e TLS 1.3 | Comunicação com provedores de IA e metadados | Suporte nativo a chamadas síncronas e assíncronas, pools de conexão e controle fino de timeouts para evitar travamentos de rede. |
 | **Persistência de Cache**| `sqlite3` (embutido na stdlib) | Cache local de extração e classificação | Banco relacional serverless, ACID, sem dependências externas, garantindo recuperação instantânea de sessões e integridade de dados. |
 | **CLI & Terminal** | `typer` + `rich` | Interface de linha de comando para automação | Ponto de entrada `tomus = "tomus.cli.main:app"` em `pyproject.toml`; execução headless, pipelines de laboratório e automações via shell script/PowerShell com logs coloridos. |
@@ -106,7 +106,8 @@ src/tomus/
 │   └── cache.py         # Cache de extração e classificação em SQLite
 ├── extractors/          # Motores de Ingestão de Conteúdo e Visão
 │   ├── text_extractor.py# Extração vetorial inteligente via PyMuPDF
-│   ├── ocr_docling.py   # OCR seletivo via Docling + RapidOCR/ONNXRuntime (PyPdfiumDocumentBackend no Windows)
+│   ├── ocr.py           # Motor OCR RapidOCR/ONNXRuntime
+│   ├── ocr_docling.py   # Fachada de compatibilidade (mantém DocumentConverter legado)
 │   └── identifiers.py   # Varredura e resolução de DOI (CrossRef) e ISBN (Google Books)
 ├── storage/             # Operações de Disco, Integridade e Companions
 │   ├── organizer.py     # Execução atômica, LibraryIndex 3 camadas, duplicatas/ e obsoletos/
@@ -149,7 +150,7 @@ sequenceDiagram
     alt PDF tem camada de texto legível
         Extract-->>Pipe: Amostra Textual Obtida
     else PDF é Imagem Escaneada
-        Extract->>Extract: Executar OCR Local (Docling + RapidOCR/ONNXRuntime)
+        Extract->>Extract: Executar OCR Local (RapidOCR/ONNXRuntime)
         Extract-->>Pipe: Texto Recuperado via OCR
     end
 

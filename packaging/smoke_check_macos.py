@@ -5,7 +5,7 @@ Valida:
   1. pyi_rth_pkgres ausente do CArchive do executável
   2. pkg_resources ausente do PYZ (quando existe como arquivo separado)
   3. libavcodec presente em Contents/Frameworks
-  4. docling_slim dist-info coletado no bundle
+  4. Self-test OCR do executável Tomus (--self-test-ocr) com exit code 0
   5. Boot offscreen do executável Tomus por 5s (sem Traceback/ImportError/AttributeError/SIGABRT)
 """
 import os
@@ -59,13 +59,34 @@ def check_libavcodec_present() -> None:
     print(f"OK: libavcodec presente em Contents/Frameworks ({matches[0].name})")
 
 
-def check_docling_slim_present() -> None:
-    """docling_slim dist-info deve estar coletado no bundle."""
-    matches = list(APP_PATH.rglob("docling_slim*-*.dist-info"))
-    if not matches:
-        print("FALHA: docling_slim dist-info não encontrado no bundle")
+def check_self_test_ocr() -> None:
+    """Executável Tomus deve passar no self-test OCR (--self-test-ocr) com exit code 0."""
+    p = subprocess.Popen(
+        [str(EXE_PATH), "--self-test-ocr"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        out, _ = p.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        out, _ = p.communicate()
+        print("FALHA: executável encerrou antes de 30s no self-test OCR")
+        print(out)
         sys.exit(1)
-    print(f"OK: docling_slim dist-info presente no bundle ({matches[0].relative_to(APP_PATH)})")
+
+    if p.returncode != 0:
+        print(f"FALHA: executável saiu com código {p.returncode} no self-test OCR")
+        print(out)
+        sys.exit(1)
+
+    if "OK:" not in out and not ("TOMUS" in out and "2026" in out):
+        print("FALHA: stdout não contém 'OK:' nem 'TOMUS ... 2026' no self-test OCR")
+        print(out)
+        sys.exit(1)
+
+    print("OK: self-test OCR passou com exit code 0 e saída contendo 'OK:' ou 'TOMUS ... 2026'")
 
 
 def check_boot_offscreen_5s() -> None:
@@ -109,8 +130,8 @@ def main() -> None:
     print("=== Smoke check: libavcodec em Contents/Frameworks ===")
     check_libavcodec_present()
 
-    print("=== Smoke check: docling_slim dist-info coletado ===")
-    check_docling_slim_present()
+    print("=== Smoke check: self-test OCR do executável Tomus ===")
+    check_self_test_ocr()
 
     print("=== Smoke check: boot offscreen do executável Tomus por 5s ===")
     check_boot_offscreen_5s()

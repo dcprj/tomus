@@ -1,7 +1,7 @@
 """Extração de conteúdo de PDFs do Tomus (Itens 12 a 15).
 
 Expõe a função coordenadora :func:`extract_document_content` que decide entre
-texto nativo (PyMuPDF) e fallback de OCR (Docling) e extrai identificadores
+texto nativo (PyMuPDF) e fallback de OCR (RapidOCR) e extrai identificadores
 (DOI, ISBN e Ficha Catalográfica CIP).
 """
 
@@ -10,7 +10,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from .native_pdf import extract_native_pdf
-from .ocr_docling import ocr_scanned_pages
+from .ocr import ocr_scanned_pages
+from .ocr_docling import ocr_scanned_pages as ocr_scanned_pages_docling  # noqa: F401  (fachada mantida por compatibilidade)
 from .identifiers import extract_identifiers, detect_cip_page
 
 
@@ -20,7 +21,7 @@ def extract_document_content(path: Path, sha256: str) -> "ExtractedDocument":
     Coordena:
       1. extração nativa via PyMuPDF (metadados + texto das primeiras e últimas
          páginas) e decisão de necessidade de OCR;
-      2. fallback de OCR seletivo via Docling quando o documento é escaneado;
+      2. fallback de OCR seletivo via RapidOCR quando o documento é escaneado;
       3. extração de identificadores (DOI, ISBN, detecção de CIP) sobre o texto
          amostrado.
     """

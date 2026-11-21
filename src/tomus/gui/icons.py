@@ -165,7 +165,7 @@ _SVG: Final[dict[str, str]] = {
         '<path d="M20 20l1.5 1.5"/>'
         "</svg>"
     ),
-    # scan-ocr: Moldura de foco com linhas de texto internas (OCR Docling).
+    # scan-ocr: Moldura de foco com linhas de texto internas (OCR RapidOCR).
     "scan-ocr": (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" '
         'fill="none" stroke="currentColor" stroke-width="1.5" '

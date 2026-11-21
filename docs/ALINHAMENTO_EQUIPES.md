@@ -162,3 +162,16 @@ Nenhuma alteração em `pyproject.toml` (especialmente `docling`) ou no motor OC
 
 ### Nota de contexto para a futura v1.3.3 (sem iniciar execução ainda)
 O teste Windows v1.3.2 também mapeou `[BUG-WIN-PATH]` / `[BUG-PIPE-RESILIENCE]` (caminho 281 chars em Oliva et al. sem `try/except` no Stage 5), `[BUG-WIN-EXIT]` (`TomusMainWindow` sem `closeEvent`), `[BUG-ENRICH-01]` (contaminação OpenAlex em livros), `[BUG-TAX-01]`, `[BUG-TXT-01]` e `[BUG-DEDUP-MS]` já especificados e aguardando alinhamento para abrir o ciclo v1.3.3.
+
+---
+
+## Registro Cronológico — 2026-11-20: Decisão Conjunta Fechada — Opção B1 (Issue #12)
+
+- **Status:** Decisão conjunta fechada entre ambos os Chefes (Mac e Windows); libera alterações em `pyproject.toml` e nos arquivos de documentação de stack OCR.
+- **Opção selecionada:** B1 — PyMuPDF 200 DPI + RapidOCR/ONNXRuntime para v1.3.3 (ref Issue #12).
+- **Motivo da decisão:** remoção de `docling`/`torch`/`torchvision`/`transformers` do `pyproject.toml` e `pyinstaller.spec` (reduções estimadas de ~680 MB / ~42% no disco, instaladores ~240–350 MB, CI ~8 min — valores a confirmar nos builds reais da v1.3.3; OCR 100% offline desde o 1º uso).
+- **Confirmação empírica no Tomus.app v1.3.2 (macOS):** `AutoImageProcessor` do Docling falhou com 0 binários nativos do torchvision no bundle congelado; RapidOCR/ONNXRuntime operou 100% offline desde o primeiro uso.
+- **Contrato `--self-test-ocr`:** smoke checks reais (macOS e Windows) executam OCR de verdade em runtime via `--self-test-ocr`, validando presença do dist-info do onnxruntime/rapidocr, boot offscreen e extração sem falha, sem depender de `docling_slim` nem de download de modelos da HuggingFace.
+- **Divisão paralela de PRs contra `main` (WIN-0003):**
+  - **PR 1 (feat/v133-rapidocr-primary, aberto pelo macOS + validado cross-OS com apoio Windows em smoke_check_windows.py):** `pyproject.toml` (remoção de `docling`), `extractors/ocr.py` + `extractors/ocr_docling.py`, `src/tomus/gui/app.py` (`--self-test-ocr`), `packaging/pyinstaller.spec`, `packaging/smoke_check_macos.py`, `packaging/smoke_check_windows.py`, `tests/` e `docs/`.
+  - **PR 2 (fix/v133-pipeline-enrich-dedup, em paralelo pelo Windows):** os 7 fixes ortogonais `[BUG-WIN-PATH]`, `[BUG-PIPE-RESILIENCE]`, `[BUG-WIN-EXIT]`, `[BUG-ENRICH-01]`, `[BUG-TAX-01]`, `[BUG-TXT-01]` e `[BUG-DEDUP-MS]`.
