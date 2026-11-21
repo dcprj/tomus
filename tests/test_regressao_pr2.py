@@ -115,9 +115,9 @@ def test_win_path_colisao_respeita_teto(tmp_path: Path):
     full2 = str(dest_dir / Path(e2.destination_path).name) if e2.destination_path else ""
     assert full2 == "" or len(full2) <= WIN_SAFE_FULL_PATH_CHARS, f"colisao estourou teto: {len(full2)}"
     # Validar _resolve_collision diretamente com o nome base colidido.
-    resolved, _ = organizer.index.check  # noqa: F841  (placeholder de referencia ao modulo)
+    planned = {dest_dir / nome_base: _sha_of(p1)}
     resolved_name, _ = _resolve_collision(
-        dest_dir, nome_base, p2, None, src_sha256=_sha_of(p2),
+        dest_dir, nome_base, p2, planned, src_sha256=_sha_of(p2),
     )
     assert len(str(dest_dir / resolved_name)) <= WIN_SAFE_FULL_PATH_CHARS, f"_resolve_collision estourou teto: {len(str(dest_dir / resolved_name))}"
 
