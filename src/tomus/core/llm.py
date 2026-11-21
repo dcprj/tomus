@@ -266,6 +266,13 @@ def _finalize_classification(
     clean_doi = normalize_doi(output.doi)
     clean_isbn = normalize_isbn(output.isbn)
 
+    # [BUG-ENRICH-01] Livro nunca herda journal_name/number do LLM.
+    journal_name = output.journal_name
+    number = output.number
+    if tipo_str == "Livro":
+        journal_name = None
+        number = None
+
     subarea = (output.subarea or "").strip()
     especialidade = (output.especialidade or "").strip()
     if not subarea or subarea.lower() in ("não especificada", "nao especificada", "none", "null", ""):
@@ -293,9 +300,9 @@ def _finalize_classification(
                 publisher=output.publisher,
                 city=output.city,
                 edition=output.edition,
-                journal_name=output.journal_name,
+                journal_name=journal_name,
                 volume=output.volume,
-                number=output.number,
+                number=number,
                 pages=output.pages,
                 doi=clean_doi,
                 isbn=clean_isbn,
@@ -344,9 +351,9 @@ def _finalize_classification(
         publisher=output.publisher,
         city=output.city,
         edition=output.edition,
-        journal_name=output.journal_name,
+        journal_name=journal_name,
         volume=output.volume,
-        number=output.number,
+        number=number,
         pages=output.pages,
         doi=clean_doi,
         isbn=clean_isbn,

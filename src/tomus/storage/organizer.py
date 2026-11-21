@@ -23,6 +23,7 @@ import hashlib
 import json
 import re
 import shutil
+import sys
 import unicodedata
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -35,6 +36,7 @@ from tomus.core.models import (
     ProcessStatus,
 )
 from tomus.core.prompts import extract_first_author_key
+from tomus.storage.namer import WIN_SAFE_FULL_PATH_CHARS, MAX_BYTES, _strip_trailing_punct as _strip_trailing_punct_organizer
 from tomus.extractors.identifiers import (
     normalize_doi,
     normalize_isbn,
@@ -183,14 +185,36 @@ def _parse_front_matter_safe(md_path: Path) -> dict[str, Any] | None:
     return data
 
 
+_ISSUE_RE = re.compile(
+    r"\b("
+    r"n\.|no\.|num|numero|nro|issue|iss\.|fasc|fasciculo|ed\.|edicao|edicao"
+    r")"
+    r"(?:(?<=\w\w)\s*[:.-]?\s*|(?:\s*[:.-]\s*|\s+))"
+    r"0*(\d{1,4})\b"
+)
+
+# Mês / bimestre em periódicos (jan..dez ou MM/AAAA).
+_PERIOD_M_RE = re.compile(
+    r"\b(jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez|"
+    r"january|february|march|april|may|june|july|august|september|october|november|december|"
+    r"\d{1,2}/\d{4})\b"
+)
+
+# Número isolado no fim do título/filename para periódicos (ex.: 'Revista #12', 'Micro Sistemas 045').
+_ISOLATED_NUM_RE = re.compile(r"(?:#|n(?:o|\.)?\s*)?0*(\d{1,4})\s*$")
+
+
 def _extract_discriminators(
     title: str,
     subtitle: str,
     orig_filename: str,
     volume_field: str | None = None,
+    number_field: str | None = None,
     tipo: str = "",
+    year: int | None = None,
+    is_serial: bool = False,
 ) -> dict[str, str]:
-    """Extrair discriminadores estruturais (vol, part, livro, aud) para Guarda G1."""
+    """Extrair discriminadores estruturais (vol, part, livro, aud, issue, period_m) para Guarda G1."""
     out: dict[str, str] = {}
     for text in (title, subtitle):
         folded = _fold_text(text)
@@ -205,7 +229,8 @@ def _extract_discriminators(
             if tok in _AUDIENCE_WORDS:
                 out.setdefault("aud", _AUDIENCE_WORDS[tok])
 
-    if tipo in ("Livro", "Outros") and volume_field:
+    # --- 'vol' para TODOS os tipos (não apenas Livro/Outros) ---
+    if volume_field:
         vf = _fold_text(str(volume_field))
         m_num = re.search(r"\b(\d{1,2})\b", vf)
         if m_num:
@@ -217,6 +242,63 @@ def _extract_discriminators(
                 out.setdefault("vol", str(v_int))
         elif vf in _ROMAN_NUMERALS:
             out.setdefault("vol", str(_ROMAN_NUMERALS[vf]))
+
+    # --- 'issue' (número/fascículo) de número_field OU regex ---
+    issue_val = None
+    if number_field:
+        nf = _fold_text(str(number_field))
+        m = re.search(r"\b(\d{1,4})\b", nf)
+        if m:
+            n_int = int(m.group(1))
+            # Ignorar anos 1900..2099.
+            if not (1900 <= n_int <= 2099):
+                issue_val = str(n_int)
+    if issue_val is None:
+        for text in (title, subtitle, orig_filename):
+            folded = _fold_text(text)
+            for m in _ISSUE_RE.finditer(folded):
+                val = m.group(2)
+                n_int = int(val)
+                if 1900 <= n_int <= 2099:
+                    continue
+                issue_val = str(n_int)
+                break
+            if issue_val is not None:
+                break
+    if issue_val is not None:
+        out["issue"] = issue_val
+
+    # Número isolado no fim do título/filename para periódicos.
+    if is_serial or tipo == "Revista Científica":
+        for text in (title, orig_filename):
+            m = _ISOLATED_NUM_RE.search(_fold_text(text))
+            if m:
+                n_int = int(m.group(1))
+                if not (1900 <= n_int <= 2099):
+                    out.setdefault("issue", str(n_int))
+                    break
+
+    # --- 'period_m' (mês/bimestre em periódicos) ---
+    if is_serial or tipo == "Revista Científica":
+        for text in (title, subtitle, orig_filename):
+            folded = _fold_text(text)
+            m = _PERIOD_M_RE.search(folded)
+            if m:
+                tok = m.group(1)
+                if "/" in tok:
+                    out.setdefault("period_m", tok)
+                else:
+                    mes_map = {
+                        "jan": "01", "fev": "02", "mar": "03", "abr": "04",
+                        "mai": "05", "jun": "06", "jul": "07", "ago": "08",
+                        "set": "09", "out": "10", "nov": "11", "dez": "12",
+                        "january": "01", "february": "02", "march": "03",
+                        "april": "04", "may": "05", "june": "06",
+                        "july": "07", "august": "08", "september": "09",
+                        "october": "10", "november": "11", "december": "12",
+                    }
+                    out.setdefault("period_m", mes_map.get(tok, tok))
+                break
 
     orig_stem = re.sub(r"\(\d+\)$", "", Path(orig_filename or "").stem.strip())
     f_orig = _FILENAME_NOISE_RE.sub(" ", _fold_text(orig_stem))
@@ -307,10 +389,27 @@ def is_structurally_compatible(
         if da.get(k) != db.get(k):
             return False
 
+    # --- Guarda G4: discriminadores de periódico (issue/vol/period_m/ano/ed) ---
+    # Sempre checar 'issue': se divergem, não são compatíveis.
+    if da.get("issue") != db.get("issue"):
+        return False
+
     if "vol" in da and "vol" in db and da["vol"] != db["vol"]:
         return False
     if ("vol" in da) != ("vol" in db):
         if any(w in _fold_text(a.get("titulo", "")) for w in ("seminario", "obras completas", "colecao")):
+            return False
+
+    a_serial = bool(a.get("_is_serial"))
+    b_serial = bool(b.get("_is_serial"))
+    if a_serial or b_serial:
+        if da.get("vol") != db.get("vol"):
+            return False
+        if da.get("period_m") and db.get("period_m") and da["period_m"] != db["period_m"]:
+            return False
+        if a.get("_year") and b.get("_year") and a["_year"] != b["_year"]:
+            return False
+        if a.get("_ed") and b.get("_ed") and a["_ed"] != b["_ed"]:
             return False
 
     pa, pb = a.get("_pages"), b.get("_pages")
@@ -401,6 +500,10 @@ class LibraryIndex:
         year_raw = cls.get("ano") if cls.get("ano") is not None else cls.get("year")
         tipo = str(cls.get("tipo") or "")
         volume_field = cls.get("volume")
+        number_field = cls.get("numero") or cls.get("number")
+        issn = normalize_issn(cls.get("issn"))
+        _is_serial = (tipo == "Revista Científica") or bool(issn)
+        year = _parse_year(year_raw)
 
         akey = extract_first_author_key(authors)
         tkey, fkey, sub_tokens, is_weak = _build_title_fingerprint(title, subtitle)
@@ -411,10 +514,12 @@ class LibraryIndex:
             subtitle=subtitle,
             orig_filename=orig_filename,
             volume_field=str(volume_field) if volume_field is not None else None,
+            number_field=str(number_field) if number_field is not None else None,
             tipo=tipo,
+            year=year,
+            is_serial=_is_serial,
         )
         ed_num, rev_flag = _parse_edition(edition_raw, title, subtitle, orig_filename)
-        year = _parse_year(year_raw)
 
         if pages is None and cls.get("paginas_pdf") is not None:
             try:
@@ -449,6 +554,7 @@ class LibraryIndex:
             "_year": year,
             "_pages": pages,
             "_from_same_run": from_same_run,
+            "_is_serial": _is_serial,
         }
 
     def register_canonical(self, rec: dict[str, Any]) -> None:
@@ -520,8 +626,32 @@ class LibraryIndex:
         if matched_canon is None and rec["_issn"] and rec["_issn"] in self.by_issn:
             for cand in self.by_issn[rec["_issn"]]:
                 if is_structurally_compatible(rec, cand, via_identifier=True):
-                    matched_layer, matched_canon = "L2_ISSN", cand
-                    break
+                    # L2_ISSN estrita: ISSN identifica o periódico inteiro, não o fascículo.
+                    # Exigir confirmação explícita de identidade do fascículo.
+                    da, db = rec["_disc"], cand["_disc"]
+                    issue_match = (
+                        da.get("issue") and db.get("issue") and da["issue"] == db["issue"]
+                    )
+                    vol_match = (
+                        da.get("vol") and db.get("vol") and da["vol"] == db["vol"]
+                    )
+                    period_match = (
+                        da.get("period_m") and db.get("period_m")
+                        and da["period_m"] == db["period_m"]
+                    )
+                    ed_match = (
+                        rec.get("_ed") and cand.get("_ed")
+                        and rec["_ed"] == cand["_ed"]
+                    )
+                    titulos_iguais = False
+                    ta = rec["_tkey"].split()
+                    tb = cand["_tkey"].split()
+                    if len(ta) >= 4 and len(tb) >= 4 and ta == tb:
+                        if rec.get("_year") and cand.get("_year") and rec["_year"] == cand["_year"]:
+                            titulos_iguais = True
+                    if issue_match or vol_match or period_match or ed_match or titulos_iguais:
+                        matched_layer, matched_canon = "L2_ISSN", cand
+                        break
 
         # Camada 3: Impressão digital bibliográfica (work_fingerprint)
         if matched_canon is None and not rec["_weak"]:
@@ -615,6 +745,11 @@ def _resolve_collision(
             return filename, ProcessStatus.DUPLICATE_SKIPPED.value
 
     if not dest_path.exists() and (planned_destinations is None or dest_path not in planned_destinations):
+        # [BUG-WIN-PATH] no Windows, garantir que o caminho completo não estoure WIN_SAFE_FULL_PATH_CHARS
+        if sys.platform == "win32":
+            full = str(dest_dir / filename)
+            if len(full) > WIN_SAFE_FULL_PATH_CHARS or len(filename.encode("utf-8")) > MAX_BYTES:
+                return _shorten_name_for_win(dest_dir, filename, src_path, planned_destinations, src_hash)
         return filename, ""
 
     if dest_path.exists():
@@ -633,6 +768,11 @@ def _resolve_collision(
         candidate_path = dest_dir / candidate
         planned_has = planned_destinations is not None and candidate_path in planned_destinations
         if not candidate_path.exists() and not planned_has:
+            # [BUG-WIN-PATH] encurtar se estourar o limite do Windows.
+            if sys.platform == "win32":
+                full = str(candidate_path)
+                if len(full) > WIN_SAFE_FULL_PATH_CHARS or len(candidate.encode("utf-8")) > MAX_BYTES:
+                    return _shorten_name_for_win(dest_dir, filename, src_path, planned_destinations, src_hash, counter=counter)
             return candidate, ""
         if planned_has and planned_destinations is not None and planned_destinations[candidate_path] == src_hash:
             return candidate, ProcessStatus.DUPLICATE_SKIPPED.value
@@ -644,6 +784,66 @@ def _resolve_collision(
             if candidate_hash == src_hash:
                 return candidate, ProcessStatus.DUPLICATE_SKIPPED.value
         counter += 1
+
+
+def _shorten_name_for_win(
+    dest_dir: Path,
+    filename: str,
+    src_path: Path,
+    planned_destinations: dict[Path, str] | None = None,
+    src_hash: str | None = None,
+    counter: int | None = None,
+) -> tuple[str, str]:
+    """Encurtar o stem do nome (com sufixo curto _{sha[:6]}) para respeitar WIN_SAFE_FULL_PATH_CHARS e MAX_BYTES no Windows."""
+    stem = Path(filename).stem
+    suffix = Path(filename).suffix
+    sha_suffix = f"_{str(src_hash or '')[:6]}" if src_hash else ""
+
+    # Tentar stem curto + sufixo de colisão + sha curto.
+    base_stem = _strip_trailing_punct_organizer(stem)
+    if counter is not None:
+        candidato = f"{base_stem} ({counter}){sha_suffix}{suffix}"
+    else:
+        candidato = f"{base_stem}{sha_suffix}{suffix}"
+
+    # Se ainda estourar, truncar o stem agressivamente.
+    while len((dest_dir / candidato).encode("utf-8")) > MAX_BYTES or len(str(dest_dir / candidato)) > WIN_SAFE_FULL_PATH_CHARS:
+        if len(base_stem) <= 5:
+            # Último recurso: nome genérico curto.
+            candidato = f"file{sha_suffix}{suffix}"
+            break
+        base_stem = base_stem[:-1]
+        if counter is not None:
+            candidato = f"{base_stem} ({counter}){sha_suffix}{suffix}"
+        else:
+            candidato = f"{base_stem}{sha_suffix}{suffix}"
+
+    # Verificar colisão com o nome encurtado.
+    candidate_path = dest_dir / candidato
+    planned_has = planned_destinations is not None and candidate_path in planned_destinations
+    if not candidate_path.exists() and not planned_has:
+        return candidato, ""
+    if planned_has and planned_destinations[candidate_path] == src_hash:
+        return candidato, ProcessStatus.DUPLICATE_SKIPPED.value
+    if candidate_path.exists():
+        try:
+            if _compute_sha256(candidate_path) == src_hash:
+                return candidato, ProcessStatus.DUPLICATE_SKIPPED.value
+        except OSError:
+            pass
+    # Se ainda houver colisão, adicionar contador incremental curto.
+    c = 2
+    while True:
+        cand2 = f"{base_stem} ({c}){sha_suffix}{suffix}"
+        p2 = dest_dir / cand2
+        ph = planned_destinations is not None and p2 in planned_destinations
+        if not p2.exists() and not ph:
+            return cand2, ""
+        if ph and planned_destinations[p2] == src_hash:
+            return cand2, ProcessStatus.DUPLICATE_SKIPPED.value
+        c += 1
+        if c > 99:
+            return cand2, ""
 
 
 class LibraryOrganizer:
@@ -815,6 +1015,22 @@ class LibraryOrganizer:
         duplicate: bool = False,
     ) -> FileManifestEntry:
         """Classificar destino e materializar obra, duplicata ou edição obsoleta."""
+        # [BUG-WIN-PATH] Proteção Windows MAX_PATH: pasta destino muito profunda.
+        if sys.platform == "win32":
+            dest_dir_probe = self.target_dir / area_basica / ((subarea or "").strip() or "Geral") / tipo
+            if len(str(dest_dir_probe)) > WIN_SAFE_FULL_PATH_CHARS - 40:
+                return self.add_manual_review(
+                    source_path=source_path,
+                    sha256=sha256,
+                    reason=(
+                        f"Caminho de destino excessivamente profundo no Windows "
+                        f"({len(str(dest_dir_probe))} chars > {WIN_SAFE_FULL_PATH_CHARS - 40}); "
+                        f"sugerir pasta de destino mais curta."
+                    ),
+                    used_ocr=used_ocr,
+                    classification=classification,
+                )
+
         subarea_clean = (subarea or "").strip() or "Geral"
         dest_dir = self.target_dir / area_basica / subarea_clean / tipo
         planned_dest = dest_dir / filename
