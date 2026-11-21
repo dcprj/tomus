@@ -35,6 +35,7 @@ WIN = sys.platform == "win32"
 # --------------------------------------------------------------------------- #
 def _fake_pdf(tmp_path: Path, name: str, content: bytes = b"%PDF-1.4 fake\n") -> Path:
     p = tmp_path / name
+    p.parent.mkdir(parents=True, exist_ok=True)
     p.write_bytes(content)
     return p
 
@@ -111,7 +112,7 @@ def test_win_path_colisao_respeita_teto(tmp_path: Path):
         classification={"authors": ["Autor, Um"], "title": "T", "year": 2020},
     )
     # Mesmo nome base -> colisao resolvida com sufixo ' (2)' dentro do teto.
-    full2 = str(dest_dir / e2.destination_path.name) if e2.destination_path else ""
+    full2 = str(dest_dir / Path(e2.destination_path).name) if e2.destination_path else ""
     assert full2 == "" or len(full2) <= WIN_SAFE_FULL_PATH_CHARS, f"colisao estourou teto: {len(full2)}"
 
 
@@ -137,31 +138,43 @@ def test_win_path_pasta_destino_maior_205_chars_revisao_manual(tmp_path: Path):
 class _OrganizerQueFalhaNaAddOrganized(LibraryOrganizer):
     """Organizer que levanta excecao em add_organized para um caminho alvo."""
 
-    def __init__(self, *args, falhar_em: str | None = None, **kwargs):
+    def __init__(self, *args, falhar_em: str | None = None, token: str | None = None, **kwargs):
         super().__init__(*args, **kwargs)
         self.falhar_em = falhar_em
+        self.token = token
         self.chamadas = []
 
     def add_organized(self, source_path, **kwargs):  # type: ignore[override]
         self.chamadas.append(str(source_path))
         if self.falhar_em and str(source_path).endswith(self.falhar_em):
-            raise OSError("disco cheio simulado em Stage 5")
+            msg = "disco cheio simulado em Stage 5"
+            if self.token:
+                msg += " TOKEN: " + self.token
+            raise OSError(msg)
         return super().add_organized(source_path, **kwargs)
 
 
 def _criar_pdf_simples(tmp_path: Path, nome: str, texto: str = "conteudo") -> Path:
-    import hashlib
+    """Criar um PDF sintético de uma página com PyMuPDF (fitz) para Stage 1 não falhar."""
+    import fitz  # PyMuPDF
+
     p = tmp_path / nome
-    # PDF sintético mínimo sem PyMuPDF (apenas para testar resiliencia de Stage 5)
-    p.write_bytes(b"%PDF-1.4\n" + texto.encode() + b"\n%%EOF\n")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    doc = fitz.open()
+    pagina = doc.new_page()
+    pagina.insert_text((72, 72), texto)
+    doc.save(str(p))
+    doc.close()
     return p
 
 
 def _criar_source_com_3_pdfs(tmp_path: Path):
-    """Cria 3 PDFs no source, o segundo vai falhar no organizer."""
-    p1 = _criar_pdf_simples(tmp_path / "src", "doc1.pdf", "texto um")
-    p2 = _criar_pdf_simples(tmp_path / "src", "doc2.pdf", "texto dois")
-    p3 = _criar_pdf_simples(tmp_path / "src", "doc3.pdf", "texto tres")
+    """Cria 3 PDFs no source (doc1/doc2/doc3); o segundo vai falhar no organizer."""
+    source = tmp_path / "src"
+    source.mkdir(parents=True, exist_ok=True)
+    p1 = _criar_pdf_simples(source, "doc1.pdf", "texto um")
+    p2 = _criar_pdf_simples(source, "doc2.pdf", "texto dois")
+    p3 = _criar_pdf_simples(source, "doc3.pdf", "texto tres")
     return p1, p2, p3
 
 
@@ -216,27 +229,52 @@ def test_pipe_resilience_stage5_erro_um_nao_aborta_lote(tmp_path: Path):
 
 
 def test_pipe_resilience_cache_hit_falha_no_disco_nao_aborta(tmp_path: Path):
-    """Cache hit falhando no disco tambem nao aborta o lote."""
+    """Cache hit falhando no disco tambem nao aborta o lote.
+
+    Aquece o cache na primeira execucao (FileCache real), depois executa
+    novamente com organizer que falha em add_organized de cache1.pdf para
+    garantir que e' um Cache Hit real que cai no bloco de excecao do disco.
+    """
+    from tomus.core.cache import FileCache
+    from tomus.core.config import AppConfig
+
     source = tmp_path / "src"
     target = tmp_path / "dst"
-    source.mkdir()
-    p1 = _criar_pdf_simples(source / "cache1.pdf", "cache um")
-    p2 = _criar_pdf_simples(source / "cache2.pdf", "cache dois")
+    source.mkdir(parents=True, exist_ok=True)
+    p1 = _criar_pdf_simples(source, "cache1.pdf", "cache um")
+    p2 = _criar_pdf_simples(source, "cache2.pdf", "cache dois")
 
+    cfg = AppConfig()
+    cache = FileCache(enabled=True, db_path=tmp_path / "cache.db")
+
+    # Primeira execucao: aquece o cache (ambos organizados, sem falha).
+    organizer_quente = LibraryOrganizer(target, file_operation="copy", dry_run=True)
+    summary1 = run_pipeline(
+        source_dir=source, target_dir=target, config=cfg,
+        provider=_ProviderSempreAprovado(), organizer=organizer_quente,
+        cache=cache, workers=1,
+    )
+    assert summary1.total_scanned == 2
+    assert summary1.error_count == 0
+
+    # Segunda execucao: ambos devem ser Cache Hit; cache1 falha no disco no
+    # organizer, mas cache2 continua organizado. Lote nao aborta.
     organizer = _OrganizerQueFalhaNaAddOrganized(
         target, file_operation="copy", dry_run=True, falhar_em="cache1.pdf"
     )
-    summary = run_pipeline(
-        source_dir=source, target_dir=target,
-        config=__import__("tomus.core.config", fromlist=["AppConfig"]).AppConfig(),
-        provider=_ProviderSempreAprovado(), organizer=organizer, workers=1,
+    summary2 = run_pipeline(
+        source_dir=source, target_dir=target, config=cfg,
+        provider=_ProviderSempreAprovado(), organizer=organizer,
+        cache=cache, workers=1,
     )
 
-    assert summary.total_scanned == 2
-    assert summary.error_count == 1
-    statuses = {e.source_path.split("\\")[-1].split("/")[-1]: e.status for e in summary.entries if e.sha256}
+    assert summary2.total_scanned == 2
+    assert summary2.error_count == 1
+    statuses = {e.source_path.split("\\")[-1].split("/")[-1]: e.status for e in summary2.entries if e.sha256}
     assert statuses.get("cache1.pdf") == ProcessStatus.ERROR
     assert statuses.get("cache2.pdf") == ProcessStatus.ORGANIZED
+    # manifest.json gravado normalmente no destino.
+    assert (target / "manifest.json").exists()
 
 
 # =========================================================================== #
@@ -314,49 +352,74 @@ def _external_metadata(source="openalex", title="Titulo", match_origin="text_sea
     )
 
 
-def test_enrich01_livro_nao_casa_artigo_openAlex_por_len_ratio():
-    """Livro curto ('Me poupe!') nao casa artigo longo OpenAlex via len_ratio < 0.45."""
-    from tomus.core.pipeline import _classification_to_dict
-    from tomus.core.llm import ClassificationResult
+def test_enrich01_livro_nao_casa_artigo_openAlex_por_len_ratio(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Livro curto ('Me poupe!') nao casa artigo longo OpenAlex via len_ratio < 0.45.
 
-    resultado = ClassificationResult(
-        grande_area="Ciências Humanas", area_basica="Psicologia",
-        subarea="Geral", especialidade="Geral", tipo="Livro",
-        authors=["Autor, Um"], title="Me poupe!", subtitle="", year=2021,
-        confidence_score=0.9, reasoning="ok",
+    Monkeypatch em tomus.core.pipeline.enrich_document_metadata para retornar
+    um candidato artigo longo da OpenAlex; o pipeline deve pular o merge
+    externo (len_ratio < 0.45) e nao injetar journal_name/number/DOI.
+    """
+    from tomus.core.models import ExternalMetadata
+
+    def _fake_enrich(doc, config):
+        return [
+            ExternalMetadata(
+                source="openalex",
+                title="Este e um artigo academico muito longo sobre psicologia clinica e comportamento humano na pratica profissional",
+                subtitle="", authors=["Autor, Um"],
+                publication_year=2020,
+                journal_name="Revista de Psicologia",
+                volume="10", number="2", pages="100-110",
+                doi="10.2/x", isbn=None,
+                document_type_hint="article",
+                match_score=0.9, match_origin="text_search",
+            )
+        ]
+
+    monkeypatch.setattr("tomus.core.pipeline.enrich_document_metadata", _fake_enrich)
+
+    source = tmp_path / "src"
+    target = tmp_path / "dst"
+    source.mkdir(parents=True, exist_ok=True)
+    p = _criar_pdf_simples(source, "livro.pdf", "Me poupe! texto curto do livro")
+
+    cfg = __import__("tomus.core.config", fromlist=["AppConfig"]).AppConfig()
+    summary = run_pipeline(
+        source_dir=source, target_dir=target, config=cfg,
+        provider=_ProviderSempreAprovado(), workers=1,
     )
-    classificacao = _classification_to_dict(resultado)
+    assert summary.total_scanned == 1
+    assert summary.error_count == 0
 
-    ext = _external_metadata(
-        source="openalex", title="Este e um artigo academico muito longo sobre psicologia clinica e comportamento humano na pratica profissional",
-        match_origin="text_search", document_type_hint="article",
-        journal_name="Revista de Psicologia", volume="10", number="2", doi="10.2/x",
-    )
-
-    q = str(classificacao["title"]).strip()
-    a = ext.title.strip()
-    len_ratio = min(len(q), len(a)) / max(1, max(len(q), len(a)))
-    assert len_ratio < 0.45, f"len_ratio deveria ser < 0.45, foi {len_ratio}"
-    # Quando len_ratio < 0.45, o merge externo deve ser pulado (external_metadata = None).
-    assert len_ratio < 0.45
+    manifest = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    entry = manifest["entries"][0]
+    classificacao = entry.get("classification") or {}
+    # Len ratio < 0.45 -> merge externo pulado -> nenhum campo de artigo injetado.
+    assert classificacao.get("journal_name") is None
+    assert classificacao.get("number") is None
+    assert classificacao.get("doi") is None
 
 
 def test_enrich01_select_best_prefere_google_books_para_livro():
     """Quando Google Books e OpenAlex retornam candidatos para livro, select_best_external_metadata prefere Google Books."""
     from tomus.core.enrichers import select_best_external_metadata
-    from tomus.core.models import ExtractedDocument
+    from tomus.core.models import ExtractedDocument, ExternalMetadata
 
     doc = ExtractedDocument(
         source_path=Path("x.pdf"), sha256="abc", file_size_bytes=100,
         total_pages=200, detected_isbn="9788536312347",
     )
-    gb = _external_metadata(
-        source="google_books", title="Me poupe!", match_origin="exact_isbn",
-        document_type_hint="book", isbn="9788536312347", match_score=1.0,
+    gb = ExternalMetadata(
+        source="google_books", title="Me poupe!", subtitle="", authors=["Autor, Um"],
+        publication_year=2020, document_type_hint="book", isbn="9788536312347",
+        match_score=1.0, match_origin="exact_isbn",
     )
-    oa = _external_metadata(
-        source="openalex", title="Outro artigo longo", match_origin="text_search",
-        document_type_hint="article", match_score=0.9,
+    oa = ExternalMetadata(
+        source="openalex", title="Outro artigo longo", subtitle="", authors=["Autor, Um"],
+        publication_year=2020, document_type_hint="article", match_score=0.9,
+        match_origin="text_search",
     )
 
     melhor = select_best_external_metadata(doc, [oa, gb])
@@ -364,44 +427,48 @@ def test_enrich01_select_best_prefere_google_books_para_livro():
     assert melhor.source == "google_books", f"esperava google_books, obteve {melhor.source}"
 
 
-def test_enrich01_merge_nao_injeta_journal_numero_doi_em_livro():
-    """Merge pos-LLM nunca injeta journal_name/number ou DOI de artigo OpenAlex em tipo=='Livro'."""
-    from tomus.core.pipeline import _classification_to_dict
-    from tomus.core.llm import ClassificationResult
+def test_enrich01_merge_nao_injeta_journal_numero_doi_em_livro(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Merge pos-LLM nunca injeta journal_name/number ou DOI de artigo OpenAlex em tipo=='Livro'.
 
-    resultado = ClassificationResult(
-        grande_area="Ciências Humanas", area_basica="Psicologia",
-        subarea="Geral", especialidade="Geral", tipo="Livro",
-        authors=["Autor, Um"], title="Livro qualquer", subtitle="", year=2021,
-        confidence_score=0.9, reasoning="ok",
+    Monkeypatch em tomus.core.pipeline.enrich_document_metadata para retornar
+    candidato OpenAlex com journal_name/number/DOI; o pipeline deve bloquear
+    a injecao porque tipo=='Livro'.
+    """
+    from tomus.core.models import ExternalMetadata
+
+    def _fake_enrich(doc, config):
+        return [
+            ExternalMetadata(
+                source="openalex", title="Livro qualquer", subtitle="",
+                authors=["Autor, Um"], publication_year=2021,
+                journal_name="Revista X", volume="12", number="3",
+                pages="100-110", doi="10.1/x", isbn=None,
+                document_type_hint="book",
+                match_score=0.9, match_origin="text_search",
+            )
+        ]
+
+    monkeypatch.setattr("tomus.core.pipeline.enrich_document_metadata", _fake_enrich)
+
+    source = tmp_path / "src"
+    target = tmp_path / "dst"
+    source.mkdir(parents=True, exist_ok=True)
+    p = _criar_pdf_simples(source, "livro.pdf", "Livro qualquer texto do livro")
+
+    cfg = __import__("tomus.core.config", fromlist=["AppConfig"]).AppConfig()
+    summary = run_pipeline(
+        source_dir=source, target_dir=target, config=cfg,
+        provider=_ProviderSempreAprovado(), workers=1,
     )
-    classificacao = _classification_to_dict(resultado)
+    assert summary.total_scanned == 1
+    assert summary.error_count == 0
 
-    ext = _external_metadata(
-        source="openalex", title="Livro qualquer", match_origin="text_search",
-        document_type_hint="book", journal_name="Revista X", volume="12",
-        number="3", doi="10.1/x", match_score=0.9,
-    )
-
-    doc_tipo = classificacao.get("tipo", "")
-    block_journal = False
-    block_number = False
-    block_doi = False
-    if doc_tipo == "Livro":
-        block_journal = True
-        block_number = True
-        if ext.source == "openalex" and (ext.document_type_hint or "").strip().lower() in {"article", "journal-article", "editorial", "letter", "erratum", "paratext", "review"}:
-            block_doi = True
-
-    # Simular o bloco de merge do pipeline.
-    if not block_journal and not classificacao.get("journal_name") and getattr(ext, "journal_name", None):
-        classificacao["journal_name"] = ext.journal_name
-    if not block_number and not classificacao.get("number") and getattr(ext, "number", None):
-        classificacao["number"] = ext.number
-    if not block_doi and not classificacao.get("doi") and getattr(ext, "doi", None):
-        from tomus.extractors.identifiers import normalize_doi
-        classificacao["doi"] = normalize_doi(ext.doi)
-
+    manifest = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    entry = manifest["entries"][0]
+    classificacao = entry.get("classification") or {}
+    # tipo=='Livro' -> block_journal/block_number/block_doi -> nada injetado.
     assert classificacao.get("journal_name") is None, "journal_name nao deve ser injetado em Livro"
     assert classificacao.get("number") is None, "number nao deve ser injetado em Livro"
     assert classificacao.get("doi") is None, "doi de artigo OpenAlex nao deve ser injetado em Livro sem detected_doi"
@@ -450,10 +517,10 @@ from tomus.core.text_utils import normalize_tex_accents  # noqa: E402
 
 
 def test_txt01_normaliza_cedilha_til_agudo_preservando_caminho_e_formula():
-    """'InformaÂ¸cËœao e ComunicaÂ¸cËœao Online 2' -> 'InformaÃ§Ã£o e ComunicaÃ§Ã£o Online 2', preservando '~/path' e 'x^2'."""
-    # Usando caracteres espacadores de acento (cedilha \u00b8, til \u02dc) como
-    # aparecem em PDFs LaTeX/dvips Type1.
-    entrada = "Informa\u00b8cao e Comunica\u00b8cao Online 2 ~/path x^2"
+    """'Informa\u00b8c\u02dcao e Comunica\u00b8c\u02dcao Online 2' -> 'Informação e Comunicação Online 2', preservando '~/path' e 'x^2'."""
+    # Usando caracteres espacadores de acento (cedilha \u00b8, til pequeno \u02dc)
+    # como aparecem em PDFs LaTeX/dvips Type1.
+    entrada = "Informa\u00b8c\u02dcao e Comunica\u00b8c\u02dcao Online 2 ~/path x^2"
     esperado = "Informação e Comunicação Online 2 ~/path x^2"
     assert normalize_tex_accents(entrada) == esperado
 
@@ -544,36 +611,54 @@ def test_dedup01_livro_edicao_2_nao_eh_fasciculo_de_periodico(tmp_path: Path):
 # AppSec — Auditoria de segredos, caminhos privados e erros sanitizados
 # =========================================================================== #
 def test_appsec_zero_chaves_api_em_testes():
-    """Nenhuma chave de API real (AIzaSy, sk-, nvapi-, gsk_, gho_, ghp_) nos fontes de teste."""
-    import re
+    """Nenhuma chave de API real varrida em src/tomus/."""
+    import re as _re
 
-    padroes = [r"AIzaSy[A-Za-z0-9_\-]{30,}", r"sk-[A-Za-z0-9]{20,}",
-               r"nvapi-[A-Za-z0-9_\-]{20,}", r"gsk_[A-Za-z0-9_\-]{20,}",
-               r"gho_[A-Za-z0-9_\-]{20,}", r"ghp_[A-Za-z0-9_\-]{20,}"]
-    teste_path = Path(__file__)
-    conteudo = teste_path.read_text(encoding="utf-8")
-    for padrao in padroes:
-        assert not re.search(padrao, conteudo), f"chave de API encontrada no teste: {padrao}"
+    src_tomus = Path(__file__).resolve().parents[1] / "src" / "tomus"
+    padroes = [
+        "AIza" + "Sy",
+        "sk-",
+        "nvapi-",
+        "gsk_",
+        "gho_",
+        "ghp_",
+    ]
+    for arquivo in src_tomus.rglob("*.py"):
+        conteudo = arquivo.read_text(encoding="utf-8", errors="replace")
+        for padrao in padroes:
+            assert not _re.search(
+                _re.escape(padrao) + r"[A-Za-z0-9_\-]{20,}", conteudo
+            ), f"chave de API encontrada em {arquivo}: {padrao}"
 
 
 def test_appsec_zero_caminhos_pessoais_reais_em_testes():
-    """Nenhum caminho pessoal real (/Users/dario, C:\\Users\\dcpin) nos fontes de teste."""
-    teste_path = Path(__file__)
-    conteudo = teste_path.read_text(encoding="utf-8")
-    assert "/Users/dario" not in conteudo
-    assert "C:\\Users\\dcpin" not in conteudo
-    assert "dcpin" not in conteudo
+    """Nenhum caminho pessoal real em src/tomus/ (strings montadas por concatenacao)."""
+    src_tomus = Path(__file__).resolve().parents[1] / "src" / "tomus"
+    alvo1 = "/Users/" + "dario"
+    alvo2 = "C:" + "\\Users\\" + "dcpin"
+    alvo3 = "dc" + "pin"
+    for arquivo in src_tomus.rglob("*.py"):
+        conteudo = arquivo.read_text(encoding="utf-8", errors="replace")
+        assert alvo1 not in conteudo, f"caminho pessoal em {arquivo}: {alvo1}"
+        assert alvo2 not in conteudo, f"caminho pessoal em {arquivo}: {alvo2}"
+        assert alvo3 not in conteudo, f"caminho pessoal em {arquivo}: {alvo3}"
 
 
 def test_appsec_stage5_erro_sem_vazamento_de_secret(tmp_path: Path):
-    """Excecao em Stage 5 grava mensagem sanitizada no manifest (sem secret/token)."""
+    """Excecao em Stage 5 grava mensagem sanitizada no manifest (sem secret/token).
+
+    A OSError simulada em add_organized contem o token bruto 'sk-...';
+    _sanitize_error_message deve removê-lo do manifest.json.
+    """
+    TOKEN = "sk-1234567890abcdef"
     source = tmp_path / "src"
     target = tmp_path / "dst"
-    source.mkdir()
-    p = _criar_pdf_simples(source / "segredo.pdf", "texto com sk-1234567890abcdef")
+    source.mkdir(parents=True, exist_ok=True)
+    p = _criar_pdf_simples(source, "segredo.pdf", "texto qualquer")
 
     organizer = _OrganizerQueFalhaNaAddOrganized(
-        target, file_operation="copy", dry_run=True, falhar_em="segredo.pdf"
+        target, file_operation="copy", dry_run=True,
+        falhar_em="segredo.pdf", token=TOKEN,
     )
     summary = run_pipeline(
         source_dir=source, target_dir=target,
@@ -583,10 +668,12 @@ def test_appsec_stage5_erro_sem_vazamento_de_secret(tmp_path: Path):
 
     manifest = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
     texto_manifest = json.dumps(manifest, ensure_ascii=False)
-    # Nenhum token/secret bruto vaza no manifest.
-    assert "sk-1234567890abcdef" not in texto_manifest
+    # O token bruto NAO deve vazar nem no error_message nem em nenhum outro campo.
+    assert TOKEN not in texto_manifest, f"token vazou no manifest: {texto_manifest}"
     assert "AIzaSy" not in texto_manifest
     assert summary.error_count == 1
+    # O erro deve estar registrado (sanitizado), comprovando que o except foi acionado.
+    assert any(e.status == ProcessStatus.ERROR for e in summary.entries if e.sha256)
 
 
 
