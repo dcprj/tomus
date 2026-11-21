@@ -13,6 +13,8 @@ from typing import Any
 
 import fitz  # PyMuPDF
 
+from tomus.core.text_utils import normalize_tex_accents
+
 # Limiares (Item 14).
 _ALPHANUM_THRESHOLD = 30
 _FIRST_PAGES = 10
@@ -40,6 +42,10 @@ def extract_native_pdf(path: Path) -> dict[str, Any]:
     doc = fitz.open(str(path))
     try:
         metadata: dict[str, Any] = dict(doc.metadata or {})
+        for _key in ("title", "author"):
+            _val = metadata.get(_key)
+            if _val:
+                metadata[_key] = normalize_tex_accents(str(_val))
         total_pages = doc.page_count
 
         # Páginas a inspecionar: 10 primeiras e 5 últimas, sem duplicar em
@@ -54,7 +60,7 @@ def extract_native_pdf(path: Path) -> dict[str, Any]:
 
         for idx in inspected:
             page = doc[idx]
-            page_text = page.get_text() or ""
+            page_text = normalize_tex_accents(page.get_text() or "")
             parts.append(page_text)
             if _alphanum_count(page_text) < _ALPHANUM_THRESHOLD:
                 low_count_pages += 1

@@ -128,6 +128,7 @@ class WebBridge(QObject):
         self.target_dir = ""
         self.worker: PipelineWorker | None = None
         self.triage_service: ManualTriageService | None = None
+        self._closing = False
 
     # ------------------------------------------------------------------ #
     # Estado inicial & Validação de Chaves
@@ -297,7 +298,37 @@ class WebBridge(QObject):
         if self.worker is not None and self.worker.isRunning():
             self.worker.request_cancel()
 
+    def shutdown(self) -> None:
+        """Encerra o bridge com segurança, evitando callbacks pendentes e
+        deixando o worker para ser finalizado antes do fechamento da janela."""
+        self._closing = True
+
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.request_cancel()
+
+            # Desconecta sinais com segurança para evitar reentrada
+            try:
+                self.worker.event_received.disconnect(self._on_worker_event)
+            except (TypeError, RuntimeError):
+                pass
+            try:
+                self.worker.pipeline_finished.disconnect(self._on_worker_finished)
+            except (TypeError, RuntimeError):
+                pass
+            try:
+                self.worker.pipeline_failed.disconnect(self._on_worker_failed)
+            except (TypeError, RuntimeError):
+                pass
+
+            # Aguarda término graceful do worker
+            if not self.worker.wait(3000):
+                if self.worker.isRunning():
+                    self.worker.terminate()
+                    self.worker.wait(1000)
+
     def _on_worker_event(self, event: PipelineEvent) -> None:
+        if self._closing:
+            return
         try:
             payload = event.model_dump()
             payload_json = json.dumps(payload, ensure_ascii=False)
@@ -311,6 +342,8 @@ class WebBridge(QObject):
             print(f"[WebBridge] Erro em _on_worker_event: {exc}", file=sys.stderr)
 
     def _on_worker_finished(self, summary: Any, was_cancelled: bool) -> None:
+        if self._closing:
+            return
         try:
             data = {
                 "total_scanned": summary.total_scanned,
@@ -334,6 +367,8 @@ class WebBridge(QObject):
             print(f"[WebBridge] Erro em _on_worker_finished: {exc}", file=sys.stderr)
 
     def _on_worker_failed(self, error_msg: str) -> None:
+        if self._closing:
+            return
         try:
             data = {
                 "error": error_msg,

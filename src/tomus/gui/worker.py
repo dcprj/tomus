@@ -174,12 +174,18 @@ class ManualTriageService(QObject):
         else:
             grande_area, area_basica = par
 
+        # Destino na árvore temática (necessário para o orçamento de caminho
+        # no Windows via format_academic_filename).
+        subarea_clean = (subarea or "").strip() or "Geral"
+        dest_dir = self.target_dir / area_basica / subarea_clean / tipo
+
         # Nome padronizado do arquivo de destino.
         filename = format_academic_filename(
             authors=authors,
             title=title,
             subtitle=subtitle,
             year=year,
+            dest_dir=dest_dir,
         )
 
         # Localizar o arquivo físico existente (seja na origem ou já em revisao_manual)
@@ -201,7 +207,6 @@ class ManualTriageService(QObject):
 
         sha256 = entry.sha256 or self._compute_sha256(actual_file_path)
 
-        subarea_clean = (subarea or "").strip() or "Geral"
         classification: dict[str, Any] = {
             "grande_area": grande_area,
             "area_basica": area_basica,
@@ -217,7 +222,6 @@ class ManualTriageService(QObject):
         }
 
         # Destino na árvore temática com resolução de colisão.
-        dest_dir = self.target_dir / area_basica / subarea_clean / tipo
         dest_dir.mkdir(parents=True, exist_ok=True)
         nome_final, _colisao = _resolve_collision(
             dest_dir, filename, actual_file_path, src_sha256=sha256
