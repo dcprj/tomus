@@ -620,7 +620,7 @@ def test_dedup01_livro_edicao_2_nao_eh_fasciculo_de_periodico(tmp_path: Path):
 
     # Diferentes edicoes de um livro nao serial: a mais recente (2021) substitui,
     # a antiga (2020) vai para obsoletos/ (nao e tratado como fasciculo de periodico).
-    assert e1.status == ProcessStatus.ORGANIZED
+    assert e1.status == ProcessStatus.OBSOLETE
     assert e2.status == ProcessStatus.ORGANIZED
     assert (tmp_path / "dst" / "obsoletos").exists()
 
