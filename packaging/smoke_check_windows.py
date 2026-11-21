@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Smoke check do bundle Windows do Tomus.
+"""Smoke check do bundle Windows do Tomus (PR #13 - RapidOCR primario).
 
 Valida:
   1. pyi_rth_pkgres ausente do CArchive do executável
-  2. pkg_resources ausente do PYZ
-  3. docling_slim dist-info coletado no bundle
+  2. pkg_resources ausente do PYZ (quando existe como arquivo separado)
+  3. Nenhuma dependência pesada de ML (torch, torchvision, transformers,
+     docling, docling_core, docling_parse, docling_ibm_models) presente
+     no bundle/dist/Tomus nem no PYZ
   4. DLLs do onnxruntime presentes no bundle
   5. QtWebEngineProcess.exe e qtwebengine_resources.pak presentes
-  6. Boot offscreen do executável Tomus por 5s (sem Traceback/ImportError/AttributeError)
+  6. tomus.gui.os_integration (_reveal_windows_shell) presente no bundle/PYZ
+  7. Self-test OCR do executável Tomus (--self-test-ocr) com exit code 0
+  8. Boot offscreen do executável Tomus por 5s (sem Traceback/ImportError/AttributeError)
 """
 import os
 import subprocess
@@ -18,6 +22,18 @@ from PyInstaller.archive.readers import CArchiveReader
 
 DIST_DIR = Path("dist/Tomus")
 EXE_PATH = DIST_DIR / "Tomus.exe"
+
+# Dependências pesadas de ML que NÃO devem estar presentes no bundle
+# (RapidOCR/onnxruntime substituem torch/transformers/docling).
+_HEAVY_ML_DEPS = (
+    "torch",
+    "torchvision",
+    "transformers",
+    "docling",
+    "docling_core",
+    "docling_parse",
+    "docling_ibm_models",
+)
 
 
 def check_pyi_rth_pkgres_absent() -> None:
@@ -67,18 +83,54 @@ def check_pkg_resources_absent_from_pyz() -> None:
         )
 
 
-def check_docling_slim_present() -> None:
-    """docling_slim dist-info deve estar coletado no bundle."""
-    matches = list(DIST_DIR.rglob("docling_slim*-*.dist-info"))
-    if not matches:
-        print("FALHA: docling_slim dist-info não encontrado no bundle")
+def check_heavy_ml_deps_absent() -> None:
+    """Nenhuma dependência pesada de ML (torch, transformers, docling etc.)
+    deve estar presente no bundle/dist/Tomus nem no PYZ."""
+    arch = CArchiveReader(str(EXE_PATH))
+    pyz = _open_pyz(arch)
+    pyz_keys = list(pyz.toc.keys()) if pyz is not None else []
+
+    encontrados: list[str] = []
+
+    # Verificar dist-info e pastas/arquivos em DIST_DIR
+    for dep in _HEAVY_ML_DEPS:
+        # dist-info: torch-*.dist-info, transformers-*-*.dist-info, etc.
+        matches = list(DIST_DIR.rglob(f"{dep}-*-*.dist-info")) + list(
+            DIST_DIR.rglob(f"{dep}*.dist-info")
+        )
+        for m in matches:
+            encontrados.append(str(m.relative_to(DIST_DIR)))
+
+        # Pastas/arquivos diretos (ex: torch/, transformers/, docling/)
+        for pat in (f"{dep}", f"{dep}*"):
+            for m in DIST_DIR.rglob(pat):
+                rel = str(m.relative_to(DIST_DIR))
+                if rel not in encontrados:
+                    encontrados.append(rel)
+
+    # Verificar no PYZ (chaves que comecem com o nome da dep)
+    for dep in _HEAVY_ML_DEPS:
+        for key in pyz_keys:
+            if key == dep or key.startswith(dep + ".") or key.startswith(dep + "/"):
+                if key not in encontrados:
+                    encontrados.append(key)
+
+    if encontrados:
+        print("FALHA: dependências pesadas de ML encontradas no bundle/PYZ:")
+        for e in sorted(encontrados):
+            print(f"  - {e}")
         sys.exit(1)
-    print(f"OK: docling_slim dist-info presente no bundle ({matches[0].relative_to(DIST_DIR)})")
+    print(
+        "OK: nenhuma dependência pesada de ML (torch/torchvision/transformers/"
+        "docling/*) presente no bundle nem no PYZ"
+    )
 
 
 def check_onnxruntime_dlls_present() -> None:
     """DLLs do onnxruntime devem estar presentes no bundle."""
-    dlls = list(DIST_DIR.rglob("onnxruntime*.dll")) + list(DIST_DIR.rglob("*onnxruntime*.dll"))
+    dlls = list(DIST_DIR.rglob("onnxruntime*.dll")) + list(
+        DIST_DIR.rglob("*onnxruntime*.dll")
+    )
     if not dlls:
         print("FALHA: DLLs do onnxruntime não encontradas no bundle")
         sys.exit(1)
@@ -95,8 +147,14 @@ def check_qtwebengine_present() -> None:
     if not pak_matches:
         print("FALHA: qtwebengine_resources.pak não encontrado no bundle")
         sys.exit(1)
-    print(f"OK: QtWebEngineProcess.exe presente no bundle ({exe_matches[0].relative_to(DIST_DIR)})")
-    print(f"OK: qtwebengine_resources.pak presente no bundle ({pak_matches[0].relative_to(DIST_DIR)})")
+    print(
+        f"OK: QtWebEngineProcess.exe presente no bundle "
+        f"({exe_matches[0].relative_to(DIST_DIR)})"
+    )
+    print(
+        f"OK: qtwebengine_resources.pak presente no bundle "
+        f"({pak_matches[0].relative_to(DIST_DIR)})"
+    )
 
 
 def _get_co_names_from_pyz(pyz, module_path: str) -> tuple | None:
@@ -120,64 +178,77 @@ def _get_co_names_from_pyz(pyz, module_path: str) -> tuple | None:
     return None
 
 
-def check_transformers_present() -> None:
-    """transformers dist-info e módulos AutoImageProcessor devem estar no bundle/PYZ."""
-    # dist-info do transformers
-    dist_info_matches = list(DIST_DIR.rglob("transformers*-*.dist-info"))
-    if not dist_info_matches:
-        print("FALHA: transformers dist-info não encontrado no bundle")
-        sys.exit(1)
-    print(f"OK: transformers dist-info presente no bundle ({dist_info_matches[0].relative_to(DIST_DIR)})")
-
-    # Módulos obrigatórios no PYZ
+def check_os_integration_present() -> None:
+    """tomus.gui.os_integration (_reveal_windows_shell) deve estar no bundle/PYZ."""
     arch = CArchiveReader(str(EXE_PATH))
     pyz = _open_pyz(arch)
-    required = [
-        "transformers.models.auto.image_processing_auto",
-        "transformers.models.rt_detr.image_processing_rt_detr",
-    ]
-    missing = []
-    for mod in required:
-        # Verificar como arquivo .py separado no bundle também
-        mod_file = DIST_DIR / "_internal" / (mod.replace(".", "/") + ".py")
-        if mod_file.exists():
-            continue
-        # Verificar no PYZ
-        found = False
-        if pyz is not None:
-            for key in pyz.toc.keys():
-                if key == mod or key.endswith("/" + mod.replace(".", "/")):
-                    found = True
-                    break
-        if not found:
-            missing.append(mod)
-    if missing:
-        print("FALHA: módulos do transformers não encontrados no bundle/PYZ:")
-        for m in missing:
-            print(f"  - {m}")
-        sys.exit(1)
-    print("OK: transformers.models.auto.image_processing_auto (AutoImageProcessor) presente no bundle")
-    print("OK: transformers.models.rt_detr.image_processing_rt_detr presente no bundle")
 
-    # Verificar tomus.gui.os_integration no PYZ (alteração do Prisma: _reveal_windows_shell)
     os_integration_names = _get_co_names_from_pyz(pyz, "tomus.gui.os_integration")
-    if os_integration_names is None:
-        print("AVISO: tomus.gui.os_integration não encontrado no PYZ como código; "
-              "verificando como arquivo no bundle")
-        oi_file = DIST_DIR / "_internal" / "tomus" / "gui" / "os_integration.py"
-        if not oi_file.exists():
-            print("FALHA: tomus.gui.os_integration não encontrado no bundle")
-            sys.exit(1)
-        source = oi_file.read_text(encoding="utf-8")
-        if "_reveal_windows_shell" not in source:
-            print("FALHA: _reveal_windows_shell não encontrado em tomus.gui.os_integration")
-            sys.exit(1)
-        print("OK: tomus.gui.os_integration contém _reveal_windows_shell (arquivo no bundle)")
-    else:
+    if os_integration_names is not None:
         if "_reveal_windows_shell" not in os_integration_names:
-            print("FALHA: _reveal_windows_shell não está em co_names de tomus.gui.os_integration no PYZ")
+            print(
+                "FALHA: _reveal_windows_shell não está em co_names de "
+                "tomus.gui.os_integration no PYZ"
+            )
             sys.exit(1)
-        print("OK: tomus.gui.os_integration contém _reveal_windows_shell no PYZ (co_names)")
+        print(
+            "OK: tomus.gui.os_integration contém _reveal_windows_shell "
+            "no PYZ (co_names)"
+        )
+        return
+
+    # Fallback: verificar como arquivo no bundle
+    oi_file = DIST_DIR / "_internal" / "tomus" / "gui" / "os_integration.py"
+    if not oi_file.exists():
+        print("FALHA: tomus.gui.os_integration não encontrado no bundle")
+        sys.exit(1)
+    source = oi_file.read_text(encoding="utf-8")
+    if "_reveal_windows_shell" not in source:
+        print(
+            "FALHA: _reveal_windows_shell não encontrado em "
+            "tomus.gui.os_integration"
+        )
+        sys.exit(1)
+    print(
+        "OK: tomus.gui.os_integration contém _reveal_windows_shell "
+        "(arquivo no bundle)"
+    )
+
+
+def check_self_test_ocr() -> None:
+    """Executável Tomus deve passar no self-test OCR (--self-test-ocr) com exit code 0."""
+    p = subprocess.Popen(
+        [str(EXE_PATH), "--self-test-ocr"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        encoding="utf-8",
+        errors="replace",
+    )
+    try:
+        out, _ = p.communicate(timeout=30)
+    except subprocess.TimeoutExpired:
+        p.kill()
+        out, _ = p.communicate()
+        print("FALHA: executável encerrou antes de 30s no self-test OCR")
+        print(out)
+        sys.exit(1)
+
+    if p.returncode != 0:
+        print(f"FALHA: executável saiu com código {p.returncode} no self-test OCR")
+        print(out)
+        sys.exit(1)
+
+    if "OK:" not in out and not ("TOMUS" in out and "2026" in out):
+        print(
+            "FALHA: stdout não contém 'OK:' nem 'TOMUS ... 2026' no self-test OCR"
+        )
+        print(out)
+        sys.exit(1)
+
+    print(
+        "OK: self-test OCR passou com exit code 0 e saída contendo 'OK:' "
+        "ou 'TOMUS ... 2026'"
+    )
 
 
 def check_boot_offscreen_5s() -> None:
@@ -189,7 +260,8 @@ def check_boot_offscreen_5s() -> None:
         [str(EXE_PATH)],
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
-        text=True,
+        encoding="utf-8",
+        errors="replace",
         env=env,
     )
     try:
@@ -204,7 +276,7 @@ def check_boot_offscreen_5s() -> None:
         except subprocess.TimeoutExpired:
             p.kill()
             out, _ = p.communicate()
-    bad = ("Traceback", "ImportError", "AttributeError")
+    bad = ("Traceback", "ImportError", "AttributeError", "SIGABRT")
     for token in bad:
         if token in out:
             print(f"FALHA: encontrou '{token}' no boot offscreen")
@@ -218,8 +290,8 @@ def main() -> None:
     check_pyi_rth_pkgres_absent()
     check_pkg_resources_absent_from_pyz()
 
-    print("=== Smoke check Windows: docling_slim dist-info coletado ===")
-    check_docling_slim_present()
+    print("=== Smoke check Windows: dependências pesadas de ML ausentes ===")
+    check_heavy_ml_deps_absent()
 
     print("=== Smoke check Windows: DLLs do onnxruntime presentes ===")
     check_onnxruntime_dlls_present()
@@ -227,8 +299,11 @@ def main() -> None:
     print("=== Smoke check Windows: QtWebEngineProcess.exe e .pak presentes ===")
     check_qtwebengine_present()
 
-    print("=== Smoke check Windows: transformers (dist-info + AutoImageProcessor) ===")
-    check_transformers_present()
+    print("=== Smoke check Windows: tomus.gui.os_integration (_reveal_windows_shell) ===")
+    check_os_integration_present()
+
+    print("=== Smoke check Windows: self-test OCR do executável Tomus ===")
+    check_self_test_ocr()
 
     print("=== Smoke check Windows: boot offscreen do executável Tomus por 5s ===")
     check_boot_offscreen_5s()
