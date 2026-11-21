@@ -13,7 +13,7 @@ from PySide6.QtCore import Qt, QUrl
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import QWebEnginePage
 from PySide6.QtWebEngineWidgets import QWebEngineView
-from PySide6.QtWidgets import QMainWindow, QWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 
 from tomus.core.config import AppConfig
 from tomus.gui.bridge import WebBridge
@@ -125,3 +125,59 @@ class TomusMainWindow(QMainWindow):
                 self.bridge.target_dir = str(p)
                 self.bridge.targetChanged.emit(str(p))
             event.acceptProposedAction()
+
+    def closeEvent(self, event) -> None:
+        """Encerramento limpo da janela: para o pipeline, desmonta o
+        QtWebEngine de forma determinística e evita processos órfãos
+        (Tomus.exe / QtWebEngineProcess.exe) no Windows."""
+        # 1. Encerra o bridge e pede cancelamento graceful do worker
+        try:
+            self.bridge.shutdown()
+        except Exception:
+            pass
+
+        # 2. Desmonta o QtWebEngine em ordem determinística
+        try:
+            if getattr(self, 'web_view', None) and hasattr(self.web_view, 'stop'):
+                self.web_view.stop()
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, 'channel', None) is not None:
+                self.channel.deregisterObject(self.bridge)
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, 'web_page', None) is not None:
+                self.web_page.setWebChannel(None)
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, 'web_view', None) and hasattr(self.web_view, 'setPage'):
+                self.web_view.setPage(None)
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, 'web_page', None) is not None:
+                self.web_page.deleteLater()
+                self.web_page = None
+        except Exception:
+            pass
+
+        try:
+            if getattr(self, 'web_view', None) is not None:
+                self.web_view.deleteLater()
+        except Exception:
+            pass
+
+        # 3. Garante que a aplicação encerre quando a última janela fechar
+        app = QApplication.instance()
+        if app is not None:
+            app.setQuitOnLastWindowClosed(True)
+
+        event.accept()
+        super().closeEvent(event)

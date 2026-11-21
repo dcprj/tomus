@@ -15,6 +15,8 @@ Retorna ``list[ExternalMetadata]`` e expõe
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from typing import Optional
 
 import httpx
@@ -43,6 +45,131 @@ _REQUEST_TIMEOUT = 8.0
 _RETRY_ATTEMPTS = 3
 
 _USER_AGENT = f"Tomus/{__version__} (https://github.com/dcprj/tomus)"
+
+__all__ = ["enrich_document_metadata", "select_best_external_metadata"]
+
+# ---------------------------------------------------------------------------
+# Normalização e helpers de correspondência textual (Item 16, BUG-ENRICH-01)
+# ---------------------------------------------------------------------------
+
+_TEXT_SEARCH_STOPWORDS = {
+    "a", "o", "os", "as", "um", "uma", "uns", "umas", "de", "do", "da", "dos",
+    "das", "e", "em", "no", "na", "nos", "nas", "por", "para", "com", "sem",
+    "sobre", "entre", "que", "ou", "mas", "se", "como", "mais", "menos",
+    "the", "a", "an", "and", "or", "of", "in", "on", "at", "to", "for",
+    "with", "by", "from", "as",
+}
+
+_TEXT_SEARCH_STRUCTURAL_LABELS = {
+    "capitulo", "sumario", "prefacio", "introducao", "apresentacao",
+    "indice", "anexo", "capa", "ebook", "livro",
+}
+
+_ARTICLE_DOCUMENT_TYPES = {
+    "article", "journal-article", "editorial", "letter", "erratum",
+    "paratext", "review",
+}
+
+
+def _strip_accents(text: str) -> str:
+    """Remover acentos via NFKD (decompõe e descarta marcas combinantes)."""
+    if not text:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", text)
+    return "".join(ch for ch in nfkd if not unicodedata.combining(ch))
+
+
+def _normalize_title_for_match(title: str) -> str:
+    """Normalizar título para comparação (NFKD sem acentos, minúsculas, alfanumérico/espaços)."""
+    if not title:
+        return ""
+    stripped = _strip_accents(title)
+    lowered = stripped.lower()
+    alnum = re.sub(r"[^a-z0-9\s]+", " ", lowered)
+    return re.sub(r"\s+", " ", alnum).strip()
+
+
+def _author_surnames(authors: Optional[list[str]]) -> set[str]:
+    """Extrair sobrenomes de uma lista de autores.
+
+    Suporta ``'Nome Sobrenome'`` (ultimo token) e ``'Sobrenome, Nome'``
+    (ultimo token ANTES da virgula), normalizado sem acento (NFKD) em
+    lowercase. Assim ``'Cohen, Rodrigo'`` do PDF casa com
+    ``'Rodrigo Cohen'`` das APIs externas.
+    """
+    surnames: set[str] = set()
+    for author in (authors or []):
+        raw = str(author).strip()
+        if not raw:
+            continue
+        if "," in raw:
+            surname_part = raw.split(",", 1)[0].strip()
+        else:
+            surname_part = raw.split()[-1]
+        surname = _strip_accents(surname_part).lower()
+        if surname:
+            surnames.add(surname)
+    return surnames
+
+
+def _is_valid_text_search_title(title: str) -> bool:
+    """Validar se um título é adequado para busca textual na OpenAlex/Google Books.
+
+    Rejeita títulos normalizados com menos de 12 caracteres alfanuméricos,
+    menos de 2 tokens relevantes (ignorando stopwords curtas) ou rótulos
+    estruturais genéricos (capítulo, sumário, prefácio, introdução, etc.).
+    """
+    if not title or not title.strip():
+        return False
+    normalized = _normalize_title_for_match(title)
+    if not normalized:
+        return False
+    alnum_count = sum(1 for ch in normalized if ch.isalnum())
+    if alnum_count < 12:
+        return False
+    tokens = [t for t in normalized.split() if t and t not in _TEXT_SEARCH_STOPWORDS]
+    if len(tokens) < 2:
+        return False
+    if normalized.strip().lower() in _TEXT_SEARCH_STRUCTURAL_LABELS:
+        return False
+    return True
+
+
+def _compute_text_match_score(
+    query_title: str,
+    api_title: str,
+    query_author: Optional[str] = None,
+    api_authors: Optional[list[str]] = None,
+) -> tuple[bool, float]:
+    """Calcular métrica composta de correspondência de título/autor.
+
+    Retorna (accepted, score_0_to_1) onde o score é baseado em sort_score/100.0.
+    """
+    q = _normalize_title_for_match(query_title)
+    a = _normalize_title_for_match(api_title)
+    if not q or not a:
+        return False, 0.0
+
+    len_ratio = min(len(q), len(a)) / max(1, max(len(q), len(a)))
+    if len_ratio < 0.45:
+        return False, 0.0
+
+    sort_score = fuzz.token_sort_ratio(q, a)
+    set_score = fuzz.token_set_ratio(q, a)
+
+    author_match: Optional[bool] = None
+    if query_author and api_authors:
+        query_surnames = _author_surnames([query_author])
+        api_surnames = _author_surnames(api_authors)
+        author_match = bool(query_surnames & api_surnames)
+
+    accepted = (
+        (sort_score >= 86.0 and not (author_match is False and sort_score < 92.0))
+        or (set_score >= 92.0 and len_ratio >= 0.65 and author_match is True)
+    )
+
+    score = min(1.0, max(0.0, sort_score / 100.0))
+    return accepted, score
 
 
 # ---------------------------------------------------------------------------
@@ -104,11 +231,13 @@ def _query_openalex_by_doi(client: httpx.Client, doi: str, email: Optional[str])
         if exc.response.status_code == 404:
             return []
         raise
-    return [_openalex_to_metadata(data, score=1.0)]
+    return [_openalex_to_metadata(data, score=1.0, match_origin="exact_doi")]
 
 
 def _query_openalex_by_title(client: httpx.Client, title: str, email: Optional[str]) -> list[ExternalMetadata]:
-    """Busca por título na OpenAlex, filtrando por similaridade >= 88.0."""
+    """Busca por título na OpenAlex, aplicando filtro pré-consulta e métrica composta."""
+    if not _is_valid_text_search_title(title):
+        return []
     url = "https://api.openalex.org/works"
     headers = {"User-Agent": _openalex_user_agent(email)}
     params = {"search": title, "per-page": 10}
@@ -117,13 +246,17 @@ def _query_openalex_by_title(client: httpx.Client, title: str, email: Optional[s
     metadata: list[ExternalMetadata] = []
     for item in results:
         api_title = item.get("title") or ""
-        score = fuzz.token_set_ratio(title, api_title)
-        if score >= _SIMILARITY_THRESHOLD:
-            metadata.append(_openalex_to_metadata(item, score=score / 100.0))
+        accepted, score = _compute_text_match_score(title, api_title)
+        if accepted:
+            metadata.append(
+                _openalex_to_metadata(item, score=score, match_origin="text_search")
+            )
     return metadata
 
 
-def _openalex_to_metadata(item: dict, score: float) -> ExternalMetadata:
+def _openalex_to_metadata(
+    item: dict, score: float, match_origin: str = "text_search"
+) -> ExternalMetadata:
     """Converter um item da OpenAlex em :class:`ExternalMetadata`."""
     authors = []
     for authorship in (item.get("authorships") or []):
@@ -167,6 +300,7 @@ def _openalex_to_metadata(item: dict, score: float) -> ExternalMetadata:
         document_type_hint=item.get("type"),
         concepts=concepts,
         match_score=score,
+        match_origin=match_origin,
     )
 
 
@@ -183,13 +317,18 @@ def _query_google_books_by_isbn(client: httpx.Client, isbn: str, api_key: Option
         params["key"] = api_key
     data = _get_json(client, url, params)
     items = data.get("items") or []
-    return [_google_books_to_metadata(item, score=1.0) for item in items]
+    return [
+        _google_books_to_metadata(item, score=1.0, match_origin="exact_isbn")
+        for item in items
+    ]
 
 
 def _query_google_books_by_title_author(
     client: httpx.Client, title: str, author: Optional[str], api_key: Optional[str]
 ) -> list[ExternalMetadata]:
-    """Busca por título/autor na Google Books, filtrando por similaridade >= 88.0."""
+    """Busca por título/autor na Google Books, aplicando filtro pré-consulta e métrica composta."""
+    if not _is_valid_text_search_title(title):
+        return []
     url = "https://www.googleapis.com/books/v1/volumes"
     query = title if not author else f"{title} {author}"
     params: dict = {"q": query, "maxResults": 10}
@@ -201,13 +340,22 @@ def _query_google_books_by_title_author(
     for item in items:
         volume_info = item.get("volumeInfo") or {}
         api_title = volume_info.get("title") or ""
-        score = fuzz.token_set_ratio(title, api_title)
-        if score >= _SIMILARITY_THRESHOLD:
-            metadata.append(_google_books_to_metadata(item, score=score / 100.0))
+        api_authors = list(volume_info.get("authors") or [])
+        accepted, score = _compute_text_match_score(
+            title, api_title, query_author=author, api_authors=api_authors
+        )
+        if accepted:
+            metadata.append(
+                _google_books_to_metadata(
+                    item, score=score, match_origin="text_search"
+                )
+            )
     return metadata
 
 
-def _google_books_to_metadata(item: dict, score: float) -> ExternalMetadata:
+def _google_books_to_metadata(
+    item: dict, score: float, match_origin: str = "text_search"
+) -> ExternalMetadata:
     """Converter um item da Google Books em :class:`ExternalMetadata`."""
     volume_info = item.get("volumeInfo") or {}
     authors = list(volume_info.get("authors") or [])
@@ -245,6 +393,7 @@ def _google_books_to_metadata(item: dict, score: float) -> ExternalMetadata:
         document_type_hint=volume_info.get("printType"),
         concepts=list(volume_info.get("categories") or []),
         match_score=score,
+        match_origin=match_origin,
     )
 
 
@@ -306,7 +455,7 @@ def enrich_document_metadata(
                 results.extend(_query_openalex_by_doi(client, doc.detected_doi, email))
             except Exception:
                 pass
-        elif title_candidate:
+        elif title_candidate and _is_valid_text_search_title(title_candidate):
             try:
                 results.extend(
                     _query_openalex_by_title(client, title_candidate, email)
@@ -320,7 +469,7 @@ def enrich_document_metadata(
                 results.extend(_query_google_books_by_isbn(client, doc.detected_isbn, google_key))
             except Exception:
                 pass
-        elif title_candidate:
+        elif title_candidate and _is_valid_text_search_title(title_candidate):
             try:
                 results.extend(
                     _query_google_books_by_title_author(
@@ -339,4 +488,88 @@ def enrich_document_metadata(
             continue
         filtered.append(m)
 
+    # Filtro estrutural anti-artigo em livros (OpenAlex textual):
+    # se o documento parece um livro (muitas páginas, ISBN ou CIP), descarta
+    # resultados de busca textual da OpenAlex cujo tipo seja artigo/paratexto.
+    is_book_like = (
+        doc.total_pages >= 80 or bool(doc.detected_isbn) or bool(doc.cip_text)
+    )
+    if is_book_like:
+        structurally_filtered: list[ExternalMetadata] = []
+        for m in filtered:
+            if (
+                m.source == "openalex"
+                and m.match_origin == "text_search"
+                and (m.document_type_hint or "").strip().lower()
+                in _ARTICLE_DOCUMENT_TYPES
+            ):
+                continue
+            structurally_filtered.append(m)
+        filtered = structurally_filtered
+
     return filtered
+
+
+def select_best_external_metadata(
+    doc: ExtractedDocument, candidates: list[ExternalMetadata]
+) -> Optional[ExternalMetadata]:
+    """Selecionar o melhor metadado externo por pontuação determinística.
+
+    Perfil do documento:
+      - looks_like_book: ISBN, CIP ou >= 60 páginas.
+      - looks_like_article: DOI, ou <= 45 páginas sem ISBN/CIP.
+
+    Pontuação:
+      - exact_doi / exact_isbn: base 1000 (+100 se fonte alinhada ao perfil:
+        google_books para livro, openalex para artigo).
+      - text_search: base match_score * 100, mais bônus/penalidades por tipo
+        de fonte e confirmação de sobrenome de autor.
+
+    Retorna o candidato de maior pontuação, ou None quando a lista está vazia.
+    """
+    if not candidates:
+        return None
+
+    looks_like_book = (
+        bool(doc.detected_isbn)
+        or bool(doc.cip_text)
+        or (doc.total_pages or 0) >= 60
+    )
+    looks_like_article = bool(doc.detected_doi) or (
+        (doc.total_pages or 0) <= 45
+        and not doc.detected_isbn
+        and not doc.cip_text
+    )
+
+    _title_candidate, author_candidate = _extract_title_author_candidates(doc)
+
+    def _score(m: ExternalMetadata) -> float:
+        base = 0.0
+        if m.match_origin in ("exact_doi", "exact_isbn"):
+            base = 1000.0
+            if looks_like_book and m.source == "google_books":
+                base += 100.0
+            if looks_like_article and m.source == "openalex":
+                base += 100.0
+        elif m.match_origin == "text_search":
+            base = m.match_score * 100.0
+            dt = (m.document_type_hint or "").strip().lower()
+            if looks_like_book:
+                if m.source == "google_books" or dt in (
+                    "book",
+                    "monograph",
+                    "edited-book",
+                    "reference-book",
+                ):
+                    base += 25.0
+                if m.source == "openalex" and dt in _ARTICLE_DOCUMENT_TYPES:
+                    base -= 40.0
+            if looks_like_article and m.source == "openalex":
+                base += 25.0
+        if author_candidate and _author_surnames(
+            [author_candidate]
+        ) & _author_surnames(m.authors):
+            base += 15.0
+        return base
+
+    return max(candidates, key=_score)

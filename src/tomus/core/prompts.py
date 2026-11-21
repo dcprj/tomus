@@ -310,6 +310,10 @@ def build_context_payload(
         lines.append(f"Tipo sugerido: {external_metadata.document_type_hint or '(não informado)'}")
         lines.append(f"Pontuação da correspondência: {external_metadata.match_score}")
         lines.append("")
+        lines.append("Orientação: ignore os metadados externos sugeridos (especialmente periódico, volume, número e DOI) "
+                     "sempre que autor, tipo documental (ex.: Livro vs Artigo) ou ano divergirem do conteúdo real do PDF; "
+                     "priorize o texto do próprio documento.")
+        lines.append("")
 
     return "\n".join(lines)
 

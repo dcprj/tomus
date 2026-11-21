@@ -19,6 +19,7 @@ from tomus.core.taxonomy import (
     repair_taxonomy_levels,
     format_taxonomy_for_prompt,
 )
+from tomus.core.text_utils import normalize_tex_accents
 from tomus.core.config import AppConfig
 from tomus.core.scanner import scan_directory
 from tomus.core.cache import FileCache
@@ -60,6 +61,7 @@ __all__ = [
     "validate_or_repair_pair",
     "repair_taxonomy_levels",
     "format_taxonomy_for_prompt",
+    "normalize_tex_accents",
     "AppConfig",
     "scan_directory",
     "FileCache",
