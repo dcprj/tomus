@@ -205,6 +205,59 @@ def _call_provider_classify(
     )
 
 
+def _record_materialization_error(
+    *,
+    source_path: Path,
+    sha256: str,
+    organizer: LibraryOrganizer,
+    finalize_lock: threading.RLock,
+    used_ocr: bool,
+    emit_terminal: Any,
+    stage_label: str,
+    exc: Exception,
+) -> FileManifestEntry | None:
+    """Registrar erro de materialização no manifest com fallback secundário.
+
+    Usado tanto no bloco de Cache Hit quanto no Estágio 5. Se
+    ``organizer.add_error`` falhar em disco, adiciona um
+    ``FileManifestEntry(status=ProcessStatus.ERROR)`` diretamente à lista de
+    entradas para nunca perder o registro do erro.
+    """
+    logger = logging.getLogger("tomus.pipeline")
+    clean = _sanitize_error_message(str(exc))
+    logger.error("Organizer falhou (%s): %s", stage_label, clean)
+    entry: FileManifestEntry | None = None
+    try:
+        with finalize_lock:
+            entry = organizer.add_error(
+                source_path,
+                sha256,
+                f"Organizer falhou ({stage_label}): {clean}",
+                used_ocr=used_ocr,
+            )
+    except Exception:
+        # Fallback secundário: adicionar FileManifestEntry ERROR diretamente
+        # se organizer.add_error falhar em disco.
+        entry = FileManifestEntry(
+            source_path=str(source_path),
+            destination_path=None,
+            sha256=sha256,
+            status=ProcessStatus.ERROR,
+            used_ocr=used_ocr,
+            error_message=f"Organizer falhou ({stage_label}): {clean}",
+        )
+        organizer.entries.append(entry)
+        organizer._error_count += 1  # type: ignore[attr-defined]
+    if emit_terminal is not None:
+        emit_terminal(
+            "organizer",
+            "error",
+            f"Organizer falhou ({stage_label}): {clean}",
+            destination_path=entry.destination_path if entry else None,
+        )
+    return entry
+
+
 def _process_one(
     scanned: ScannedFile,
     config: AppConfig,
@@ -317,19 +370,15 @@ def _process_one(
                             classification=classification,
                         )
                 except Exception as exc:
-                    logger = logging.getLogger("tomus.pipeline")
-                    logger.error("Organizer falhou (cache hit): %s", _sanitize_error_message(str(exc)))
-                    with finalize_lock:
-                        entry = organizer.add_error(
-                            source_path, sha256,
-                            f"Organizer falhou (cache hit): {_sanitize_error_message(str(exc))}",
-                            used_ocr=used_ocr,
-                        )
-                    _emit_terminal(
-                        "organizer",
-                        "error",
-                        f"Organizer falhou (cache hit): {exc}",
-                        destination_path=entry.destination_path,
+                    entry = _record_materialization_error(
+                        source_path=source_path,
+                        sha256=sha256,
+                        organizer=organizer,
+                        finalize_lock=finalize_lock,
+                        used_ocr=used_ocr,
+                        emit_terminal=_emit_terminal,
+                        stage_label="cache hit",
+                        exc=exc,
                     )
                     return organizer.entries[-1]
                 _emit_terminal(
@@ -508,6 +557,12 @@ def _process_one(
             sort_ok = False
             if _fuzz is not None:
                 sort_ok = _fuzz.token_sort_ratio(q, a) >= 72.0
+            else:
+                # Sem rapidfuzz: comparar títulos normalizados em lowercase
+                # (igualdade ou subconjunto) em vez de falhar cegamente.
+                qn = q.casefold()
+                an = a.casefold()
+                sort_ok = qn == an or qn in an or an in qn
             if len_ratio < 0.45 or not sort_ok:
                 external_metadata = None  # pular merge externo inteiro
 
@@ -630,19 +685,15 @@ def _process_one(
                     destination_path=entry.destination_path,
                 )
     except Exception as exc:
-        logger = logging.getLogger("tomus.pipeline")
-        logger.error("Organizer falhou (Stage 5): %s", _sanitize_error_message(str(exc)))
-        with finalize_lock:
-            entry = organizer.add_error(
-                source_path, sha256,
-                f"Organizer falhou (Stage 5): {_sanitize_error_message(str(exc))}",
-                used_ocr=doc.used_ocr,
-            )
-        _emit_terminal(
-            "organizer",
-            "error",
-            f"Organizer falhou (Stage 5): {exc}",
-            destination_path=entry.destination_path,
+        entry = _record_materialization_error(
+            source_path=source_path,
+            sha256=sha256,
+            organizer=organizer,
+            finalize_lock=finalize_lock,
+            used_ocr=doc.used_ocr,
+            emit_terminal=_emit_terminal,
+            stage_label="estagio 5",
+            exc=exc,
         )
         return organizer.entries[-1]
 
@@ -805,7 +856,7 @@ def run_pipeline(
                 _emit_terminal(
                     "organizer",
                     "error",
-                    f"Falha inesperada: {exc}",
+                    f"Falha inesperada: {_sanitize_error_message(str(exc))}",
                     destination_path=entry.destination_path,
                 )
                 return organizer.entries[-1]

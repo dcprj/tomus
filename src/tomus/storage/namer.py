@@ -70,7 +70,12 @@ def _strip_redundant_bilingual(text: str) -> str:
         )
         if not idiomas_distintos:
             continue
-        # Manter a metade mais longa (menos provável de ser tradução curta).
+        # Manter a metade original em portugues quando houver marcadores PT na
+        # primeira metade e EN/ES na segunda (evitar descartar o titulo original).
+        if tem_pt and (tem_en or tem_es):
+            return parte1.strip()
+        # Caso contrario, manter a metade mais longa (menos provavel de ser
+        # traducao curta).
         if len(parte2) >= len(parte1):
             return parte2.strip()
         return parte1.strip()
@@ -232,7 +237,11 @@ def format_academic_filename(
     nome = unicodedata.normalize("NFC", nome)
 
     # --- Passo 3: caso extremo (autor muito longo) ---
+    # Flag para saber se ja entramos no Passo 3 (autor ja truncado), para que
+    # o loop final nao volte ao prefixo_autor completo sem truncamento.
+    passo3 = False
     if _exceeds(nome):
+        passo3 = True
         # Título mínimo de 15 chars.
         titulo_min = _truncate_word_boundary_both(titulo, 200, 15)
         titulo_min = _strip_trailing_punct(titulo_min)
@@ -241,23 +250,61 @@ def format_academic_filename(
         nome_tent = prefixo_autor + titulo_min + sufixo_ano + ext
         if max_name_chars is None or len(nome_tent) <= max_name_chars:
             nome = nome_tent
+            titulo_trunc = titulo_min
         else:
             # Truncar autor em fronteira de palavra (mantendo >= 20 chars
-            # quando possível), preservando <ano> e extensão.
+            # quando possível), respeitando orçamento de chars calculado.
             autor_budget_chars = None
             if max_name_chars is not None:
                 autor_budget_chars = max_name_chars - len(sufixo_ano) - len(ext) - len(_FIELD_SEP) * 2
-            autor_min = _truncate_word_boundary_both(autor, 400, 20)
+            autor_min = _truncate_word_boundary_both(autor, 400, autor_budget_chars or 20)
             if max_name_chars is not None and len(autor_min) < 20:
                 autor_min = autor[:20]
-            nome = autor_min + sufixo_ano + ext
+            # Tentar compor autor + título mínimo quando couber.
+            prefixo_autor_min = autor_min + _FIELD_SEP
+            if titulo_min:
+                nome_tent2 = prefixo_autor_min + titulo_min + sufixo_ano + ext
+                if (
+                    (max_name_chars is None or len(nome_tent2) <= max_name_chars)
+                    and len(nome_tent2.encode("utf-8")) <= MAX_BYTES
+                ):
+                    nome = nome_tent2
+                    prefixo_autor = prefixo_autor_min
+                    titulo_trunc = titulo_min
+                else:
+                    nome = autor_min + sufixo_ano + ext
+                    prefixo_autor = ""
+                    titulo_trunc = ""
+            else:
+                nome = autor_min + sufixo_ano + ext
+                prefixo_autor = ""
+                titulo_trunc = ""
             nome = unicodedata.normalize("NFC", nome)
 
     # Garantia final de segurança: se ainda exceder (casos extremos),
-    # truncar brutalmente o título até caber.
-    while _exceeds(nome) and titulo_trunc:
-        titulo_trunc = titulo_trunc[:-1]
-        nome = prefixo_autor + titulo_trunc + sufixo_ano + ext
+    # truncar brutalmente o título até caber. Quando ja estamos no Passo 3
+    # (autor já truncado), não voltar ao prefixo_autor completo.
+    while _exceeds(nome):
+        if passo3 and prefixo_autor:
+            # Passo 3 ativo: truncar o título mantendo o autor já truncado.
+            if len(titulo_trunc) > 1:
+                titulo_trunc = titulo_trunc[:-1]
+                nome = prefixo_autor + titulo_trunc + sufixo_ano + ext
+            else:
+                # Título mínimo esgotado: truncar o próprio autor efetivo.
+                if len(prefixo_autor) > 1:
+                    prefixo_autor = prefixo_autor[:-1]
+                    nome = prefixo_autor + sufixo_ano + ext
+                else:
+                    break
+        elif titulo_trunc:
+            if len(titulo_trunc) > 1:
+                titulo_trunc = titulo_trunc[:-1]
+                nome = prefixo_autor + titulo_trunc + sufixo_ano + ext
+            else:
+                break
+        else:
+            break
         nome = unicodedata.normalize("NFC", nome)
 
     return nome

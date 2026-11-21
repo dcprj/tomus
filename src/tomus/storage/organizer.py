@@ -187,7 +187,7 @@ def _parse_front_matter_safe(md_path: Path) -> dict[str, Any] | None:
 
 _ISSUE_RE = re.compile(
     r"\b("
-    r"n\.|no\.|num|numero|nro|issue|iss\.|fasc|fasciculo|ed\.|edicao|edicao"
+    r"n\.|no\.|num|numero|nro|issue|iss\.|fasc|fasciculo|ed\.|edicao"
     r")"
     r"(?:(?<=\w\w)\s*[:.-]?\s*|(?:\s*[:.-]\s*|\s+))"
     r"0*(\d{1,4})\b"
@@ -257,6 +257,13 @@ def _extract_discriminators(
         for text in (title, subtitle, orig_filename):
             folded = _fold_text(text)
             for m in _ISSUE_RE.finditer(folded):
+                disc_word = m.group(1)
+                # 'ed.' / 'edicao' indicam edicao de livro, nao fasciculo de
+                # periodico: so usar como issue para seriais/revistas cientificas.
+                if disc_word in ("ed.", "edicao") and not (
+                    is_serial or tipo == "Revista Científica"
+                ):
+                    continue
                 val = m.group(2)
                 n_int = int(val)
                 if 1900 <= n_int <= 2099:
@@ -807,7 +814,7 @@ def _shorten_name_for_win(
         candidato = f"{base_stem}{sha_suffix}{suffix}"
 
     # Se ainda estourar, truncar o stem agressivamente.
-    while len((dest_dir / candidato).encode("utf-8")) > MAX_BYTES or len(str(dest_dir / candidato)) > WIN_SAFE_FULL_PATH_CHARS:
+    while len(candidato.encode("utf-8")) > MAX_BYTES or len(str(dest_dir / candidato)) > WIN_SAFE_FULL_PATH_CHARS:
         if len(base_stem) <= 5:
             # Último recurso: nome genérico curto.
             candidato = f"file{sha_suffix}{suffix}"
@@ -902,6 +909,20 @@ class LibraryOrganizer:
     ) -> Path:
         """Copiar ou mover um arquivo para ``duplicatas/`` ou ``obsoletos/``."""
         special_dir = self.target_dir / subdir_name
+        # [BUG-WIN-PATH] respeitar WIN_SAFE_FULL_PATH_CHARS antes de criar o Path/copiar.
+        if sys.platform == "win32":
+            if (
+                len(str(special_dir / desired_name)) > WIN_SAFE_FULL_PATH_CHARS
+                or len(desired_name.encode("utf-8")) > MAX_BYTES
+            ):
+                shortened, _ = _shorten_name_for_win(
+                    special_dir,
+                    desired_name,
+                    source_path,
+                    self._planned_destinations,
+                    src_sha256=sha256,
+                )
+                desired_name = shortened
         resolved_name, _ = _resolve_collision(
             special_dir,
             desired_name,
@@ -1221,9 +1242,27 @@ class LibraryOrganizer:
     ) -> FileManifestEntry:
         """Registrar arquivo enviado para revisao_manual preservando o nome original."""
         revisao_dir = self.target_dir / REVISAO_DIR
+        # [BUG-WIN-PATH] respeitar WIN_SAFE_FULL_PATH_CHARS antes de criar o Path/copiar.
+        if sys.platform == "win32":
+            if (
+                len(str(revisao_dir / source_path.name)) > WIN_SAFE_FULL_PATH_CHARS
+                or len(source_path.name.encode("utf-8")) > MAX_BYTES
+            ):
+                shortened, _ = _shorten_name_for_win(
+                    revisao_dir,
+                    source_path.name,
+                    source_path,
+                    self._planned_destinations,
+                    src_sha256=sha256,
+                )
+                source_path_name_for_collision = shortened
+            else:
+                source_path_name_for_collision = source_path.name
+        else:
+            source_path_name_for_collision = source_path.name
         nome_final, _ = _resolve_collision(
             revisao_dir,
-            source_path.name,
+            source_path_name_for_collision,
             source_path,
             self._planned_destinations,
             src_sha256=sha256,
@@ -1253,9 +1292,27 @@ class LibraryOrganizer:
     ) -> FileManifestEntry:
         """Registrar um erro (arquivo corrompido etc.) em revisao_manual."""
         revisao_dir = self.target_dir / REVISAO_DIR
+        # [BUG-WIN-PATH] respeitar WIN_SAFE_FULL_PATH_CHARS antes de criar o Path/copiar.
+        if sys.platform == "win32":
+            if (
+                len(str(revisao_dir / source_path.name)) > WIN_SAFE_FULL_PATH_CHARS
+                or len(source_path.name.encode("utf-8")) > MAX_BYTES
+            ):
+                shortened, _ = _shorten_name_for_win(
+                    revisao_dir,
+                    source_path.name,
+                    source_path,
+                    self._planned_destinations,
+                    src_sha256=sha256,
+                )
+                source_path_name_for_collision = shortened
+            else:
+                source_path_name_for_collision = source_path.name
+        else:
+            source_path_name_for_collision = source_path.name
         nome_final, _ = _resolve_collision(
             revisao_dir,
-            source_path.name,
+            source_path_name_for_collision,
             source_path,
             self._planned_destinations,
             src_sha256=sha256,
