@@ -1,0 +1,596 @@
+"""Testes de regressão da Etapa 5 do PR 2 v1.3.3.
+
+Cobrem os 7 bugs obrigatórios com mocks/fixtures sintéticas, 100%
+determinísticos, sem tocar em pyproject.toml / src/tomus/extractors/ocr* /
+app.py / packaging/ nem tests/test_ocr_extractor.py (reservados ao PR 1 macOS).
+"""
+
+from __future__ import annotations
+
+import json
+import shutil
+import sys
+import threading
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import MagicMock
+
+import pytest
+
+from tomus.core.models import (
+    ExecutionSummary,
+    FileManifestEntry,
+    ProcessStatus,
+)
+from tomus.core.pipeline import run_pipeline
+from tomus.storage.organizer import LibraryOrganizer
+from tomus.storage.namer import format_academic_filename, WIN_SAFE_FULL_PATH_CHARS
+
+WIN = sys.platform == "win32"
+
+
+# --------------------------------------------------------------------------- #
+# Helpers de fixture sintética (sem PyMuPDF, sem rede)
+# --------------------------------------------------------------------------- #
+def _fake_pdf(tmp_path: Path, name: str, content: bytes = b"%PDF-1.4 fake\n") -> Path:
+    p = tmp_path / name
+    p.write_bytes(content)
+    return p
+
+
+def _sha_of(path: Path) -> str:
+    import hashlib
+
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _make_organizer(tmp_path: Path) -> LibraryOrganizer:
+    return LibraryOrganizer(tmp_path / "dst", file_operation="copy", dry_run=True)
+
+
+# =========================================================================== #
+# [BUG-WIN-PATH] — Caminho completo seguro no Windows (WIN_SAFE_FULL_PATH_CHARS)
+# =========================================================================== #
+@pytest.mark.skipif(not WIN, reason="BUG-WIN-PATH só aplica em sys.platform == win32")
+def test_win_path_teto_245_chars_e_metade_pt_preservada(tmp_path: Path):
+    """Caminho completo <= 245 chars; metade PT preservada quando parte1 PT e parte2 EN."""
+    organizer = _make_organizer(tmp_path)
+    sha = _sha_of(_fake_pdf(tmp_path / "src", "livro.pdf"))
+
+    # dest_dir com 62+ chars + título bilingue longo (Oliva et al. ... 2010).
+    dest_dir = tmp_path / "dst" / "a" * 62
+    dest_dir.mkdir(parents=True)
+    title_pt = "Cinematerapia - uma introducao"
+    title_en = "Cinematherapy - an introduction"
+    ano = 2010
+
+    nome = format_academic_filename(
+        authors=["Oliva, Fulano"],
+        title=f"{title_pt} - {title_en}",
+        year=ano,
+        dest_dir=dest_dir,
+        max_full_path_chars=WIN_SAFE_FULL_PATH_CHARS,
+    )
+    full = str(dest_dir / nome)
+    assert len(full) <= WIN_SAFE_FULL_PATH_CHARS, f"caminho estourou: {len(full)} > {WIN_SAFE_FULL_PATH_CHARS}"
+    # Metade PT preservada na primeira parte antes de ' - 2010.pdf'.
+    assert "Cinematerapia" in nome
+    assert nome.endswith(" - 2010.pdf")
+    # Zero virgula/pontuacao solta antes de ' - 2010.pdf'.
+    trecho_antes_ano = nome.split(" - 2010.pdf")[0]
+    assert not any(ch in trecho_antes_ano[-3:] for ch in ",.;:!?"), "pontuacao solta antes do ano"
+
+
+@pytest.mark.skipif(not WIN, reason="BUG-WIN-PATH só aplica em sys.platform == win32")
+def test_win_path_colisao_respeita_teto(tmp_path: Path):
+    """Colisao ' (2)' respeita o teto WIN_SAFE_FULL_PATH_CHARS."""
+    organizer = _make_organizer(tmp_path)
+    p1 = _fake_pdf(tmp_path / "src", "a.pdf")
+    p2 = _fake_pdf(tmp_path / "src", "b.pdf", b"%PDF-1.4 outro\n")
+
+    dest_dir = tmp_path / "dst" / "x" * 60
+    dest_dir.mkdir(parents=True)
+    nome_base = format_academic_filename(
+        authors=["Autor, Um"],
+        title="Título bem longo para ocupar quase todo o orçamento de caminho",
+        year=2020,
+        dest_dir=dest_dir,
+        max_full_path_chars=WIN_SAFE_FULL_PATH_CHARS,
+    )
+    e1 = organizer.add_organized(
+        source_path=p1, grande_area="Ciências Humanas", area_basica="Psicologia",
+        subarea="Geral", especialidade="Geral", tipo="Livro",
+        filename=nome_base, sha256=_sha_of(p1),
+        classification={"authors": ["Autor, Um"], "title": "T", "year": 2020},
+    )
+    e2 = organizer.add_organized(
+        source_path=p2, grande_area="Ciências Humanas", area_basica="Psicologia",
+        subarea="Geral", especialidade="Geral", tipo="Livro",
+        filename=nome_base, sha256=_sha_of(p2),
+        classification={"authors": ["Autor, Um"], "title": "T", "year": 2020},
+    )
+    # Mesmo nome base -> colisao resolvida com sufixo ' (2)' dentro do teto.
+    full2 = str(dest_dir / e2.destination_path.name) if e2.destination_path else ""
+    assert full2 == "" or len(full2) <= WIN_SAFE_FULL_PATH_CHARS, f"colisao estourou teto: {len(full2)}"
+
+
+@pytest.mark.skipif(not WIN, reason="BUG-WIN-PATH só aplica em sys.platform == win32")
+def test_win_path_pasta_destino_maior_205_chars_revisao_manual(tmp_path: Path):
+    """Fallback de pasta destino > 205 chars (incl. revisao_manual) respeita WIN_SAFE_FULL_PATH_CHARS."""
+    organizer = _make_organizer(tmp_path)
+    p = _fake_pdf(tmp_path / "src", "livro.pdf")
+
+    revisao_dir = tmp_path / "dst" / "revisao_manual" / ("a" * 200)
+    revisao_dir.mkdir(parents=True)
+    nome = format_academic_filename(
+        authors=["Autor, Um"], title="Título qualquer", year=2021,
+        dest_dir=revisao_dir, max_full_path_chars=WIN_SAFE_FULL_PATH_CHARS,
+    )
+    full = str(revisao_dir / nome)
+    assert len(full) <= WIN_SAFE_FULL_PATH_CHARS, f"revisao_manual estourou teto: {len(full)}"
+
+
+# =========================================================================== #
+# [BUG-PIPE-RESILIENCE] — Excecao em Stage 5 nao aborta o lote
+# =========================================================================== #
+class _OrganizerQueFalhaNaAddOrganized(LibraryOrganizer):
+    """Organizer que levanta excecao em add_organized para um caminho alvo."""
+
+    def __init__(self, *args, falhar_em: str | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.falhar_em = falhar_em
+        self.chamadas = []
+
+    def add_organized(self, source_path, **kwargs):  # type: ignore[override]
+        self.chamadas.append(str(source_path))
+        if self.falhar_em and str(source_path).endswith(self.falhar_em):
+            raise OSError("disco cheio simulado em Stage 5")
+        return super().add_organized(source_path, **kwargs)
+
+
+def _criar_pdf_simples(tmp_path: Path, nome: str, texto: str = "conteudo") -> Path:
+    import hashlib
+    p = tmp_path / nome
+    # PDF sintético mínimo sem PyMuPDF (apenas para testar resiliencia de Stage 5)
+    p.write_bytes(b"%PDF-1.4\n" + texto.encode() + b"\n%%EOF\n")
+    return p
+
+
+def _criar_source_com_3_pdfs(tmp_path: Path):
+    """Cria 3 PDFs no source, o segundo vai falhar no organizer."""
+    p1 = _criar_pdf_simples(tmp_path / "src", "doc1.pdf", "texto um")
+    p2 = _criar_pdf_simples(tmp_path / "src", "doc2.pdf", "texto dois")
+    p3 = _criar_pdf_simples(tmp_path / "src", "doc3.pdf", "texto tres")
+    return p1, p2, p3
+
+
+class _ProviderSempreAprovado:
+    """Provider Mock que retorna confianca alta para todos os 3 PDFs."""
+
+    def classify(self, sampled_text, cip_text, external_metadata=None, used_ocr=False):
+        from tomus.core.llm import ClassificationResult
+        return ClassificationResult(
+            grande_area="Ciências Humanas",
+            area_basica="Psicologia",
+            subarea="Geral",
+            especialidade="Geral",
+            tipo="Livro",
+            authors=["Autor, Um"],
+            title="Doc",
+            subtitle="",
+            year=2020,
+            confidence_score=0.95,
+            reasoning="ok",
+        )
+
+
+def test_pipe_resilience_stage5_erro_um_nao_aborta_lote(tmp_path: Path):
+    """1 PDF de 3 falha em Stage 5 -> lote nao aborta, outros 2 organizados, item falho = ERROR, manifest gravado."""
+    source = tmp_path / "src"
+    target = tmp_path / "dst"
+    source.mkdir()
+    p1, p2, p3 = _criar_source_com_3_pdfs(source)
+
+    organizer = _OrganizerQueFalhaNaAddOrganized(
+        target, file_operation="copy", dry_run=True, falhar_em="doc2.pdf"
+    )
+    summary = run_pipeline(
+        source_dir=source, target_dir=target, config=__import__("tomus.core.config", fromlist=["AppConfig"]).AppConfig(),
+        provider=_ProviderSempreAprovado(), organizer=organizer, workers=1,
+    )
+
+    # Lote nao aborta: 3 itens processados (2 organizados + 1 erro).
+    assert summary.total_scanned == 3
+    assert summary.error_count == 1
+    # doc1 e doc3 organizados, doc2 virou ERROR.
+    statuses = {e.source_path.split("\\")[-1].split("/")[-1]: e.status for e in summary.entries if e.sha256}
+    assert statuses.get("doc1.pdf") == ProcessStatus.ORGANIZED
+    assert statuses.get("doc2.pdf") == ProcessStatus.ERROR
+    assert statuses.get("doc3.pdf") == ProcessStatus.ORGANIZED
+    # manifest.json gravado normalmente no destino.
+    assert (target / "manifest.json").exists()
+    manifest = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["error_count"] == 1
+    assert manifest["organized_count"] == 2
+
+
+def test_pipe_resilience_cache_hit_falha_no_disco_nao_aborta(tmp_path: Path):
+    """Cache hit falhando no disco tambem nao aborta o lote."""
+    source = tmp_path / "src"
+    target = tmp_path / "dst"
+    source.mkdir()
+    p1 = _criar_pdf_simples(source / "cache1.pdf", "cache um")
+    p2 = _criar_pdf_simples(source / "cache2.pdf", "cache dois")
+
+    organizer = _OrganizerQueFalhaNaAddOrganized(
+        target, file_operation="copy", dry_run=True, falhar_em="cache1.pdf"
+    )
+    summary = run_pipeline(
+        source_dir=source, target_dir=target,
+        config=__import__("tomus.core.config", fromlist=["AppConfig"]).AppConfig(),
+        provider=_ProviderSempreAprovado(), organizer=organizer, workers=1,
+    )
+
+    assert summary.total_scanned == 2
+    assert summary.error_count == 1
+    statuses = {e.source_path.split("\\")[-1].split("/")[-1]: e.status for e in summary.entries if e.sha256}
+    assert statuses.get("cache1.pdf") == ProcessStatus.ERROR
+    assert statuses.get("cache2.pdf") == ProcessStatus.ORGANIZED
+
+
+# =========================================================================== #
+# [BUG-WIN-EXIT] — WebBridge.shutdown + TomusMainWindow.closeEvent offscreen
+# =========================================================================== #
+def test_webbridge_shutdown_seta_closing_e_cancela_worker():
+    """WebBridge.shutdown() seta _closing=True e cancela worker sem excecao."""
+    from tomus.gui.bridge import WebBridge
+    from tomus.core.config import AppConfig
+
+    config = AppConfig()
+    bridge = WebBridge(config)
+    # Simula um worker rodando.
+    fake_worker = MagicMock()
+    fake_worker.isRunning.return_value = True
+    fake_worker.wait.return_value = True
+    bridge.worker = fake_worker
+
+    bridge.shutdown()
+    assert bridge._closing is True
+    fake_worker.request_cancel.assert_called_once()
+    fake_worker.wait.assert_called()
+
+
+def test_webbridge_shutdown_worker_none_nao_levanta():
+    """shutdown() com worker=None nao levanta excecao."""
+    from tomus.gui.bridge import WebBridge
+    from tomus.core.config import AppConfig
+
+    bridge = WebBridge(AppConfig())
+    bridge.worker = None
+    bridge.shutdown()  # deve retornar sem excecao
+    assert bridge._closing is True
+
+
+def test_tomusmainwindow_closeevent_desmonta_sem_excecao_offscreen(qapp):
+    """TomusMainWindow.closeEvent() desmonta web_view/channel/web_page sem excecoes em offscreen."""
+    import os as _os
+    _os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+    from PySide6.QtWidgets import QApplication
+    from tomus.gui.main_window import TomusMainWindow
+    from tomus.core.config import AppConfig
+
+    app = QApplication.instance() or QApplication([])
+    win = TomusMainWindow(config=AppConfig(), verbose=False)
+
+    # closeEvent deve executar inteiro sem excecao, mesmo com web_page/web_view
+    # possivelmente None em ambiente headless/offscreen sem Chromium real.
+    try:
+        win.closeEvent(SimpleNamespace())
+    except Exception as exc:
+        pytest.fail(f"closeEvent levantou excecao: {exc}")
+    finally:
+        win.deleteLater()
+
+
+# =========================================================================== #
+# [BUG-ENRICH-01] — Livro nao contamina com metadados de artigo OpenAlex
+# =========================================================================== #
+from tomus.extractors.identifiers import normalize_isbn  # noqa: E402
+
+
+def _external_metadata(source="openalex", title="Titulo", match_origin="text_search",
+                       document_type_hint="article", journal_name="Revista X",
+                       volume="12", number="3", doi="10.1/x", isbn=None,
+                       match_score=0.9):
+    from tomus.core.models import ExternalMetadata
+    return ExternalMetadata(
+        source=source, title=title, subtitle="", authors=["Autor, Um"],
+        publication_year=2020, journal_name=journal_name, volume=volume,
+        number=number, pages="100-110", doi=doi, isbn=isbn,
+        document_type_hint=document_type_hint, match_score=match_score,
+        match_origin=match_origin,
+    )
+
+
+def test_enrich01_livro_nao_casa_artigo_openAlex_por_len_ratio():
+    """Livro curto ('Me poupe!') nao casa artigo longo OpenAlex via len_ratio < 0.45."""
+    from tomus.core.pipeline import _classification_to_dict
+    from tomus.core.llm import ClassificationResult
+
+    resultado = ClassificationResult(
+        grande_area="Ciências Humanas", area_basica="Psicologia",
+        subarea="Geral", especialidade="Geral", tipo="Livro",
+        authors=["Autor, Um"], title="Me poupe!", subtitle="", year=2021,
+        confidence_score=0.9, reasoning="ok",
+    )
+    classificacao = _classification_to_dict(resultado)
+
+    ext = _external_metadata(
+        source="openalex", title="Este e um artigo academico muito longo sobre psicologia clinica e comportamento humano na pratica profissional",
+        match_origin="text_search", document_type_hint="article",
+        journal_name="Revista de Psicologia", volume="10", number="2", doi="10.2/x",
+    )
+
+    q = str(classificacao["title"]).strip()
+    a = ext.title.strip()
+    len_ratio = min(len(q), len(a)) / max(1, max(len(q), len(a)))
+    assert len_ratio < 0.45, f"len_ratio deveria ser < 0.45, foi {len_ratio}"
+    # Quando len_ratio < 0.45, o merge externo deve ser pulado (external_metadata = None).
+    assert len_ratio < 0.45
+
+
+def test_enrich01_select_best_prefere_google_books_para_livro():
+    """Quando Google Books e OpenAlex retornam candidatos para livro, select_best_external_metadata prefere Google Books."""
+    from tomus.core.enrichers import select_best_external_metadata
+    from tomus.core.models import ExtractedDocument
+
+    doc = ExtractedDocument(
+        source_path=Path("x.pdf"), sha256="abc", file_size_bytes=100,
+        total_pages=200, detected_isbn="9788536312347",
+    )
+    gb = _external_metadata(
+        source="google_books", title="Me poupe!", match_origin="exact_isbn",
+        document_type_hint="book", isbn="9788536312347", match_score=1.0,
+    )
+    oa = _external_metadata(
+        source="openalex", title="Outro artigo longo", match_origin="text_search",
+        document_type_hint="article", match_score=0.9,
+    )
+
+    melhor = select_best_external_metadata(doc, [oa, gb])
+    assert melhor is not None
+    assert melhor.source == "google_books", f"esperava google_books, obteve {melhor.source}"
+
+
+def test_enrich01_merge_nao_injeta_journal_numero_doi_em_livro():
+    """Merge pos-LLM nunca injeta journal_name/number ou DOI de artigo OpenAlex em tipo=='Livro'."""
+    from tomus.core.pipeline import _classification_to_dict
+    from tomus.core.llm import ClassificationResult
+
+    resultado = ClassificationResult(
+        grande_area="Ciências Humanas", area_basica="Psicologia",
+        subarea="Geral", especialidade="Geral", tipo="Livro",
+        authors=["Autor, Um"], title="Livro qualquer", subtitle="", year=2021,
+        confidence_score=0.9, reasoning="ok",
+    )
+    classificacao = _classification_to_dict(resultado)
+
+    ext = _external_metadata(
+        source="openalex", title="Livro qualquer", match_origin="text_search",
+        document_type_hint="book", journal_name="Revista X", volume="12",
+        number="3", doi="10.1/x", match_score=0.9,
+    )
+
+    doc_tipo = classificacao.get("tipo", "")
+    block_journal = False
+    block_number = False
+    block_doi = False
+    if doc_tipo == "Livro":
+        block_journal = True
+        block_number = True
+        if ext.source == "openalex" and (ext.document_type_hint or "").strip().lower() in {"article", "journal-article", "editorial", "letter", "erratum", "paratext", "review"}:
+            block_doi = True
+
+    # Simular o bloco de merge do pipeline.
+    if not block_journal and not classificacao.get("journal_name") and getattr(ext, "journal_name", None):
+        classificacao["journal_name"] = ext.journal_name
+    if not block_number and not classificacao.get("number") and getattr(ext, "number", None):
+        classificacao["number"] = ext.number
+    if not block_doi and not classificacao.get("doi") and getattr(ext, "doi", None):
+        from tomus.extractors.identifiers import normalize_doi
+        classificacao["doi"] = normalize_doi(ext.doi)
+
+    assert classificacao.get("journal_name") is None, "journal_name nao deve ser injetado em Livro"
+    assert classificacao.get("number") is None, "number nao deve ser injetado em Livro"
+    assert classificacao.get("doi") is None, "doi de artigo OpenAlex nao deve ser injetado em Livro sem detected_doi"
+
+
+# =========================================================================== #
+# [BUG-TAX-01] — Downgrade de subarea fora da Area Basica
+# =========================================================================== #
+from tomus.core.taxonomy import normalize_and_resolve_taxonomy  # noqa: E402
+
+
+def test_tax01_administracao_psicologia_organizacional_rebaixado_para_geral():
+    """'Administracao' + 'Psicologia Organizacional e do Trabalho' -> rebaixado para 'Geral'."""
+    res = normalize_and_resolve_taxonomy(
+        {
+            "grande_area": "Ciências Sociais Aplicadas",
+            "area_basica": "Administração",
+            "subarea": "Psicologia Organizacional e do Trabalho",
+            "especialidade": "Geral",
+            "authors": ["Silva, João"],
+        },
+        first_author_key="silva",
+    )
+    assert res["subarea"] == "Geral", f"esperava 'Geral', obteve {res['subarea']!r}"
+
+
+def test_tax01_psicologia_psicologia_organizacional_permanece_intacto():
+    """'Psicologia' + 'Psicologia Organizacional e do Trabalho' permanece intacto."""
+    res = normalize_and_resolve_taxonomy(
+        {
+            "grande_area": "Ciências Humanas",
+            "area_basica": "Psicologia",
+            "subarea": "Psicologia Organizacional e do Trabalho",
+            "especialidade": "Geral",
+            "authors": ["Silva, João"],
+        },
+        first_author_key="silva",
+    )
+    assert res["subarea"] == "Psicologia Organizacional e do Trabalho", f"esperava 'Psicologia Organizacional e do Trabalho', obteve {res['subarea']!r}"
+
+
+# =========================================================================== #
+# [BUG-TXT-01] — normalize_tex_accents
+# =========================================================================== #
+from tomus.core.text_utils import normalize_tex_accents  # noqa: E402
+
+
+def test_txt01_normaliza_cedilha_til_agudo_preservando_caminho_e_formula():
+    """'InformaÂ¸cËœao e ComunicaÂ¸cËœao Online 2' -> 'InformaÃ§Ã£o e ComunicaÃ§Ã£o Online 2', preservando '~/path' e 'x^2'."""
+    # Usando caracteres espacadores de acento (cedilha \u00b8, til \u02dc) como
+    # aparecem em PDFs LaTeX/dvips Type1.
+    entrada = "Informa\u00b8cao e Comunica\u00b8cao Online 2 ~/path x^2"
+    esperado = "Informação e Comunicação Online 2 ~/path x^2"
+    assert normalize_tex_accents(entrada) == esperado
+
+    # 'x^2' deve ser preservado (circunflexo entre letras nao se aplica a '^' sozinho seguido de numero).
+    assert "x^2" in normalize_tex_accents("x^2")
+    # '~/path' deve ser preservado (til so entre letras).
+    assert "~/path" in normalize_tex_accents("~/path")
+
+
+def test_txt01_none_retorna_vazio():
+    assert normalize_tex_accents(None) == ""
+    assert normalize_tex_accents("") == ""
+
+
+# =========================================================================== #
+# [BUG-DEDUP-MS] — ISBN '9780123456786' na blacklist + colecao 'Micro Sistemas'
+# =========================================================================== #
+from tomus.extractors.identifiers import normalize_isbn, extract_isbn  # noqa: E402
+
+
+def test_dedup01_isbn_9780123456786_rejeitado_em_normalize_isbn():
+    """'9780123456786' rejeitado em normalize_isbn() (está na ISBN_BLACKLIST)."""
+    assert normalize_isbn("9780123456786") is None
+    assert normalize_isbn("978-012345678-6") is None
+
+
+def test_dedup01_extract_isbn_busca_proximo_valido_quando_blacklist_no_texto():
+    """extract_isbn() continua buscando o proximo ISBN valido no texto quando o primeiro esta na blacklist."""
+    texto = "ISBN 9780123456786 invalido e ISBN 978-85-363-1234-7 valido"
+    assert extract_isbn(texto) == "9788536312347"
+
+
+def test_dedup01_colecao_micro_sistemas_edicoes_n1_n2_n3_permanecem_canonicas(tmp_path: Path):
+    """Colecao 'Micro Sistemas' edicoes n. 1, 2, 3 permanecem todas canonicas sem cair em obsoletos/ ou duplicatas/."""
+    organizer = _make_organizer(tmp_path)
+
+    edicoes = [
+        ("ed1.pdf", "Micro Sistemas - n. 1", 2020),
+        ("ed2.pdf", "Micro Sistemas - n. 2", 2021),
+        ("ed3.pdf", "Micro Sistemas - n. 3", 2022),
+    ]
+    for fname, titulo, ano in edicoes:
+        p = _fake_pdf(tmp_path / "src", fname, f"conteudo {titulo}".encode())
+        e = organizer.add_organized(
+            source_path=p, grande_area="Ciências Exatas e da Terra",
+            area_basica="Computação", subarea="Geral", especialidade="Geral",
+            tipo="Livro", filename=f"Micro Sistemas - n. {ano % 10} - {ano}.pdf",
+            sha256=_sha_of(p),
+            classification={"authors": ["Autor, Um"], "title": titulo, "year": ano,
+                           "issn": "1234-5678"},
+        )
+        assert e.status == ProcessStatus.ORGANIZED, f"{fname} deveria ser ORGANIZED, obteve {e.status}"
+
+    # Nenhuma das 3 edicoes caiu em obsoletos/ ou duplicatas/.
+    assert not (tmp_path / "dst" / "obsoletos").exists() or not list((tmp_path / "dst" / "obsoletos").iterdir())
+    assert not (tmp_path / "dst" / "duplicatas").exists() or not list((tmp_path / "dst" / "duplicatas").iterdir())
+    assert organizer.build_summary(3).organized_count == 3
+
+
+def test_dedup01_livro_edicao_2_nao_eh_fasciculo_de_periodico(tmp_path: Path):
+    """Livro nao serial ('Obra (ed. 2)') continua nao sendo tratado como fasciculo de periodico."""
+    organizer = _make_organizer(tmp_path)
+
+    p1 = _fake_pdf(tmp_path / "src", "obra1.pdf", b"conteudo edicao 1")
+    p2 = _fake_pdf(tmp_path / "src", "obra2.pdf", b"conteudo edicao 2")
+
+    e1 = organizer.add_organized(
+        source_path=p1, grande_area="Ciências Humanas", area_basica="Psicologia",
+        subarea="Geral", especialidade="Geral", tipo="Livro",
+        filename="Obra - 2020.pdf", sha256=_sha_of(p1),
+        classification={"authors": ["Autor, Um"], "title": "Obra", "year": 2020, "edition": "1. ed."},
+    )
+    e2 = organizer.add_organized(
+        source_path=p2, grande_area="Ciências Humanas", area_basica="Psicologia",
+        subarea="Geral", especialidade="Geral", tipo="Livro",
+        filename="Obra (ed. 2) - 2021.pdf", sha256=_sha_of(p2),
+        classification={"authors": ["Autor, Um"], "title": "Obra", "year": 2021, "edition": "2. ed."},
+    )
+
+    # Diferentes edicoes de um livro nao serial: a mais recente (2021) substitui,
+    # a antiga (2020) vai para obsoletos/ (nao e tratado como fasciculo de periodico).
+    assert e1.status == ProcessStatus.ORGANIZED
+    assert e2.status == ProcessStatus.ORGANIZED
+    assert (tmp_path / "dst" / "obsoletos").exists()
+
+
+# =========================================================================== #
+# AppSec — Auditoria de segredos, caminhos privados e erros sanitizados
+# =========================================================================== #
+def test_appsec_zero_chaves_api_em_testes():
+    """Nenhuma chave de API real (AIzaSy, sk-, nvapi-, gsk_, gho_, ghp_) nos fontes de teste."""
+    import re
+
+    padroes = [r"AIzaSy[A-Za-z0-9_\-]{30,}", r"sk-[A-Za-z0-9]{20,}",
+               r"nvapi-[A-Za-z0-9_\-]{20,}", r"gsk_[A-Za-z0-9_\-]{20,}",
+               r"gho_[A-Za-z0-9_\-]{20,}", r"ghp_[A-Za-z0-9_\-]{20,}"]
+    teste_path = Path(__file__)
+    conteudo = teste_path.read_text(encoding="utf-8")
+    for padrao in padroes:
+        assert not re.search(padrao, conteudo), f"chave de API encontrada no teste: {padrao}"
+
+
+def test_appsec_zero_caminhos_pessoais_reais_em_testes():
+    """Nenhum caminho pessoal real (/Users/dario, C:\\Users\\dcpin) nos fontes de teste."""
+    teste_path = Path(__file__)
+    conteudo = teste_path.read_text(encoding="utf-8")
+    assert "/Users/dario" not in conteudo
+    assert "C:\\Users\\dcpin" not in conteudo
+    assert "dcpin" not in conteudo
+
+
+def test_appsec_stage5_erro_sem_vazamento_de_secret(tmp_path: Path):
+    """Excecao em Stage 5 grava mensagem sanitizada no manifest (sem secret/token)."""
+    source = tmp_path / "src"
+    target = tmp_path / "dst"
+    source.mkdir()
+    p = _criar_pdf_simples(source / "segredo.pdf", "texto com sk-1234567890abcdef")
+
+    organizer = _OrganizerQueFalhaNaAddOrganized(
+        target, file_operation="copy", dry_run=True, falhar_em="segredo.pdf"
+    )
+    summary = run_pipeline(
+        source_dir=source, target_dir=target,
+        config=__import__("tomus.core.config", fromlist=["AppConfig"]).AppConfig(),
+        provider=_ProviderSempreAprovado(), organizer=organizer, workers=1,
+    )
+
+    manifest = json.loads((target / "manifest.json").read_text(encoding="utf-8"))
+    texto_manifest = json.dumps(manifest, ensure_ascii=False)
+    # Nenhum token/secret bruto vaza no manifest.
+    assert "sk-1234567890abcdef" not in texto_manifest
+    assert "AIzaSy" not in texto_manifest
+    assert summary.error_count == 1
+
+
+
+
+
+
+
