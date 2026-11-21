@@ -16,7 +16,7 @@ Se você é pesquisador, professor, pós-graduando, estudante universitário ou 
 
 O **Tomus** foi criado exatamente para resolver essa dor, de forma automatizada, elegante e com rigor científico:
 
-1. **Ele examina os seus PDFs:** Lê o conteúdo textual e, se o documento for um livro ou artigo antigo escaneado, utiliza o motor de OCR local do seu computador (PyMuPDF + Docling + RapidOCR/ONNXRuntime, em macOS e Windows) para transcrever o texto.
+1. **Ele examina os seus PDFs:** Lê o conteúdo textual e, se o documento for um livro ou artigo antigo escaneado, utiliza o motor de OCR local do seu computador (PyMuPDF + RapidOCR/ONNXRuntime, em macOS e Windows) para transcrever o texto.
 2. **Ele identifica a obra com precisão:** Localiza títulos, autores, ano de publicação, editoras ou revistas científicas.
 3. **Ele organiza seu acervo por assuntos:** Agrupa seus arquivos na taxonomia oficial de áreas do conhecimento da **CAPES/CNPq** (por exemplo: *Ciências Humanas › Filosofia › Epistemologia*).
 4. **Ele padroniza o nome dos arquivos:** Renomeia cada arquivo de forma clara e profissional: `Autor - Título - Ano.pdf`.
@@ -290,7 +290,7 @@ Para garantir total clareza, reunimos abaixo os termos técnicos presentes no ap
 
 * **ABNT NBR 6023:** Norma oficial da Associação Brasileira de Normas Técnicas que estabelece as regras universais para apresentação de referências e citações em trabalhos científicos no Brasil.
 * **API Key (Chave de API):** Código identificador alfanumérico pessoal que serve como credencial para acessar serviços digitais de inteligência artificial ou bases de dados.
-* **OCR local (PyMuPDF + Docling + RapidOCR/ONNXRuntime):** Motor de reconhecimento óptico de caracteres executado localmente no seu computador (macOS e Windows), usado para transcrever páginas digitalizadas sem enviar dados para a nuvem.
+* **OCR local (PyMuPDF + RapidOCR/ONNXRuntime):** Motor de reconhecimento óptico de caracteres executado localmente no seu computador (macOS e Windows), usado para transcrever páginas digitalizadas sem enviar dados para a nuvem.
 * **BYOK (*Bring Your Own Key*):** Modelo de arquitetura onde o usuário utiliza suas próprias credenciais junto aos provedores de serviços, garantindo que nenhum servidor terceiro tenha controle sobre seus acessos ou seus dados.
 * **CAPES/CNPq:** Principais órgãos federais de fomento à pesquisa e pós-graduação no Brasil. O Tomus adota a tabela oficial desses órgãos que classifica todo o saber humano em 8 Grandes Áreas e centenas de subáreas.
 * **Circuit Breaker:** Mecanismo de proteção em engenharia de software que desativa temporariamente uma via de comunicação quando ela falha repetidas vezes (como quando uma cota gratuita atinge o limite), evitando lentidão e redirecionando a tarefa para outra via disponível.

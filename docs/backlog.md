@@ -229,7 +229,7 @@ Conforme decisão de produto, o lançamento inicial foca na estabilização dos 
 3. **Showcase Visual:**
    - Demonstração da taxonomia curricular CAPES/CNPq.
    - Extração de metadados canônicos via DOI/Crossref e Google Books.
-   - Resgate de documentos escaneados antigos via Docling OCR.
+   - Resgate de documentos escaneados antigos via RapidOCR/ONNXRuntime.
    - Geração de companion markdown (.md) com referências ABNT NBR 6023.
    - Garantia de privacidade 100% local (sem envio de documentos acadêmicos para a nuvem).
 4. **Instruções de Instalação e FAQ:** Requisitos para macOS (Apple Silicon / Intel) e Windows 10/11.

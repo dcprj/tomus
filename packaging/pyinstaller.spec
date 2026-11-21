@@ -58,40 +58,20 @@ hiddenimports = [
     "pydantic_settings",
     "google.genai",
     "httpx",
-    "torch",
-    "torchvision",
-    "docling",
-    "docling.document_converter",
-    "docling.datamodel.base_models",
-    "docling.datamodel.pipeline_options",
-    "docling.backend.docling_parse_backend",
-    "docling.backend.pypdfium2_backend",
-    "docling.pipeline.standard_pdf_pipeline",
     "rapidocr",
     "onnxruntime",
-    # Módulos de plugins do Docling (prevenem catálogo vazio no bundle congelado)
-    "docling.models.plugins.defaults",
-    "docling.models.stages.picture_description.picture_description_api_model",
-    "docling.models.stages.picture_description.picture_description_vlm_engine_model",
-    "docling.models.stages.picture_description.picture_description_vlm_model",
-    "docling.models.factories.base_factory",
-    "docling.models.factories.picture_description_factory",
-    "docling.models.factories.ocr_factory",
-    "docling.models.factories.layout_factory",
-    "docling.models.factories.table_structure_factory",
-    # Docling ibm-models e core (pré-visão/manipulação de modelos no bundle)
-    "docling_ibm_models",
-    "docling_ibm_models.layoutanalyzer",
-    "docling_ibm_models.tableformer",
-    "docling_ibm_models.tesseract",
-    "docling_ibm_models.granitevision",
-    "docling_core",
     # Módulo do projeto com interações específicas do Windows (Prisma: _reveal_windows_shell)
     "tomus.gui.os_integration",
 ]
 
-# Coletar submódulos e arquivos de dados do Docling e motor de OCR
-for pkg in ["docling", "docling-slim", "docling_core", "docling_parse", "docling_ibm_models", "rapidocr", "onnxruntime", "latex2mathml", "pylatexenc", "pypdfium2", "pypdfium2_raw"]:
+# Coletar binários/DLLs do onnxruntime (essenciais no Windows para RapidOCR)
+binaries = []
+binaries += collect_dynamic_libs("onnxruntime")
+
+# Coletar submódulos e arquivos de dados do RapidOCR e onnxruntime (essenciais
+# para modelos .onnx e configs no bundle .app/.exe). Docling, torch, torchvision
+# e transformers permanecem removidos (RapidOCR agora primário).
+for pkg in ["rapidocr", "onnxruntime"]:
     try:
         datas += collect_data_files(pkg)
     except Exception:
@@ -100,29 +80,8 @@ for pkg in ["docling", "docling-slim", "docling_core", "docling_parse", "docling
         hiddenimports += collect_submodules(pkg)
     except Exception:
         pass
-    # Garantir metadados (entry_points) no bundle congelado para evitar
-    # "No class found with the name picture_description_vlm_engine" nos factories do Docling.
     try:
         datas += copy_metadata(pkg)
-    except Exception:
-        pass
-
-# Coletar binários/DLLs do onnxruntime (essenciais no Windows para RapidOCR)
-binaries = []
-binaries += collect_dynamic_libs("onnxruntime")
-
-# No Windows, coletar TODOS os arquivos do transformers para resolver
-# AutoImageProcessor no Docling (evita "No class found" / ImportError no bundle congelado)
-if sys.platform == "win32":
-    try:
-        _transformers_all = collect_all("transformers")
-        datas += _transformers_all[0] if isinstance(_transformers_all, tuple) else _transformers_all
-        binaries += _transformers_all[1] if isinstance(_transformers_all, tuple) else []
-        hiddenimports += _transformers_all[2] if isinstance(_transformers_all, tuple) else []
-    except Exception:
-        pass
-    try:
-        datas += copy_metadata("transformers")
     except Exception:
         pass
 
@@ -156,7 +115,10 @@ a = Analysis(
     hookspath=[str(SPEC_DIR / "hooks")],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "IPython", "notebook", "pkg_resources"],
+    excludes=["tkinter", "matplotlib", "IPython", "notebook", "pkg_resources",
+              "torch", "torchvision", "transformers", "docling", "docling_core",
+              "docling_parse", "docling_ibm_models", "huggingface_hub", "accelerate",
+              "tokenizers", "safetensors"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

@@ -1,32 +1,43 @@
-"""Testes unitários do extrator de OCR seletivo via Docling (Item 15).
+"""Testes unitários do extrator de OCR seletivo via RapidOCR (Opção B1).
 
-Valida o recorte de páginas sem texto, o uso de DocumentStream, a instância
-singleton/lazy do DocumentConverter e o fallback seguro quando o Docling não
-está disponível.
+Valida o recorte de páginas sem texto, a instância singleton/lazy do
+RapidOCR, renderização a 200 DPI com fallback para 150 DPI em páginas
+grandes, ordenação geográfica de caixas (y_bucket, x) e o fallback seguro
+quando o RapidOCR não está disponível.
 """
 
 from __future__ import annotations
 
 import hashlib
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import fitz
 import pytest
 
-from tomus.extractors.ocr_docling import (
-    ocr_scanned_pages,
-    _get_converter,
-    _pages_without_text,
+from tomus.extractors import ocr
+from tomus.extractors.ocr import (
+    _OCR_FIRST_PAGES,
+    _OCR_LAST_PAGES,
+    _OCR_MAX_PAGES,
+    _ALPHANUM_THRESHOLD,
     _build_slice_pdf,
+    _configure_opencv_threads,
+    _dpi_for_page,
+    _extract_lines_from_result,
+    _get_rapidocr_engine,
+    _ocr_with_rapidocr,
+    _order_boxes_geometricamente,
+    _pages_without_text,
+    ocr_scanned_pages,
 )
+from tomus.extractors.ocr_docling import ocr_scanned_pages as ocr_scanned_pages_fachada
 
 
 def _make_scanned_pdf(path: Path, num_pages: int = 10) -> Path:
     """Criar um PDF com páginas sem texto selecionável (simula escaneado)."""
     doc = fitz.open()
     for _ in range(num_pages):
-        page = doc.new_page()
-        # Página em branco (sem texto selecionável) -> simula página escaneada
+        doc.new_page()
     doc.save(str(path))
     doc.close()
     return path
@@ -44,43 +55,76 @@ def _make_native_pdf(path: Path, num_pages: int = 10) -> Path:
     return path
 
 
-def test_ocr_scanned_pages_returns_text_for_empty_pages(tmp_path):
-    """Verificar que OCR extrai texto de páginas sem texto selecionável."""
-    path = tmp_path / "scanned.pdf"
-    _make_scanned_pdf(path, num_pages=10)
+def _make_scanned_pdf_with_image(path: Path, num_pages: int = 1) -> Path:
+    """Criar um PDF com uma imagem em cada página (sem camada de texto)."""
+    import io
 
-    texto = ocr_scanned_pages(path)
-    # O OCR pode ou não retornar texto dependendo da disponibilidade de modelos
-    # de OCR no ambiente; apenas verificar que não levanta exceção.
-    assert isinstance(texto, str)
+    from PIL import Image, ImageDraw
 
-
-def test_ocr_scanned_pages_all_pages_have_text_returns_empty(tmp_path):
-    """Verificar que OCR retorna vazio quando todas as páginas da janela têm texto."""
-    path = tmp_path / "all_native.pdf"
     doc = fitz.open()
-    for i in range(10):
+    for _ in range(num_pages):
         page = doc.new_page()
-        page.insert_text((72, 72), "Texto selecionável suficiente na página " + str(i) + " para evitar OCR")
+        img = Image.new("RGB", (700, 500), color="white")
+        draw = ImageDraw.Draw(img)
+        draw.text((50, 60), "RAPIDOCR TITULO DE TESTE", fill="black", font_size=36)
+        draw.text((50, 140), "Autor: Sobrenome, Nome", fill="black", font_size=28)
+        draw.text((50, 220), "Ano: 2024", fill="black", font_size=28)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        page.insert_image(fitz.Rect(0, 0, 700, 500), stream=buf.getvalue())
     doc.save(str(path))
     doc.close()
-
-    texto = ocr_scanned_pages(path)
-    # Todas as páginas da janela têm texto -> não há páginas para OCR -> retorna vazio
-    assert texto == ""
+    return path
 
 
-def test_pages_without_text_identifies_empty_pages(tmp_path):
+# ---------------------------------------------------------------------------
+# Constantes
+# ---------------------------------------------------------------------------
+
+
+def test_constantes_ocr():
+    """Verificar que as constantes de OCR têm os valores esperados."""
+    assert _OCR_FIRST_PAGES == 8
+    assert _OCR_LAST_PAGES == 2
+    assert _OCR_MAX_PAGES == 8
+    assert _ALPHANUM_THRESHOLD == 30
+
+
+# ---------------------------------------------------------------------------
+# _configure_opencv_threads
+# ---------------------------------------------------------------------------
+
+
+def test_configure_opencv_threads_nao_levanta_excecao():
+    """Verificar que _configure_opencv_threads não levanta exceção mesmo sem cv2."""
+    _configure_opencv_threads()  # não deve levantar
+
+
+# ---------------------------------------------------------------------------
+# _get_rapidocr_engine
+# ---------------------------------------------------------------------------
+
+
+def test_get_rapidocr_engine_singleton():
+    """Verificar que _get_rapidocr_engine retorna o mesmo objeto (singleton)."""
+    e1 = _get_rapidocr_engine()
+    e2 = _get_rapidocr_engine()
+    assert e1 is e2
+
+
+# ---------------------------------------------------------------------------
+# _pages_without_text
+# ---------------------------------------------------------------------------
+
+
+def test_pages_without_text_identifica_paginas_vazias(tmp_path):
     """Verificar que _pages_without_text identifica páginas sem texto."""
     path = tmp_path / "mixed.pdf"
     doc = fitz.open()
-    # Página 0: sem texto
-    doc.new_page()
-    # Página 1: com texto
+    doc.new_page()  # página 0: sem texto
     page = doc.new_page()
-    page.insert_text((72, 72), "Texto alfanumerico suficiente aqui")
-    # Página 2: sem texto
-    doc.new_page()
+    page.insert_text((72, 72), "Texto alfanumerico suficiente aqui")  # página 1
+    doc.new_page()  # página 2: sem texto
     doc.save(str(path))
     doc.close()
 
@@ -93,8 +137,13 @@ def test_pages_without_text_identifies_empty_pages(tmp_path):
     assert 2 in empty
 
 
-def test_build_slice_pdf_creates_valid_pdf(tmp_path):
-    """Verificar que _build_slice_pdf cria um PDF válido com as páginas selecionadas."""
+# ---------------------------------------------------------------------------
+# _build_slice_pdf
+# ---------------------------------------------------------------------------
+
+
+def test_build_slice_pdf_cria_pdf_valido(tmp_path):
+    """Verificar que _build_slice_pdf cria um PDF válido com páginas selecionadas."""
     path = tmp_path / "source.pdf"
     _make_scanned_pdf(path, num_pages=10)
 
@@ -102,180 +151,202 @@ def test_build_slice_pdf_creates_valid_pdf(tmp_path):
     assert pdf_bytes is not None
     assert pdf_bytes.startswith(b"%PDF-")
 
-    # Verificar que o PDF recortado tem apenas 3 páginas
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     assert doc.page_count == 3
     doc.close()
 
 
-def test_get_converter_returns_none_without_docling(monkeypatch):
-    """Verificar fallback seguro quando Docling não está disponível."""
-    import tomus.extractors.ocr_docling as ocr_mod
-
-    # Forçar _CONVERTER a None para simular ausência de Docling
-    ocr_mod._CONVERTER = None
-
-    with patch.object(ocr_mod, "_get_converter", return_value=None):
-        converter = ocr_mod._get_converter()
-        assert converter is None
+# ---------------------------------------------------------------------------
+# _dpi_for_page
+# ---------------------------------------------------------------------------
 
 
-def test_ocr_scanned_pages_fallback_safe(tmp_path, monkeypatch):
-    """Verificar que ocr_scanned_pages não quebra quando Docling indisponível."""
-    path = tmp_path / "scanned.pdf"
-    _make_scanned_pdf(path, num_pages=10)
-
-    import tomus.extractors.ocr_docling as ocr_mod
-
-    # Simular Docling indisponível
-    ocr_mod._CONVERTER = None
-    with patch.object(ocr_mod, "_get_converter", return_value=None):
-        texto = ocr_scanned_pages(path)
-        assert texto == ""
-
-
-def test_extract_document_content_uses_ocr_when_needed(tmp_path):
-    """Verificar integração: extrato usa OCR quando native_pdf sinaliza needs_ocr."""
-    import hashlib
-
-    path = tmp_path / "scanned.pdf"
-    _make_scanned_pdf(path, num_pages=10)
-
-    sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
-
-    from tomus.extractors import extract_document_content
-    doc_extracted = extract_document_content(path, sha256)
-
-    assert doc_extracted.source_path == path
-    assert doc_extracted.sha256 == sha256
-    assert doc_extracted.total_pages == 10
-    assert isinstance(doc_extracted.used_ocr, bool)
-
-
-def test_ocr_window_limits_to_max_8_pages(tmp_path):
-    """Verificar que o OCR limita a janela a no máximo 8 páginas."""
-    path = tmp_path / "many_pages.pdf"
-    _make_scanned_pdf(path, num_pages=50)
-
-    import tomus.extractors.ocr_docling as ocr_mod
-
-    # Verificar a lógica de seleção de páginas: 8 primeiras + 2 últimas = max 10,
-    # mas limitado a 8 páginas via _OCR_MAX_PAGES
+def test_dpi_for_page_retorna_200_para_pagina_pequena(tmp_path):
+    """Verificar que páginas pequenas usam DPI 200."""
+    path = tmp_path / "pequena.pdf"
+    _make_scanned_pdf(path, num_pages=1)
     doc = fitz.open(str(path))
-    total_pages = doc.page_count
-
-    first = list(range(0, min(ocr_mod._OCR_FIRST_PAGES, total_pages)))
-    last_start = max(total_pages - ocr_mod._OCR_LAST_PAGES, ocr_mod._OCR_FIRST_PAGES)
-    last = list(range(last_start, total_pages))
-    window = sorted(set(first + last))
-
-    assert len(window) <= 10  # 8 + 2
-    # Todas as páginas estão sem texto, então empty_in_window = window
-    # selected = empty_in_window[:_OCR_MAX_PAGES] -> max 8
-    selected = window[:ocr_mod._OCR_MAX_PAGES]
-    assert len(selected) <= ocr_mod._OCR_MAX_PAGES
+    dpi = _dpi_for_page(doc, 0, base_dpi=200)
+    assert dpi == 200
     doc.close()
 
 
-def test_document_stream_name_format(tmp_path):
-    """Verificar que DocumentStream usa o nome correto com sufixo _slice.pdf."""
-    import io
-    from docling.datamodel.base_models import DocumentStream
-
-    path = tmp_path / "meu_documento.pdf"
-    _make_scanned_pdf(path, num_pages=5)
-
-    pdf_bytes = _build_slice_pdf(path, [0, 1])
-    buf = io.BytesIO(pdf_bytes)
-    stream = DocumentStream(name=f"{path.stem}_slice.pdf", stream=buf)
-
-    assert stream.name == "meu_documento_slice.pdf"
-
-
-def test_ocr_extracts_title_author_year_from_scanned(tmp_path):
-    """Verificar que OCR consegue recuperar título, autor e ano de PDF escaneado."""
-    path = tmp_path / "scanned_with_text.pdf"
+def test_dpi_for_page_reduz_para_150_pagina_grande(tmp_path):
+    """Verificar que páginas grandes reduzem para DPI 150 (acima de 4000px)."""
+    path = tmp_path / "grande.pdf"
     doc = fitz.open()
-    # Página 1: capa com título e autor (simulada como texto, mas sem camada selecionável)
-    # Como o PDF é "escaneado" (sem texto selecionável), o OCR deve ler a imagem
-    # Aqui testamos que o fluxo não quebra e retorna string
-    doc.new_page()
+    # Página enorme: 40000 pontos de largura -> 40000 * 200/72 ≈ 111111 px > 4000
+    page = doc.new_page(width=40000, height=40000)
     doc.save(str(path))
     doc.close()
+
+    doc = fitz.open(str(path))
+    dpi = _dpi_for_page(doc, 0, base_dpi=200)
+    assert dpi == 150
+    doc.close()
+
+
+# ---------------------------------------------------------------------------
+# _extract_lines_from_result / _order_boxes_geometricamente
+# ---------------------------------------------------------------------------
+
+
+def test_extract_lines_from_result_com_txts():
+    """Verificar extração de linhas quando resultado tem atributo txts."""
+    class FakeResult:
+        txts = ["linha um", "linha dois", ""]
+
+    linhas = _extract_lines_from_result(FakeResult())
+    assert linhas == ["linha um", "linha dois"]
+
+
+def test_extract_lines_from_result_com_caixas():
+    """Verificar extração de linhas a partir de caixas (bbox, texto, conf)."""
+    class FakeBox:
+        def __init__(self, x0, y0, x1, y1, texto):
+            self.x0, self.y0, self.x1, self.y1 = x0, y0, x1, y1
+            self.text = texto
+
+    class FakeResult:
+        boxes = [
+            FakeBox(100, 100, 200, 120, "primeira"),
+            FakeBox(300, 100, 400, 120, "segunda"),
+            FakeBox(100, 200, 200, 220, "terceira"),
+        ]
+
+    linhas = _extract_lines_from_result(FakeResult())
+    # Duas linhas: y≈100 e y≈200. Dentro de cada linha, ordenado por x.
+    assert "primeira segunda" in linhas
+    assert "terceira" in linhas
+
+
+def test_order_boxes_geometricamente_agrupa_por_linha():
+    """Verificar que caixas são agrupadas por linha (y_bucket) e ordenadas por x."""
+    class Box:
+        def __init__(self, x0, y0, x1, y1, texto):
+            self.x0, self.y0, self.x1, self.y1 = x0, y0, x1, y1
+            self.text = texto
+
+    boxes = [
+        Box(300, 100, 400, 120, "B"),
+        Box(100, 100, 200, 120, "A"),
+        Box(100, 200, 200, 220, "C"),
+        Box(300, 200, 400, 220, "D"),
+    ]
+
+    linhas = _order_boxes_geometricamente(boxes)
+    assert "A B" in linhas
+    assert "C D" in linhas
+
+
+def test_ocr_scanned_pages_extrai_texto_imagem(tmp_path):
+    """Verificar que OCR extrai texto de imagem em PDF escaneado."""
+    path = tmp_path / "escaneado_imagem.pdf"
+    _make_scanned_pdf_with_image(path, num_pages=1)
+
+    texto = ocr_scanned_pages(path)
+    assert isinstance(texto, str)
+    # O RapidOCR deve detectar texto real na imagem (título e ano).
+    texto_upper = texto.upper()
+    assert "RAPIDOCR" in texto_upper, f"Esperado 'RAPIDOCR' no OCR: {texto_upper}"
+    assert "2024" in texto, f"Esperado '2024' no OCR: {texto}"
+
+
+def test_order_boxes_geometricamente_com_poligonos_4x2_e_txts_fora_ordem():
+    """Verificar ordenação de polígonos 4x2 pareados com txts fora de ordem.
+
+    Simula o formato real do RapidOCROutput: boxes são polígonos 4x2 (sem texto)
+    e txts contêm os textos pareados por índice, possivelmente fora de ordem
+    espacial. As páginas vêm com y=200 ANTES de y=100 para forçar ordenação
+    vertical real.
+    """
+    # Polígonos 4x2: [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+    boxes = [
+        [[100, 200], [200, 200], [200, 220], [100, 220]],  # linha 2 (y=200), x=100 -> vem PRIMEIRO na entrada
+        [[300, 200], [400, 200], [400, 220], [300, 220]],  # linha 2 (y=200), x=300
+        [[300, 100], [400, 100], [400, 120], [300, 120]],  # linha 1 (y=100), x=300
+        [[100, 100], [200, 100], [200, 120], [100, 120]],  # linha 1 (y=100), x=100
+    ]
+    txts = ["C", "B", "D", "A"]  # pareados por índice, fora de ordem espacial
+
+    linhas = _order_boxes_geometricamente(boxes, txts=txts)
+    # Ordenado por (y_mid, x0):
+    # linha 1 (y≈100): x=100 -> A, x=300 -> D => "A D"
+    # linha 2 (y≈200): x=100 -> C, x=300 -> B => "C B"
+    assert linhas == ["A D", "C B"]
+
+
+# ---------------------------------------------------------------------------
+# ocr_scanned_pages (função principal)
+# ---------------------------------------------------------------------------
+
+
+def test_ocr_scanned_pages_retorna_string_vazia_para_pdf_com_texto(tmp_path):
+    """Verificar que OCR retorna vazio quando todas as páginas da janela têm texto."""
+    path = tmp_path / "nativo.pdf"
+    doc = fitz.open()
+    for i in range(10):
+        page = doc.new_page()
+        # Texto com mais de 30 caracteres alfanuméricos para evitar OCR
+        page.insert_text((72, 72), "Texto selecionável suficiente na página " + str(i) + " para evitar OCR")
+    doc.save(str(path))
+    doc.close()
+
+    texto = ocr_scanned_pages(path)
+    assert texto == ""
+
+
+def test_ocr_scanned_pages_paginas_sem_texto_retorna_string(tmp_path):
+    """Verificar que OCR processa páginas sem texto selecionável."""
+    path = tmp_path / "escaneado.pdf"
+    _make_scanned_pdf(path, num_pages=10)
 
     texto = ocr_scanned_pages(path)
     assert isinstance(texto, str)
 
 
-def test_ocr_fallback_rapidocr_when_docling_none(tmp_path):
-    """Validar que o fallback RapidOCR é usado quando _get_converter() retorna None (bundle macOS)."""
-    import io
-    from unittest.mock import patch
+def test_ocr_scanned_pages_fallback_seguro_sem_rapidocr(tmp_path, monkeypatch):
+    """Verificar que ocr_scanned_pages retorna vazio quando RapidOCR indisponível."""
+    path = tmp_path / "escaneado.pdf"
+    _make_scanned_pdf(path, num_pages=10)
 
-    from PIL import Image, ImageDraw
+    import tomus.extractors.ocr as ocr_mod
 
-    import tomus.extractors.ocr_docling as ocr_mod
-
-    # Criar imagem com texto para simular uma página escaneada (sem camada de texto).
-    img = Image.new("RGB", (700, 500), color="white")
-    draw = ImageDraw.Draw(img)
-    draw.text((50, 60), "RAPIDOCR TITULO DE TESTE", fill="black", font_size=36)
-    draw.text((50, 140), "Autor: Sobrenome, Nome", fill="black", font_size=28)
-    draw.text((50, 220), "Ano: 2024", fill="black", font_size=28)
-
-    img_buf = io.BytesIO()
-    img.save(img_buf, format="PNG")
-    img_bytes = img_buf.getvalue()
-
-    # Criar PDF com a imagem inserida (sem texto selecionavel = pagina escaneada).
-    path = tmp_path / "scanned_with_image.pdf"
-    doc = fitz.open()
-    page = doc.new_page()
-    page.insert_image(fitz.Rect(0, 0, 700, 500), stream=img_bytes)
-    doc.save(str(path))
-    doc.close()
-
-    # Mock _get_converter para retornar None (simulando falha do Docling no bundle .app).
-    with patch.object(ocr_mod, "_get_converter", return_value=None):
+    ocr_mod._RAPIDOCR_ENGINE = None
+    with patch.object(ocr_mod, "_get_rapidocr_engine", return_value=None):
         texto = ocr_scanned_pages(path)
-
-    assert isinstance(texto, str)
-    assert len(texto) > 0, "RapidOCR deve extrair texto da imagem quando Docling indisponível"
+        assert texto == ""
 
 
-def test_get_converter_uses_pypdfium_backend_on_win32(monkeypatch):
-    """No Windows, _get_converter deve forçar o backend pypdfium2 para evitar
-    access violation intermitente no parser nativo threadado docling-parse."""
-    import sys as _sys
+def test_ocr_scanned_pages_facade_de_ocr_docling(tmp_path):
+    """Verificar que a fachada ocr_docling delega para .ocr."""
+    path = tmp_path / "escaneado.pdf"
+    _make_scanned_pdf(path, num_pages=5)
 
-    import tomus.extractors.ocr_docling as ocr_mod
-    from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
-    from docling.document_converter import DocumentConverter
-    from docling.datamodel.base_models import InputFormat
-
-    ocr_mod._CONVERTER = None
-    monkeypatch.setattr(_sys, "platform", "win32")
-    converter = ocr_mod._get_converter()
-    assert isinstance(converter, DocumentConverter)
-    opt = converter.format_to_options.get(InputFormat.PDF)
-    assert opt is not None
-    assert opt.backend is PyPdfiumDocumentBackend
+    texto_fachada = ocr_scanned_pages_fachada(path)
+    texto_modulo = ocr_scanned_pages(path)
+    assert isinstance(texto_fachada, str)
+    assert isinstance(texto_modulo, str)
 
 
-def test_get_converter_uses_default_backend_on_darwin(monkeypatch):
-    """No macOS/Linux, _get_converter preserva o DocumentConverter() padrão
-    (sem forçar pypdfium2)."""
-    import sys as _sys
+# ---------------------------------------------------------------------------
+# Integração com extract_document_content
+# ---------------------------------------------------------------------------
 
-    import tomus.extractors.ocr_docling as ocr_mod
-    from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
-    from docling.document_converter import DocumentConverter
-    from docling.datamodel.base_models import InputFormat
 
-    ocr_mod._CONVERTER = None
-    monkeypatch.setattr(_sys, "platform", "darwin")
-    converter = ocr_mod._get_converter()
-    assert isinstance(converter, DocumentConverter)
-    opt = converter.format_to_options.get(InputFormat.PDF)
-    assert opt is None or opt.backend is not PyPdfiumDocumentBackend
+def test_extract_document_content_usa_ocr_quando_preciso(tmp_path):
+    """Verificar integração: extrato usa OCR quando native_pdf sinaliza needs_ocr."""
+    import hashlib
 
+    path = tmp_path / "escaneado.pdf"
+    _make_scanned_pdf(path, num_pages=10)
+
+    sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
+
+    from tomus.extractors import extract_document_content
+    doc_extrato = extract_document_content(path, sha256)
+
+    assert doc_extrato.source_path == path
+    assert doc_extrato.sha256 == sha256
+    assert doc_extrato.total_pages == 10
+    assert isinstance(doc_extrato.used_ocr, bool)

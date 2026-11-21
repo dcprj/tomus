@@ -448,7 +448,7 @@ class DocumentInspectorPanel(QWidget):
         self.content_layout.addWidget(_KVRow("SHA-256", entry.sha256, copyable=True))
         self.content_layout.addWidget(_KVRow("Origem", Path(entry.source_path).name))
         self.content_layout.addWidget(_KVRow("Destino", entry.destination_path or "—"))
-        self.content_layout.addWidget(_KVRow("OCR (Docling)", "Sim" if entry.used_ocr else "Não"))
+        self.content_layout.addWidget(_KVRow("OCR (RapidOCR)", "Sim" if entry.used_ocr else "Não"))
 
         reasoning = cls.get("reasoning") or entry.error_message or ""
         if reasoning:

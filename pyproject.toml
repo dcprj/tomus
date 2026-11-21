@@ -12,7 +12,6 @@ authors = [
 ]
 dependencies = [
     "pymupdf",
-    "docling",
     "opencv-python-headless>=4.5.1.48,<4.11",
     "rapidocr",
     "onnxruntime",
