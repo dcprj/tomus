@@ -24,7 +24,7 @@ from tomus.core.models import (
     ProcessStatus,
 )
 from tomus.core.pipeline import run_pipeline
-from tomus.storage.organizer import LibraryOrganizer
+from tomus.storage.organizer import LibraryOrganizer, _resolve_collision
 from tomus.storage.namer import format_academic_filename, WIN_SAFE_FULL_PATH_CHARS
 
 WIN = sys.platform == "win32"
@@ -60,7 +60,7 @@ def test_win_path_teto_245_chars_e_metade_pt_preservada(tmp_path: Path):
     sha = _sha_of(_fake_pdf(tmp_path / "src", "livro.pdf"))
 
     # dest_dir com 62+ chars + título bilingue longo (Oliva et al. ... 2010).
-    dest_dir = tmp_path / "dst" / "a" * 62
+    dest_dir = tmp_path / "dst" / ("a" * 62)
     dest_dir.mkdir(parents=True)
     title_pt = "Cinematerapia - uma introducao"
     title_en = "Cinematherapy - an introduction"
@@ -90,7 +90,7 @@ def test_win_path_colisao_respeita_teto(tmp_path: Path):
     p1 = _fake_pdf(tmp_path / "src", "a.pdf")
     p2 = _fake_pdf(tmp_path / "src", "b.pdf", b"%PDF-1.4 outro\n")
 
-    dest_dir = tmp_path / "dst" / "x" * 60
+    dest_dir = tmp_path / "dst" / ("x" * 60)
     dest_dir.mkdir(parents=True)
     nome_base = format_academic_filename(
         authors=["Autor, Um"],
@@ -114,22 +114,38 @@ def test_win_path_colisao_respeita_teto(tmp_path: Path):
     # Mesmo nome base -> colisao resolvida com sufixo ' (2)' dentro do teto.
     full2 = str(dest_dir / Path(e2.destination_path).name) if e2.destination_path else ""
     assert full2 == "" or len(full2) <= WIN_SAFE_FULL_PATH_CHARS, f"colisao estourou teto: {len(full2)}"
+    # Validar _resolve_collision diretamente com o nome base colidido.
+    resolved, _ = organizer.index.check  # noqa: F841  (placeholder de referencia ao modulo)
+    resolved_name, _ = _resolve_collision(
+        dest_dir, nome_base, p2, None, src_sha256=_sha_of(p2),
+    )
+    assert len(str(dest_dir / resolved_name)) <= WIN_SAFE_FULL_PATH_CHARS, f"_resolve_collision estourou teto: {len(str(dest_dir / resolved_name))}"
 
 
 @pytest.mark.skipif(not WIN, reason="BUG-WIN-PATH só aplica em sys.platform == win32")
 def test_win_path_pasta_destino_maior_205_chars_revisao_manual(tmp_path: Path):
-    """Fallback de pasta destino > 205 chars (incl. revisao_manual) respeita WIN_SAFE_FULL_PATH_CHARS."""
+    """Fallback de pasta destino > 205 chars redireciona para revisao_manual respeitando WIN_SAFE_FULL_PATH_CHARS."""
     organizer = _make_organizer(tmp_path)
     p = _fake_pdf(tmp_path / "src", "livro.pdf")
 
-    revisao_dir = tmp_path / "dst" / "revisao_manual" / ("a" * 200)
-    revisao_dir.mkdir(parents=True)
-    nome = format_academic_filename(
-        authors=["Autor, Um"], title="Título qualquer", year=2021,
-        dest_dir=revisao_dir, max_full_path_chars=WIN_SAFE_FULL_PATH_CHARS,
+    # area_basica/subarea longos forçam dest_dir > 205 chars -> add_ organizado
+    # deve redirecionar para revisao_manual sem estourar o teto do Windows.
+    e = organizer.add_organized(
+        source_path=p,
+        grande_area="Ciências Exatas e da Terra",
+        area_basica="A" * 120,
+        subarea="B" * 100,
+        especialidade="Geral",
+        tipo="Livro",
+        filename="livro.pdf",
+        sha256=_sha_of(p),
+        classification={"authors": ["Autor, Um"], "title": "Livro", "year": 2021},
     )
-    full = str(revisao_dir / nome)
-    assert len(full) <= WIN_SAFE_FULL_PATH_CHARS, f"revisao_manual estourou teto: {len(full)}"
+    assert e.status == ProcessStatus.MANUAL_REVIEW, f"esperava MANUAL_REVIEW, obteve {e.status}"
+    assert e.destination_path is not None and "revisao_manual" in e.destination_path, \
+        f"destino esperado revisao_manual: {e.destination_path}"
+    assert len(e.destination_path) <= WIN_SAFE_FULL_PATH_CHARS, \
+        f"revisao_manual estourou teto: {len(e.destination_path)} > {WIN_SAFE_FULL_PATH_CHARS}"
 
 
 # =========================================================================== #
@@ -310,7 +326,7 @@ def test_webbridge_shutdown_worker_none_nao_levanta():
     assert bridge._closing is True
 
 
-def test_tomusmainwindow_closeevent_desmonta_sem_excecao_offscreen(qapp):
+def test_tomusmainwindow_closeevent_desmonta_sem_excecao_offscreen():
     """TomusMainWindow.closeEvent() desmonta web_view/channel/web_page sem excecoes em offscreen."""
     import os as _os
     _os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -582,7 +598,7 @@ def test_dedup01_colecao_micro_sistemas_edicoes_n1_n2_n3_permanecem_canonicas(tm
 
 def test_dedup01_livro_edicao_2_nao_eh_fasciculo_de_periodico(tmp_path: Path):
     """Livro nao serial ('Obra (ed. 2)') continua nao sendo tratado como fasciculo de periodico."""
-    organizer = _make_organizer(tmp_path)
+    organizer = LibraryOrganizer(tmp_path / "dst", file_operation="copy", dry_run=False)
 
     p1 = _fake_pdf(tmp_path / "src", "obra1.pdf", b"conteudo edicao 1")
     p2 = _fake_pdf(tmp_path / "src", "obra2.pdf", b"conteudo edicao 2")
@@ -647,10 +663,10 @@ def test_appsec_zero_caminhos_pessoais_reais_em_testes():
 def test_appsec_stage5_erro_sem_vazamento_de_secret(tmp_path: Path):
     """Excecao em Stage 5 grava mensagem sanitizada no manifest (sem secret/token).
 
-    A OSError simulada em add_organized contem o token bruto 'sk-...';
-    _sanitize_error_message deve removê-lo do manifest.json.
+    A OSError simulada em add_organized contem o token bruto 'sk-...' com 24+
+    chars apos o prefixo; _sanitize_error_message deve removê-lo do manifest.json.
     """
-    TOKEN = "sk-1234567890abcdef"
+    TOKEN = "sk-" + ("a1b2c3d4" * 3)  # 24 chars sinteticos apos 'sk-'
     source = tmp_path / "src"
     target = tmp_path / "dst"
     source.mkdir(parents=True, exist_ok=True)
@@ -670,6 +686,7 @@ def test_appsec_stage5_erro_sem_vazamento_de_secret(tmp_path: Path):
     texto_manifest = json.dumps(manifest, ensure_ascii=False)
     # O token bruto NAO deve vazar nem no error_message nem em nenhum outro campo.
     assert TOKEN not in texto_manifest, f"token vazou no manifest: {texto_manifest}"
+    assert "a1b2c3d4" not in texto_manifest, f"parte do token vazou no manifest: {texto_manifest}"
     assert "AIzaSy" not in texto_manifest
     assert summary.error_count == 1
     # O erro deve estar registrado (sanitizado), comprovando que o except foi acionado.
