@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Manual do Usuário do Tomus — Guia prático, didático e passo a passo para organizar acervos acadêmicos de PDFs no macOS e Windows.">
+  <title>Manual do Usuário — Tomus</title>
+  
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="site_assets/style.css">
+  <link rel="icon" type="image/png" href="site_assets/tomus_emblem.png">
+
+  <style>
+    .doc-page {
+      padding: 120px 0 80px;
+      background: var(--bg-page);
+      color: var(--text-main);
+    }
+    .doc-container {
+      max-width: 940px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+    .doc-header {
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border-medium);
+    }
+    .doc-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      background: rgba(21, 128, 61, 0.08);
+      color: var(--green-badge);
+      border: 1px solid rgba(21, 128, 61, 0.2);
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .doc-title {
+      font-size: 38px;
+      line-height: 1.2;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      color: var(--navy-950);
+      margin-bottom: 16px;
+    }
+    .doc-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+      font-size: 14px;
+      color: var(--text-muted);
+    }
+    .doc-content h2 {
+      font-size: 26px;
+      font-weight: 700;
+      color: var(--navy-900);
+      margin: 48px 0 20px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border-subtle);
+    }
+    .doc-content h3 {
+      font-size: 20px;
+      font-weight: 600;
+      color: var(--navy-800);
+      margin: 28px 0 14px;
+    }
+    .doc-content p {
+      font-size: 16px;
+      line-height: 1.7;
+      color: #374151;
+      margin-bottom: 18px;
+    }
+    .doc-content ul, .doc-content ol {
+      margin: 0 0 20px 24px;
+      color: #374151;
+      line-height: 1.7;
+    }
+    .doc-content li {
+      margin-bottom: 10px;
+    }
+    .doc-content strong {
+      color: var(--navy-950);
+    }
+    .step-card {
+      background: #ffffff;
+      border: 1px solid var(--border-medium);
+      border-radius: 12px;
+      padding: 24px 28px;
+      margin: 24px 0;
+      box-shadow: 0 2px 8px rgba(11, 25, 44, 0.04);
+    }
+    .step-card-header {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+    .step-num {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      background: var(--navy-900);
+      color: #ffffff;
+      font-weight: 700;
+      border-radius: 50%;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .step-card h3 {
+      margin: 0;
+      font-size: 19px;
+      color: var(--navy-950);
+    }
+    .tip-box {
+      background: #ecfdf5;
+      border-left: 4px solid var(--green-badge);
+      padding: 16px 20px;
+      border-radius: 0 8px 8px 0;
+      margin: 20px 0;
+      font-size: 15px;
+      color: #065f46;
+    }
+    .warning-box {
+      background: #fffbeb;
+      border-left: 4px solid var(--amber-badge);
+      padding: 16px 20px;
+      border-radius: 0 8px 8px 0;
+      margin: 20px 0;
+      font-size: 15px;
+      color: #92400e;
+    }
+    .glossary-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-top: 24px;
+    }
+    .glossary-item {
+      background: #ffffff;
+      border: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      padding: 18px 22px;
+    }
+    .glossary-term {
+      font-weight: 700;
+      color: var(--navy-950);
+      font-size: 16px;
+      margin-bottom: 6px;
+    }
+    .glossary-def {
+      color: #4b5563;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAVBAR -->
+  <header class="navbar" id="navbar">
+    <div class="nav-container">
+      <a href="index.html" class="nav-brand" aria-label="Tomus Início">
+        <img src="site_assets/tomus_emblem.png" alt="Tomus Emblema" class="nav-emblem">
+        <span class="nav-brand-title">TOMUS</span>
+      </a>
+
+      <nav class="nav-menu" id="navMenu">
+        <ul class="nav-list">
+          <li><a href="index.html" class="nav-link">Página Inicial</a></li>
+          <li><a href="manual_do_usuario.html" class="nav-link active">Manual do Usuário</a></li>
+          <li><a href="documentacao_tecnica.html" class="nav-link">Documentação Técnica</a></li>
+          <li><a href="https://github.com/dcprj/tomus" class="nav-link" target="_blank" rel="noopener">GitHub</a></li>
+        </ul>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="index.html#download" class="btn btn-primary btn-sm">
+          <span>Baixar v1.4.1</span>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="doc-page">
+    <div class="doc-container">
+      <header class="doc-header">
+        <div class="doc-badge">Guia Didático do Usuário v1.4.1</div>
+        <h1 class="doc-title">Manual do Usuário do Tomus</h1>
+        <div class="doc-meta">
+          <span><strong>Para:</strong> Pesquisadores, Professores, Estudantes e Bibliotecários</span>
+          <span>•</span>
+          <span><strong>Sistema:</strong> macOS 12+ e Windows 10/11 64 bits</span>
+          <span>•</span>
+          <span><strong>Linguagem:</strong> Acessível e Direta</span>
+        </div>
+      </header>
+
+      <article class="doc-content">
+        <h2>1. O que é o Tomus e como ele ajuda sua pesquisa?</h2>
+        <p>Seja bem-vindo ao <strong>Tomus</strong>! Ele foi concebido para eliminar o caos de pastas lotadas de PDFs com nomes estranhos (como <code>artigo_versao2.pdf</code> ou <code>download.pdf</code>). Com poucos cliques, o Tomus examina seus arquivos, descobre os dados da obra (título, autor, ano) e organiza tudo em pastas temáticas segundo a classificação oficial da <strong>CAPES/CNPq</strong>, gerando ainda a citação completa na norma <strong>ABNT NBR 6023</strong>.</p>
+        
+        <div class="tip-box">
+          <strong>Segurança em primeiro lugar:</strong> Seus arquivos PDF <strong>nunca saem do seu computador</strong>. Toda a manipulação de arquivos e a leitura de documentos é realizada localmente.
+        </div>
+
+        <h2>2. Instalação Passo a Passo (macOS e Windows)</h2>
+
+        <h3>2.1 Instalação no macOS</h3>
+        <ol>
+          <li>Baixe o arquivo de instalação <code>Tomus-1.4.1-macOS.dmg</code> na página oficial do projeto.</li>
+          <li>Dê um duplo clique no arquivo <code>.dmg</code> baixado para abrir a janela de instalação.</li>
+          <li>Arraste o ícone do <strong>Tomus</strong> para a pasta <strong>Aplicativos</strong>.</li>
+          <li>Abra o Tomus pelo Launchpad ou pelo Finder.</li>
+          <li><strong>Primeira abertura (Gatekeeper):</strong> se o macOS alertar que o desenvolvedor não pôde ser verificado, clique em <strong>Abrir Mesmo Assim</strong> em <em>Ajustes do Sistema › Privacidade e Segurança</em>. Você só precisará fazer isso uma vez.</li>
+        </ol>
+
+        <h3>2.2 Instalação no Windows</h3>
+        <p>O instalador para Windows (<code>Tomus_Setup_v1.4.1_Windows_x64.exe</code>) é gerado com <strong>Inno Setup</strong> e é uma instalação <strong>por usuário</strong>: não exige senha nem privilégios de administrador.</p>
+        <ol>
+          <li>Baixe o instalador oficial <code>Tomus_Setup_v1.4.1_Windows_x64.exe</code> na seção de lançamentos <em>Releases</em> do GitHub.</li>
+          <li>Dê um duplo clique no arquivo <code>.exe</code> baixado para abrir o assistente do Inno Setup.</li>
+          <li>Siga o assistente: aceite os termos de licença, escolha a pasta de destino (padrão: <code>%LocalAppData%\Programs\Tomus</code>) e marque, se desejar, o atalho opcional na <strong>Área de Trabalho</strong>. Atalhos são criados automaticamente no <strong>Menu Iniciar</strong>.</li>
+          <li>Conclua a instalação e inicie o Tomus pelo Menu Iniciar ou pelo atalho da Área de Trabalho.</li>
+        </ol>
+        <div class="warning-box">
+          <strong>Aviso do Windows Defender SmartScreen na primeira execução:</strong> Como o Tomus é um aplicativo comunitário distribuído sem certificado pago Authenticode EV, o SmartScreen pode exibir um aviso na primeira execução (tanto durante o instalador quanto ao abrir o aplicativo). Para prosseguir, clique em <strong>Mais informações</strong> e, em seguida, em <strong>Executar assim mesmo</strong>.
+        </div>
+
+        <h2>2.3 Como Desinstalar o Tomus</h2>
+        <h3>Windows</h3>
+        <ol>
+          <li>Abra <strong>Configurações &gt; Aplicativos &gt; Aplicativos instalados</strong> (ou <strong>Painel de Controle &gt; Programas e Recursos</strong>).</li>
+          <li>Selecione <strong>Tomus</strong> na lista e clique em <strong>Desinstalar</strong>.</li>
+          <li>Alternativamente, execute <code>unins000.exe</code> na pasta de instalação do Tomus (padrão: <code>%LocalAppData%\Programs\Tomus</code>).</li>
+        </ol>
+        <p><strong>Limpeza opcional de dados locais:</strong> a desinstalação remove o programa, mas mantém seus dados de usuário. Se desejar, delete manualmente as pastas <code>%USERPROFILE%\.config\tomus</code>, <code>%USERPROFILE%\.cache\tomus</code> e <code>%USERPROFILE%\.tomus</code>.</p>
+
+        <h3>macOS</h3>
+        <ol>
+          <li>Arraste o aplicativo <strong>Tomus.app</strong> da pasta <strong>Aplicativos</strong> para o <strong>Lixo</strong>.</li>
+          <li>Esvazie o Lixo para concluir a remoção.</li>
+        </ol>
+        <p><strong>Limpeza opcional de dados locais:</strong> se desejar, delete manualmente as pastas <code>~/.config/tomus</code>, <code>~/.cache/tomus</code> e <code>~/.tomus</code>.</p>
+
+        <h2>3. Como Obter suas Chaves de Inteligência Artificial (API Keys)</h2>
+        <p>Uma <strong>chave de API</strong> é como uma senha de acesso que permite ao Tomus se conectar aos cérebros de inteligência artificial diretamente, sem nenhum intermediário. A maioria dos provedores oferece <strong>planos gratuitos muito generosos</strong> para você usar sem gastar nada.</p>
+
+        <div class="step-card">
+          <div class="step-card-header">
+            <span class="step-num">1</span>
+            <h3>Google Gemini (Recomendado — Gratuito e Muito Rápido)</h3>
+          </div>
+          <p>O Gemini é o motor primário do Tomus. Ele tem facilidade com textos longos e entende perfeitamente o português.</p>
+          <ol>
+            <li>Acesse o portal: <a href="https://aistudio.google.com/" target="_blank" rel="noopener"><strong>aistudio.google.com</strong></a> e faça login com sua conta Google (Gmail).</li>
+            <li>No menu lateral esquerdo, clique no botão azul <strong>Get API Key</strong> (Obter Chave).</li>
+            <li>Clique em <strong>Create API Key</strong> e escolha <em>Create API Key in new project</em>.</li>
+            <li>Copie a chave que se inicia com <code>AIzaSy...</code>.</li>
+          </ol>
+        </div>
+
+        <div class="step-card">
+          <div class="step-card-header">
+            <span class="step-num">2</span>
+            <h3>Groq (Excelente Reserva Gratuita — 1.000 requisições/dia)</h3>
+          </div>
+          <p>O Groq é ultra-veloz e oferece gratuitamente 1.000 consultas por dia. É o parceiro perfeito para atuar como reserva automática se o Gemini atingir o limite diário.</p>
+          <ol>
+            <li>Acesse o console: <a href="https://console.groq.com/" target="_blank" rel="noopener"><strong>console.groq.com</strong></a> e crie sua conta gratuita.</li>
+            <li>No menu lateral esquerdo, clique em <strong>API Keys</strong>.</li>
+            <li>Clique em <strong>Create API Key</strong>, dê o nome de <code>Tomus</code> e confirme.</li>
+            <li>Copie a chave gerada (iniciada em <code>gsk_...</code>). Guarde-a logo, pois ela só aparece uma vez!</li>
+          </ol>
+        </div>
+
+        <div class="step-card">
+          <div class="step-card-header">
+            <span class="step-num">3</span>
+            <h3>Anthropic Claude (Altíssima Precisão para Obras Raras)</h3>
+          </div>
+          <p>O Claude se destaca por sua exatidão ao identificar livros antigos, teses e periódicos científicos complexos.</p>
+          <ol>
+            <li>Acesse o portal: <a href="https://console.anthropic.com/" target="_blank" rel="noopener"><strong>console.anthropic.com</strong></a> e faça login.</li>
+            <li>Vá até a aba <strong>API Keys</strong> e clique em <strong>Create Key</strong>.</li>
+            <li>Na tela de criação:
+              <ul>
+                <li>Nome: Digite <code>Tomus</code>.</li>
+                <li>Expira: Selecione <strong>Nunca</strong>.</li>
+                <li>Escopo: Selecione <strong>Espaço de trabalho padrão</strong> (Default workspace).</li>
+              </ul>
+            </li>
+            <li>Clique em <strong>Criar chave</strong> e copie o código (começa com <code>sk-ant-...</code>).</li>
+          </ol>
+        </div>
+
+        <div class="step-card">
+          <div class="step-card-header">
+            <span class="step-num">4</span>
+            <h3>NVIDIA NIM &amp; DeepSeek</h3>
+          </div>
+          <p>Você também pode utilizar o <strong>NVIDIA NIM</strong> (<a href="https://build.nvidia.com/" target="_blank" rel="noopener">build.nvidia.com</a>) com o modelo Nemotron 3.5 Super VL 120B ou o <strong>DeepSeek</strong> (<a href="https://platform.deepseek.com/" target="_blank" rel="noopener">platform.deepseek.com</a>).</p>
+        </div>
+
+        <div class="step-card">
+          <div class="step-card-header">
+            <span class="step-num">5</span>
+            <h3>Google Books API (Identificação Rápida de Livros por ISBN)</h3>
+          </div>
+          <p>O Tomus procura códigos de barras de livros (ISBN) nas primeiras páginas. Com uma chave gratuita do Google Books, ele baixa a capa, a editora e o ano exato do livro.</p>
+          <ol>
+            <li>Acesse o <a href="https://console.cloud.google.com/" target="_blank" rel="noopener"><strong>console.cloud.google.com</strong></a>.</li>
+            <li>Crie um projeto simples (ex: <code>Tomus Livros</code>).</li>
+            <li>Pesquise por <strong>Books API</strong> no topo da página e clique em <strong>Ativar</strong>.</li>
+            <li>Na aba <strong>Credenciais</strong>, clique em <strong>Criar Credenciais › Chave de API</strong> e copie sua chave.</li>
+          </ol>
+        </div>
+
+        <h3>Onde Colocar as Chaves no Tomus?</h3>
+        <p>No Tomus, cole suas chaves no menu de <strong>Preferências</strong>: clique no ícone de engrenagem na barra lateral ou abra pelo menu superior <strong>Tomus › Preferências</strong> (atalho: <code>Cmd + ,</code> no macOS; no Windows, acesse via menu superior ou barra lateral de Preferências/Configurações). Clique em <strong>Salvar</strong>. O Tomus testa automaticamente a conexão para você não ter surpresas durante a organização.</p>
+
+        <h2>4. Operando a Bancada do Tomus</h2>
+        <ol>
+          <li><strong>Escolha a Pasta de Origem:</strong> Clique no botão de pasta ao lado de "Origem" e aponte para onde estão os seus PDFs soltos.</li>
+          <li><strong>Escolha a Pasta de Destino:</strong> Clique no botão ao lado de "Destino" e escolha onde sua nova biblioteca catalogada deve nascer.</li>
+          <li><strong>Escolha o Modo de Operação:</strong>
+            <ul>
+              <li><strong>Copiar (Recomendado):</strong> Mantém seus arquivos originais intocados e cria uma cópia perfeitamente catalogada e renomeada no destino.</li>
+              <li><strong>Mover:</strong> Transfere os arquivos para a nova estrutura de pastas (útil para quem tem pouco espaço em disco).</li>
+            </ul>
+          </li>
+          <li><strong>Clique em "Organizar Acervo":</strong> Pronto! O Tomus iniciará a esteira de processamento. Você verá a barra de progresso avançar e os documentos catalogados aparecendo em tempo real na tela.</li>
+        </ol>
+
+        <h2>5. Explorando sua Biblioteca Organizada</h2>
+        <ul>
+          <li><strong>Árvore Temática CAPES:</strong> Na barra lateral, navegue pelas Grandes Áreas (ex: <em>Ciências Humanas</em>), Áreas Básicas (ex: <em>Educação</em>) e Subáreas para ver quantos e quais livros você possui sobre cada assunto.</li>
+          <li><strong>Busca Instantânea:</strong> Digite qualquer termo na barra de pesquisa (título, autor, ano ou palavra-chave) para encontrar o documento em milissegundos.</li>
+          <li><strong>Inspetor de Documentos:</strong> Clique em qualquer documento para ver a capa, a ficha catalográfica e a <strong>citação pronta na ABNT NBR 6023</strong>.</li>
+          <li><strong>Filtros de Duplicatas e Obsoletos:</strong> Use os filtros <strong>Duplicatas</strong> (<code>duplicatas/</code>, para cópias idênticas da mesma edição) e <strong>Obsoletos</strong> (<code>obsoletos/</code>) na barra lateral. Sempre que surge uma edição mais recente de uma obra já catalogada, o Tomus promove a nova versão para a árvore temática e arquiva a edição anterior em <code>obsoletos/</code>. Cada um desses itens gera uma ficha <code>.md</code> explicativa com front matter YAML em português do Brasil, incluindo <code>camada_deteccao</code> (L3_IMPRESSAO_DIGITAL, L2_IDENTIFICADOR, etc.) e <code>caminho_canonico</code> relativo à raiz da biblioteca, para você saber exatamente qual é a obra canônica e onde ela está.</li>
+          <li><strong>Copiar Citação com 1 Clique:</strong> Clique no botão <em>Copiar Citação</em> e cole diretamente no seu arquivo do Word, Google Docs ou editor LaTeX. O título virá destacado em negrito normativo sem erros de edição.</li>
+          <li><strong>Abrir PDF e Revelar no gerenciador de arquivos:</strong> Clique nos botões dedicados do inspetor para abrir o arquivo no leitor padrão do seu computador ou para ver a pasta exata onde ele foi guardado (Finder no macOS, Explorador de Arquivos no Windows).</li>
+        </ul>
+
+        <h2>6. O que Fazer com Itens em "Revisão Manual"?</h2>
+        <p>Se algum documento aparecer marcado com o selo amarelo de <em>Revisão Manual</em>, não se preocupe: isso acontece apenas se o PDF for uma cópia física muito antiga e ilegível, se o arquivo tiver senha de proteção ou se as cotas de inteligência artificial tiverem atingido o limite temporário.</p>
+        <p>Basta clicar no filtro <strong>Revisão Manual</strong> na barra lateral, clicar no documento, conferir o título no painel de aprovação e clicar em <strong>Aprovar</strong> para concluir a organização.</p>
+
+        <h2>7. Glossário de Termos Técnicos</h2>
+        <div class="glossary-grid">
+          <div class="glossary-item">
+            <div class="glossary-term">ABNT NBR 6023</div>
+            <div class="glossary-def">Norma técnica oficial brasileira que dita como referências bibliográficas devem ser formatadas em trabalhos acadêmicos e científicos.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">API Key (Chave de API)</div>
+            <div class="glossary-def">Código de acesso pessoal que funciona como uma credencial segura para conectar seu aplicativo diretamente a um serviço na nuvem (como Gemini ou Claude).</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">OCR local (PyMuPDF + RapidOCR offline 150 DPI + ONNXRuntime)</div>
+            <div class="glossary-def">Motor de reconhecimento óptico de caracteres executado localmente no seu computador (macOS e Windows), usado para transcrever páginas digitalizadas a 150 DPI sem enviar dados para a nuvem, com failover automático entre múltiplos provedores de IA.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">BYOK (Bring Your Own Key)</div>
+            <div class="glossary-def">Filosofia de privacidade em que você utiliza suas próprias chaves de serviço, garantindo que nenhum servidor intermediário tenha acesso aos seus dados.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">CAPES/CNPq</div>
+            <div class="glossary-def">Órgãos federais brasileiros de ciência e pós-graduação responsáveis pela tabela oficial que organiza os campos do saber em Grandes Áreas, Áreas Básicas e Subáreas.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Revista (Tipo de Publicação)</div>
+            <div class="glossary-def">Tipo documental adicionado na v1.4.1, suportando periódicos e fascículos com citação conforme ABNT NBR 6023:2025.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">DOI (Digital Object Identifier)</div>
+            <div class="glossary-def">Identificador digital único e permanente atribuído a artigos científicos no mundo inteiro (ex: <code>10.1016/...</code>).</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Dry-Run (Modo Simulado)</div>
+            <div class="glossary-def">Execução de teste em que o Tomus simula a organização completa na tela, mas sem copiar ou alterar nenhum arquivo no seu disco rígido.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">Fallback (Plano de Reserva)</div>
+            <div class="glossary-def">Mecanismo automático de contingência: se o provedor principal atingir a cota de uso, o Tomus aciona imediatamente o provedor reserva sem parar a operação.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">ISBN</div>
+            <div class="glossary-def">Número internacional padronizado de 10 ou 13 dígitos que identifica livros globalmente.</div>
+          </div>
+          <div class="glossary-item">
+            <div class="glossary-term">SHA-256 (Hash Criptográfico)</div>
+            <div class="glossary-def">Uma impressão digital numérica calculada a partir do arquivo. Serve para o Tomus detectar arquivos repetidos (duplicatas) com 100% de certeza.</div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-container">
+      <div class="footer-brand">
+        <div class="footer-logo-row">
+          <img src="site_assets/tomus_emblem.png" alt="Tomus" class="footer-logo">
+          <span class="footer-brand-name">Tomus</span>
+        </div>
+        <p class="footer-desc">Bancada de catalogação científica e organizador acadêmico de PDFs para macOS e Windows.</p>
+        <p class="footer-license">Código Aberto sob licença <a href="https://github.com/dcprj/tomus/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a>.</p>
+      </div>
+      <div class="footer-nav">
+        <div class="footer-col">
+          <span class="footer-col-title">Documentação</span>
+          <a href="manual_do_usuario.html">Manual do Usuário</a>
+          <a href="documentacao_tecnica.html">Documentação Técnica</a>
+          <a href="index.html#metodologia">Metodologia CAPES</a>
+        </div>
+        <div class="footer-col">
+          <span class="footer-col-title">Projeto</span>
+          <a href="https://github.com/dcprj/tomus" target="_blank" rel="noopener">GitHub</a>
+          <a href="https://github.com/dcprj/tomus/releases" target="_blank" rel="noopener">Releases</a>
+          <a href="index.html#apoie">Apoie via Pix</a>
+        </div>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <div class="footer-copy">&copy; 2026 Tomus Contributors and Maintainers.</div>
+    </div>
+  </footer>
+
+</body>
+</html>

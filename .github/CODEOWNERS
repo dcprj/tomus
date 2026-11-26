@@ -1,0 +1,30 @@
+# CODEOWNERS — Tomus
+# Mapeamento de arquivos/diretórios para responsáveis por revisão de PR.
+# Conforme definido em AGENTS.md e docs/governanca/fluxo_trabalho.md.
+# Dario (@dcprj) é o responsável humano e detém a autoridade final sobre todas as áreas.
+
+# Interface gráfica e web — Prisma (UX/UI); responsabilidade final: Dario
+/src/tomus/gui/ @dcprj
+
+# Backend, motor central, extratores, CLI e storage — Forja; responsabilidade final: Dario
+/src/tomus/core/ @dcprj
+/src/tomus/extractors/ @dcprj
+/src/tomus/cli/ @dcprj
+/src/tomus/storage/ @dcprj
+
+# Empacotamento e CI/CD — Farol (Release & GitOps); responsabilidade final: Dario
+/packaging/ @dcprj
+
+# Arquivos de raiz e scripts — responsabilidade final: Dario
+/pyproject.toml @dcprj
+/scripts/ @dcprj
+
+# Testes e documentação — responsabilidade final: Dario
+/tests/ @dcprj
+/docs/ @dcprj
+
+# Workflows de CI/CD, templates e CODEOWNERS — Farol; responsabilidade final: Dario
+/.github/ @dcprj
+
+# Fallback: qualquer arquivo não coberto acima — Dario
+* @dcprj
