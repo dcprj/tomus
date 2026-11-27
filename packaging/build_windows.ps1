@@ -5,11 +5,11 @@
 $ErrorActionPreference = "Stop"
 $ROOT = (Get-Location).Path
 $PY = Join-Path $ROOT ".venv\Scripts\python.exe"
-$VERSION = "1.4.1"
+$VERSION = "1.4.2"
 try {
     $VERSION = & $PY -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"
 } catch {
-    Write-Host "Não foi possível ler a versão de pyproject.toml; usando fallback 1.4.1"
+    Write-Host "Não foi possível ler a versão de pyproject.toml; usando fallback 1.4.2"
 }
 $SPEC = Join-Path $ROOT "packaging\pyinstaller.spec"
 $ISS = Join-Path $ROOT "packaging\windows_installer.iss"
