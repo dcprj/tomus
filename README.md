@@ -200,6 +200,9 @@ Acesse o site de um provedor de inteligência artificial (por exemplo, [Google A
 
 Ela é só sua e serve para conectar o Tomus ao modelo de linguagem. Cada provedor define suas próprias regras de uso, cota e preços — consulte o site de cada provedor antes de criar a chave. Você deve guardá-la com cuidado, como faria com uma senha.
 
+> [!WARNING]
+> **Groq — use apenas como reserva de fallback (não como provedor principal).** O Groq não exige cartão de crédito, mas sua cota gratuita é restrita a **8.000 tokens por minuto (TPM)** e **200.000 tokens por dia (TPD)**. O uso isolado como principal em lotes médios/grandes esgota rapidamente a cota e torna o processamento mais lento por causa do cadenciamento. Recomendamos configurar o **Google Gemini** ou o **NVIDIA NIM** como provedor principal gratuito e deixar o **Groq apenas na cadeia de fallback**, para que o Tomus acione o Groq automaticamente se o principal atingir o limite.
+
 ### 4. Insira a chave
 
 Abra o Tomus, clique no ícone de **engrenagem** (Preferências) na barra superior e vá para a aba **Credenciais e Chaves de API**. Cole a chave no campo correspondente (por exemplo, **Google Gemini API Key**), clique em **Testar** para verificar se a chave funciona e, só então, clique em **Salvar Configuração**. A chave é gravada exclusivamente no disco local do seu computador. Não compartilhe sua chave com outras pessoas. Na aba **Provedores LLM & Fallback**, escolha o provedor de linguagem que você deseja utilizar.

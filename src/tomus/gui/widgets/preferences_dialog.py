@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QObject, Qt, QThread, Signal
 from PySide6.QtGui import QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -41,6 +41,7 @@ from tomus.core.config import (
     LLMConfig,
     mask_key,
 )
+from tomus.core.file_security import set_restrictive_file_permissions
 from tomus.core.key_validator import (
     _normalize_field_name,
     validate_provider_key_live,
@@ -219,6 +220,7 @@ PROVIDER_INFO = {
         "default_model": "openai/gpt-oss-120b",
         "key_field": "groq_api_key",
         "env_keys": ["TOMUS_GROQ_API_KEY", "GROQ_API_KEY"],
+        "fallback_only": True,
     },
     "claude": {
         "title": "Anthropic Claude",
@@ -251,6 +253,16 @@ API_KEY_FIELDS = [
 ENRICHMENT_FIELDS = [
     ("openalex_polite_email", "OpenAlex Polite Email", []),
     ("google_books_api_key", "Google Books API Key", ["TOMUS_GOOGLE_BOOKS_API_KEY", "GOOGLE_BOOKS_API_KEY"]),
+]
+
+# Todos os campos de credencial que podem ser validados ativamente e salvos.
+# API_KEY_FIELDS são tuplas de 4 itens; ENRICHMENT_FIELDS de 3 itens.
+ALL_CREDENTIAL_FIELDS = [
+    (field_name, label, env_names)
+    for field_name, label, env_names, *_rest in API_KEY_FIELDS
+] + [
+    (field_name, label, env_names)
+    for field_name, label, env_names in ENRICHMENT_FIELDS
 ]
 
 
@@ -511,7 +523,10 @@ class ProviderComboDelegate(QStyledItemDelegate):
         val = str(value)
         info = PROVIDER_INFO.get(val)
         if info:
-            return f"{info['title']} ({val})"
+            label = f"{info['title']} ({val})"
+            if info.get("fallback_only"):
+                label += " — Apenas Fallback"
+            return label
         return val
 
 
@@ -532,6 +547,39 @@ class FallbackItemDelegate(QStyledItemDelegate):
         if model:
             return f"{title} ({model})  —  {status_text}"
         return f"{title}  —  {status_text}"
+
+
+# --------------------------------------------------------------------------- #
+# Worker de validação ativa em segundo plano (não bloqueia a UI)
+# --------------------------------------------------------------------------- #
+
+class KeyValidationWorker(QObject):
+    """Executa validação ativa de chaves em thread de fundo, sem travar a UI.
+
+    Cada item de ``checks`` é um par ``(field_name, api_key)``. Para cada um,
+    chama :func:`tomus.core.key_validator.validate_provider_key_live` e emite
+    ``result_ready`` com o desfecho. Ao finalizar, emite ``finished``.
+    """
+
+    result_ready = Signal(str, bool, str)
+    finished = Signal()
+
+    def __init__(self, checks: list[tuple[str, str]], timeout: float = 8.0) -> None:
+        super().__init__()
+        self._checks = checks
+        self._timeout = timeout
+        self._cancelled = False
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def run(self) -> None:
+        for field_name, key in self._checks:
+            if self._cancelled:
+                break
+            ok, msg = validate_provider_key_live(field_name, key, timeout=self._timeout)
+            self.result_ready.emit(field_name, ok, msg or "")
+        self.finished.emit()
 
 
 # --------------------------------------------------------------------------- #
@@ -568,6 +616,12 @@ class PreferencesDialog(QDialog):
         self._error_labels: dict[str, QLabel] = {}
         self._pool_buttons: dict[str, QPushButton] = {}
         self._test_buttons: dict[str, QPushButton] = {}
+
+        # Controle de validação assíncrona no salvamento
+        self._validation_results: dict[str, tuple[bool, str, str]] = {}
+        self._worker_thread: QThread | None = None
+        self._worker: KeyValidationWorker | None = None
+        self._validating: bool = False
 
         self._build_ui()
         self._load_config_into_ui()
@@ -620,7 +674,7 @@ class PreferencesDialog(QDialog):
             "border-radius: 6px; padding: 8px 16px; font-weight: 500; font-size: 13px; }"
             "QPushButton:hover { background-color: #F1F5F9; color: #0F172A; }"
         )
-        btns.accepted.connect(self._save)
+        btns.accepted.connect(self._salvar_com_validacao_async)
         btns.rejected.connect(self.reject)
         footer_layout.addWidget(btns)
 
@@ -1285,11 +1339,200 @@ class PreferencesDialog(QDialog):
         self._update_primary_status()
 
     def _save(self) -> None:
+        """Persistir credenciais síncronamente no objeto cfg e no arquivo TOML.
+
+        Mantido síncrono para compatibilidade com chamadas diretas (testes e
+        fluxos internos). A validação ativa não-bloqueante fica em
+        _salvar_com_validacao_async, acionada pelo botão Salvar da UI.
+        """
+        self._persist_config()
+
+    def _salvar_com_validacao_async(self) -> None:
+        """Salvar credenciais com validação ativa não-bloqueante (ação do botão Salvar).
+
+        Garante que a persistência do cfg OCORRA SEMPRE: grava o TOML e atualiza
+        o objeto cfg em primeiro lugar, e só então dispara a validação ao vivo
+        em segundo plano para feedback visual ao usuário (inclusive Google Books).
+        Assim o salvamento nunca é pulado por falha/timeout de validação (ex.: offline).
+        O usuário recebe feedback não-bloqueante (401 credenciais rejeitadas /
+        403 acesso proibido) após a validação assíncrona.
+        """
+        # 1. Persistir SEMPRE primeiro (cfg e TOML gravados imediatamente)
+        self._persist_config()
+
+        # 2. Depois, validar ao vivo em segundo plano apenas para feedback visual
+        credentials = self._gather_pending_credentials()
+        if credentials:
+            self._start_async_validation(credentials)
+
+    # ------------------------------------------------------------------ #
+    # Validação assíncrona no salvamento
+    # ------------------------------------------------------------------ #
+
+    def _gather_pending_credentials(self) -> list[tuple[str, str]]:
+        """Coletar credenciais preenchidas (fora de ENV) que ainda não foram validadas."""
+        pending: list[tuple[str, str]] = []
+        for field_name, _label, env_names in ALL_CREDENTIAL_FIELDS:
+            edit = self._fields.get(field_name)
+            if edit is None:
+                continue
+            raw = edit.text().strip()
+            if not raw or _env_active(env_names):
+                continue
+            first = raw.split(",")[0].strip()
+            ok_syntax, _ = _validate_single_key(field_name, first)
+            if not ok_syntax:
+                continue
+            pending.append((field_name, first))
+        return pending
+
+    def _start_async_validation(self, checks: list[tuple[str, str]]) -> None:
+        if self._validating:
+            return
+        self._validating = True
+
+        self._validation_results = {}
+
+        # Indicador visual de validação em andamento
+        self.btn_save.setEnabled(False)
+        self.btn_save.setText("Validando credenciais...")
+        self.btn_cancel.setEnabled(False)
+
+        self._worker_thread = QThread(self)
+        self._worker = KeyValidationWorker(checks, timeout=8.0)
+        self._worker.moveToThread(self._worker_thread)
+
+        self._worker.result_ready.connect(self._on_validation_result)
+        self._worker.finished.connect(self._on_validation_finished)
+        self._worker_thread.started.connect(self._worker.run)
+        self._worker_thread.start()
+
+    def _on_validation_result(self, field_name: str, ok: bool, msg: str) -> None:
+        """Registrar o desfecho de cada credencial e atualizar o label de status."""
+        self._validation_results[field_name] = (ok, msg)
+        edit = self._fields.get(field_name)
+        env_lbl = self._env_labels.get(field_name)
+        error_lbl = self._error_labels.get(field_name)
+        msg_lower = msg.lower()
+
+        if ok:
+            if env_lbl:
+                env_lbl.setText("✓ Validado ao Vivo")
+                env_lbl.setStyleSheet("color: #16A34A; font-size: 11px; font-weight: 600;")
+            if edit:
+                edit.setStyleSheet(
+                    "QLineEdit { background-color: #F0FDF4; border: 1px solid #16A34A; border-radius: 6px; padding: 6px 10px; font-size: 13px; }"
+                )
+            if error_lbl:
+                error_lbl.hide()
+        else:
+            # Feedback contextualizado: 401 credenciais rejeitadas / 403 acesso proibido
+            if "401" in msg_lower or "não autorizada" in msg_lower or "credenciais rejeitadas" in msg_lower:
+                status = "✗ Credenciais Rejeitadas (HTTP 401)"
+                color = "#DC2626"
+            elif "403" in msg_lower or "acesso proibido" in msg_lower or "proibido" in msg_lower:
+                status = "✗ Acesso Proibido (HTTP 403)"
+                color = "#DC2626"
+            else:
+                status = "✗ Validação Falhou"
+                color = "#DC2626"
+
+            if env_lbl:
+                env_lbl.setText(status)
+                env_lbl.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: 600;")
+            if edit:
+                edit.setStyleSheet(
+                    "QLineEdit { background-color: #FEF2F2; border: 1px solid #DC2626; border-radius: 6px; padding: 6px 10px; font-size: 13px; }"
+                )
+            if error_lbl:
+                error_lbl.setText(msg)
+                error_lbl.show()
+
+        if hasattr(self, "lbl_primary_key_status"):
+            self._update_primary_status()
+
+    def _on_validation_finished(self) -> None:
+        """Ao terminar a validação de todas as credenciais, decidir persistência."""
+        self._validating = False
+
+        self.btn_save.setEnabled(True)
+        self.btn_save.setText("Salvar Configuração")
+        self.btn_cancel.setEnabled(True)
+
+        # Limpar worker e thread
+        if self._worker:
+            try:
+                self._worker.result_ready.disconnect(self._on_validation_result)
+                self._worker.finished.disconnect(self._on_validation_finished)
+            except TypeError:
+                pass
+            self._worker.deleteLater()
+            self._worker = None
+        if self._worker_thread:
+            self._worker_thread.quit()
+            self._worker_thread.wait()
+            self._worker_thread.deleteLater()
+            self._worker_thread = None
+
+        # 3. Feedback não-bloqueante após a validação (cfg já persistido no passo 1)
+        rejected = [
+            (field, msg)
+            for field, (ok, msg) in self._validation_results.items()
+            if not ok and ("401" in msg.lower() or "403" in msg.lower() or "credenciais rejeitadas" in msg.lower())
+        ]
+
+        if rejected:
+            details = "\n\n".join(f"• {field} — {msg}" for field, msg in rejected[:5])
+            QMessageBox.warning(
+                self,
+                "Credenciais Rejeitadas pela API",
+                (
+                    "Algumas credenciais não passaram na validação ativa com a API oficial.\n\n"
+                    f"{details}\n\n"
+                    "A configuração foi salva. Verifique e corrija as credenciais rejeitadas nas Preferências."
+                ),
+                QMessageBox.StandardButton.Ok,
+            )
+
+        # Offline / erro de rede: aviso informativo (cfg já salvo, não bloqueante)
+        offline = [
+            (field, msg)
+            for field, (ok, msg) in self._validation_results.items()
+            if not ok and ("conexão" in msg.lower() or "tempo limite" in msg.lower() or "sem acesso à rede" in msg.lower())
+        ]
+        if offline:
+            details = "\n".join(f"• {field} — {msg}" for field, msg in offline[:5])
+            QMessageBox.information(
+                self,
+                "Sem Acesso à Rede",
+                (
+                    "Não foi possível contatar os endpoints de validação (offline ou sem rede).\n\n"
+                    f"{details}\n\n"
+                    "A configuração foi salva e a validação será retomada quando houver rede."
+                ),
+                QMessageBox.StandardButton.Ok,
+            )
+
+    # ------------------------------------------------------------------ #
+    # Persistência (corpo extraído do antigo _save)
+    # ------------------------------------------------------------------ #
+
+    def _persist_config(self) -> None:
         """Serializar as seções em config.toml com permissão 0600 e atualizar self._config in-place."""
         import tomli_w
 
         api_updates = {}
         for field_name, _label, _env_names, _multi_keys in API_KEY_FIELDS:
+            edit = self._fields.get(field_name)
+            if edit is None:
+                continue
+            val = edit.text().strip()
+            if hasattr(self._config.api_keys, field_name):
+                setattr(self._config.api_keys, field_name, val)
+                api_updates[field_name] = val
+
+        # Campos de enriquecimento (ex.: Google Books) também são salvos
+        for field_name, _label, _env_names in ENRICHMENT_FIELDS:
             edit = self._fields.get(field_name)
             if edit is None:
                 continue
@@ -1367,11 +1610,21 @@ class PreferencesDialog(QDialog):
         }
         text = tomli_w.dumps(toml_data)
         self._config_path.write_text(text, encoding="utf-8")
-        try:
-            from tomus.gui.os_integration import secure_chmod_600
 
-            secure_chmod_600(self._config_path)
-        except OSError:
-            pass
+        # Aplicar permissão restrita 0600 (POSIX) / ACL restritiva (Windows NTFS)
+        # imediatamente após a escrita, com semântica fail-closed: se a proteção
+        # não puder ser aplicada, reportar ao usuário em vez de seguir silenciosamente.
+        if not set_restrictive_file_permissions(self._config_path):
+            QMessageBox.warning(
+                self,
+                "Falha ao Aplicar Permissão Restrita",
+                (
+                    "Não foi possível aplicar a permissão restrita (equivalente a chmod 0600)\n"
+                    f"no arquivo de configuração:\n\n{self._config_path}\n\n"
+                    "O arquivo foi gravado, mas está sem a proteção de ACL esperada. "
+                    "Verifique as permissões da pasta manualmente."
+                ),
+                QMessageBox.StandardButton.Ok,
+            )
 
         self.accept()
