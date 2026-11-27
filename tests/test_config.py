@@ -107,7 +107,7 @@ def test_llm_config_default_provider_alias(tmp_path, monkeypatch):
 [llm]
 default_provider = "nvidia"
 model = "nemotron-3.5-super-vl-120b-a12b"
-fallback_chain = ["groq", "nvidia", "claude", "deepseek"]
+fallback_chain = ["nvidia", "claude", "deepseek", "groq"]
 
 [api_keys]
 gemini_api_key = ""
@@ -122,7 +122,7 @@ claude_api_key = ""
     config = AppConfig()
     assert config.llm.provider == "nvidia"
     # default_provider é um validation_alias: mapeia para provider na leitura do TOML
-    assert config.llm.fallback_chain == ["groq", "nvidia", "claude", "deepseek"]
+    assert config.llm.fallback_chain == ["nvidia", "claude", "deepseek", "groq"]
     assert config.llm.model == "nemotron-3.5-super-vl-120b-a12b"
 
 
@@ -135,7 +135,7 @@ def test_llm_config_providers_dict(tmp_path, monkeypatch):
 [llm]
 provider = "gemini"
 model = "gemini-3.5-flash"
-fallback_chain = ["groq", "nvidia", "claude", "deepseek"]
+fallback_chain = ["nvidia", "claude", "deepseek", "groq"]
 
 [llm.providers.deepseek]
 model = "deepseek-flash"
@@ -217,6 +217,21 @@ def test_llm_config_valores_padrao():
     config = LLMConfig()
     assert config.provider == "gemini"
     # default_provider é um validation_alias: acessível apenas na leitura do TOML/env
-    assert config.fallback_chain == ["groq", "nvidia", "claude", "deepseek"]
+    assert config.fallback_chain == ["nvidia", "claude", "deepseek", "groq"]
     assert config.model == "gemini-3.5-flash"
     assert config.providers == {}
+
+
+def test_template_fallback_chain_groq_por_ultimo():
+    """generate_config_template() deve expor o fallback_chain com groq por último
+    (cota gratuita restrita, 8.000 TPM) e o modelo openai/gpt-oss-120b."""
+    from tomus.core.config import generate_config_template
+
+    template = generate_config_template()
+    # Ordem canônica: nvidia, claude, deepseek, groq (groq por último)
+    assert "fallback_chain = [\"nvidia\", \"claude\", \"deepseek\", \"groq\"]" in template
+    assert "#model = \"openai/gpt-oss-120b\"" in template
+    # O groq aparece após deepseek na cadeia comentada
+    idx_groq = template.index("groq")
+    idx_deepseek = template.index("deepseek")
+    assert idx_groq > idx_deepseek, "groq deve vir depois de deepseek (por último na cadeia)"

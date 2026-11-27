@@ -5,6 +5,19 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adota versionamento semântico ([Semantic Versioning](https://semver.org/lang/pt-BR/)).
 
+## [1.4.2] - (pendente de publicação)
+
+### Novidades da release 1.4.2
+
+- **FEAT-LLM-02:** Groq ao fim da cadeia de fallback de provedores LLM.
+- **FEAT-LLM-03:** Cadenciamento e orçamento do GroqProvider.
+- **FEAT-UI-05:** Dropdown de provedor somente com chaves validadas.
+- **FEAT-UI-06:** Groq sinalizado como opção de fallback na GUI.
+- **FEAT-DOC-01:** Limites gratuitos do Groq no manual do usuário.
+
+### Versão 1.4.1 → 1.4.2
+- `pyproject.toml`, `src/tomus/__init__.py`, `packaging/pyinstaller.spec` (CFBundleVersion e CFBundleShortVersionString), `packaging/windows_installer.iss` (MyAppVersion), fallbacks de `packaging/build_macos.sh` e `packaging/build_windows.ps1`.
+
 ## [1.4.1] - (pendente de publicação)
 
 ### Correções de empacotamento e CI/CD

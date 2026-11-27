@@ -82,8 +82,8 @@ class LLMConfig(BaseSettings):
         description="Provedor de classificação padrão (MVP implementa 'gemini').",
     )
     fallback_chain: list[str] = Field(
-        default_factory=lambda: ["groq", "nvidia", "claude", "deepseek"],
-        description="Cadeia de fallback de provedores quando o padrão falha.",
+        default_factory=lambda: ["nvidia", "claude", "deepseek", "groq"],
+        description="Cadeia de fallback de provedores quando o padrão falha. O Groq fica por último por ter cota gratuita restrita (8.000 TPM).",
     )
     model: str = Field(
         default="gemini-3.5-flash",
@@ -338,7 +338,8 @@ provider = "gemini"
 # Alias para provider (retrocompatibilidade)
 default_provider = "gemini"
 # Cadeia de fallback de provedores quando o padrão falha
-fallback_chain = ["groq", "nvidia", "claude", "deepseek"]
+# O Groq fica por último por ter cota gratuita restrita (8.000 TPM).
+fallback_chain = ["nvidia", "claude", "deepseek", "groq"]
 # Modelo padrão do provedor
 model = "gemini-3.5-flash"
 
@@ -347,7 +348,7 @@ model = "gemini-3.5-flash"
 #model = "gemini-3.5-flash"
 
 #[llm.providers.groq]
-#model = "llama-3.3-70b-versatile"
+#model = "openai/gpt-oss-120b"
 
 #[llm.providers.nvidia]
 #model = "nvidia/nemotron-3.5-super-vl-120b-a12b"

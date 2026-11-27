@@ -1612,3 +1612,497 @@ def test_cadeia_gemini_e_nvidia_410_falham_claude_vence():
     assert chamado["familias"].count("gemini") == 6
     assert chamado["familias"].count("nvidia") == 1
     assert chamado["familias"].count("claude") == 1
+
+
+# --------------------------------------------------------------------------- #
+# Validação ponta a ponta (e2e) de classificação real por provedor.
+# Simula a chamada HTTP real (POST /chat/completions ou /messages), captura
+# o payload enviado e verifica: envio do prompt, retorno JSON estrito, parsing
+# da resposta e preenchimento de provider_name / model_name.
+# --------------------------------------------------------------------------- #
+def _captura_payload(rota, payload_resposta, status=200):
+    """Mock que captura o corpo da requisição e devolve uma resposta de sucesso.
+
+    Usa ``request.content`` (bytes) + ``json.loads`` porque o objeto
+    ``request`` do respx não expõe o método ``.json()``.
+    """
+    capturado = {"body": None}
+
+    def handler(request):
+        try:
+            capturado["body"] = json.loads(request.content)
+        except Exception:
+            capturado["body"] = None
+        return httpx.Response(status, json=payload_resposta)
+
+    rota.mock(side_effect=handler)
+    return capturado
+
+
+@respx.mock
+def test_e2e_groq_classificacao_real_envia_prompt_json_e_response_format():
+    """Groq (BUG-LLM-01): chave pode ser 'válida' (GET /v1/models) mas a
+    classificação real (POST /chat/completions) não é coberta pela validação
+    ativa. Este teste valida ponta a ponta:
+      * envio do prompt com a palavra 'JSON' (requisito rígido da Groq quando
+        response_format=json_object);
+      * envio de response_format={'type': 'json_object'};
+      * retorno JSON estrito e parsing correto;
+      * provider_name='groq' e model_name preenchidos.
+    """
+    payload = _classification_payload()
+    capturado = _captura_payload(
+        respx.post("https://api.groq.com/openai/v1/chat/completions"),
+        {"choices": [{"message": {"content": json.dumps(payload)}}]},
+    )
+    provider = GroqProvider(api_key="gsk_test_chave_valida_1234567890")
+    resultado = provider.classify(
+        sampled_text="Texto de amostra com conteúdo suficiente para classificação.",
+        cip_text="",
+        external_metadata=None,
+    )
+    assert resultado.confidence_score == 0.92
+    assert resultado.provider_name == "groq"
+    assert resultado.model_name == "openai/gpt-oss-120b"
+    assert resultado.tipo == "Livro"
+    assert resultado.title == "Psicologia Social"
+
+    body = capturado["body"]
+    assert body is not None
+    # response_format json_object enviado
+    assert body.get("response_format") == {"type": "json_object"}
+    # modelo enviado
+    assert body.get("model") == "openai/gpt-oss-120b"
+    # O prompt do sistema deve conter a palavra 'JSON' (requisito da Groq)
+    mensagens = body.get("messages", [])
+    texto_prompt = " ".join(str(m.get("content", "")) for m in mensagens)
+    assert "JSON" in texto_prompt, (
+        "Groq requer a palavra 'JSON' no prompt quando response_format=json_object"
+    )
+
+
+@respx.mock
+def test_e2e_deepseek_classificacao_real_json_estrito_e_parsing():
+    """DeepSeek: valida envio do prompt, resposta JSON estrita, parsing e
+    provider_name/model_name."""
+    payload = _classification_payload(reasoning="via deepseek", confidence_score=0.88)
+    capturado = _captura_payload(
+        respx.post("https://api.deepseek.com/v1/chat/completions"),
+        {"choices": [{"message": {"content": json.dumps(payload)}}]},
+    )
+    provider = DeepSeekProvider(api_key="sk_test_chave_valida_1234567890")
+    resultado = provider.classify(
+        sampled_text="Texto de amostra com conteúdo suficiente para classificação.",
+        cip_text="",
+        external_metadata=None,
+    )
+    assert resultado.confidence_score == 0.88
+    assert resultado.provider_name == "deepseek"
+    assert resultado.model_name == "deepseek-flash"
+    assert resultado.reasoning == "via deepseek"
+
+    body = capturado["body"]
+    assert body is not None
+    assert body.get("model") == "deepseek-flash"
+    mensagens = body.get("messages", [])
+    assert any(m.get("role") == "system" for m in mensagens)
+
+
+@respx.mock
+def test_e2e_nvidia_classificacao_real_json_estrito_e_parsing():
+    """NVIDIA: valida envio do prompt, resposta JSON estrita, parsing e
+    provider_name/model_name (inclui reasoning_content como fallback)."""
+    payload = _classification_payload(reasoning="via nvidia", confidence_score=0.91)
+    capturado = _captura_payload(
+        respx.post("https://integrate.api.nvidia.com/v1/chat/completions"),
+        {"choices": [{"message": {"content": json.dumps(payload)}}]},
+    )
+    provider = NvidiaProvider(api_key="nvapi-test_chave_valida_1234567890")
+    resultado = provider.classify(
+        sampled_text="Texto de amostra com conteúdo suficiente para classificação.",
+        cip_text="",
+        external_metadata=None,
+    )
+    assert resultado.confidence_score == 0.91
+    assert resultado.provider_name == "nvidia"
+    assert resultado.model_name == "nvidia/nemotron-3.5-super-vl-120b-a12b"
+    assert resultado.reasoning == "via nvidia"
+
+    body = capturado["body"]
+    assert body is not None
+    assert body.get("model") == "nvidia/nemotron-3.5-super-vl-120b-a12b"
+
+
+@respx.mock
+def test_e2e_claude_classificacao_real_content_blocks_e_parsing():
+    """Claude: valida envio do prompt, resposta no formato content blocks
+    (tipo 'text'), parsing e provider_name/model_name."""
+    payload = _classification_payload(reasoning="via claude", confidence_score=0.94)
+    capturado = _captura_payload(
+        respx.post("https://api.anthropic.com/v1/messages"),
+        {"content": [{"type": "text", "text": json.dumps(payload)}]},
+    )
+    provider = ClaudeProvider(api_key="sk-ant-test_chave_valida_1234567890")
+    resultado = provider.classify(
+        sampled_text="Texto de amostra com conteúdo suficiente para classificação.",
+        cip_text="",
+        external_metadata=None,
+    )
+    assert resultado.confidence_score == 0.94
+    assert resultado.provider_name == "claude"
+    assert resultado.model_name == "claude-haiku-5-5"
+    assert resultado.reasoning == "via claude"
+
+    body = capturado["body"]
+    assert body is not None
+    assert body.get("model") == "claude-haiku-5-5"
+    assert body.get("system", "").endswith("sem marcação markdown adicional.")
+
+
+@respx.mock
+def test_e2e_geminha_classificacao_real_referencia():
+    """Gemini (referência já funcional): valida que a chamada estruturada
+    (response_mime_type application/json + response_schema) retorna parsed
+    e preenche provider_name='gemini' e model_name."""
+    from unittest.mock import patch
+
+    payload = _classification_payload(reasoning="via gemini", confidence_score=0.96)
+    with patch("google.genai.Client") as mock_client:
+        mock_instance = MagicMock()
+        mock_client.return_value = mock_instance
+        resp = SimpleNamespace()
+        resp.parsed = _classification_payload(**payload)
+        resp.model_version = "gemini-3.5-flash"
+        mock_instance.models.generate_content.return_value = resp
+
+        provider = GeminiProvider(api_key="AIzaSyfakekey1234567890")
+        resultado = provider.classify(
+            sampled_text="Texto de amostra com conteúdo suficiente para classificação.",
+            cip_text="",
+            external_metadata=None,
+        )
+        assert resultado.confidence_score == 0.96
+        assert resultado.provider_name == "gemini"
+        assert resultado.model_name == "gemini-3.5-flash"
+        assert resultado.reasoning == "via gemini"
+        assert resultado.title == "Psicologia Social"
+
+
+# --------------------------------------------------------------------------- #
+# TEST-LLM-01: Validação efetiva da cadeia de fallback e rotação de chaves.
+# Simula falhas reais (HTTP 429 cota, 401/403 autenticação, 503/529
+# indisponibilidade) e verifica rotação de chave no pool e troca de provedor.
+# --------------------------------------------------------------------------- #
+@respx.mock
+def test_rotacao_chave_pool_429_proxima_chave_valida():
+    """K1 retorna 429 (cota esgotada, transitório), K2 retorna 200.
+    Deve rotacionar para K2 no pool do mesmo provedor e classificar com K2.
+
+    Como ambas as chaves do pool apontam para a mesma URL do provedor, usa-se
+    um único handler que retorna 429 na primeira chamada (K1) e 200 na
+    segunda (K2), validando que o dispatcher rotaciona para a próxima chave
+    após o 429."""
+    payload_ok = _classification_payload(reasoning="via K2", confidence_score=0.9)
+    chamadas = {"n": 0}
+
+    def handler(request):
+        chamadas["n"] += 1
+        if chamadas["n"] == 1:
+            # Primeira chave do pool: 429 cota esgotada (transitório)
+            return httpx.Response(
+                429,
+                json={
+                    "error": {
+                        "message": "rate limited",
+                        "details": [{"quotaId": "PerMinute", "retryDelay": "2s"}],
+                    }
+                },
+            )
+        # Segunda chave do pool: 200 sucesso
+        return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(payload_ok)}}]})
+
+    rota = respx.post("https://api.deepseek.com/v1/chat/completions")
+    rota.mock(side_effect=handler)
+
+    k1 = DeepSeekProvider(api_key="k1-key")
+    k2 = DeepSeekProvider(api_key="k2-key")
+    dispatcher = FallbackLLMDispatcher(
+        [("deepseek (pool chave 1)", k1), ("deepseek (pool chave 2)", k2)],
+        families=["deepseek"],
+    )
+
+    resultado = dispatcher.classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert resultado.confidence_score == 0.9
+    assert resultado.provider_name == "deepseek"
+    assert resultado.model_name == "deepseek-flash"
+    # Duas tentativas físicas: K1 (429) e K2 (200)
+    assert chamadas["n"] == 2, f"esperado 2 chamadas (K1+K2), obteve {chamadas['n']}"
+
+
+@respx.mock
+def test_fallback_401_autenticacao_troca_provedor():
+    """Provedor primário retorna 401 (credencial inválida, permanente).
+    Deve trocar automaticamente para o próximo provedor da cadeia de fallback."""
+    rota_primario = respx.post("https://api.deepseek.com/v1/chat/completions")
+    chamada_primario = {"n": 0}
+
+    def handler_primario(request):
+        chamada_primario["n"] += 1
+        return httpx.Response(401, json={"error": {"message": "credencial invalida"}})
+    rota_primario.mock(side_effect=handler_primario)
+
+    rota_fallback = respx.post("https://api.anthropic.com/v1/messages")
+    _mock_success_claude(rota_fallback, _classification_payload(reasoning="via fallback", confidence_score=0.92))
+
+    primario = DeepSeekProvider(api_key="k1-key")
+    fallback = ClaudeProvider(api_key="sk-ant-test-chave")
+    dispatcher = FallbackLLMDispatcher(
+        [("deepseek", primario), ("claude", fallback)],
+        families=["deepseek", "claude"],
+    )
+
+    resultado = dispatcher.classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert resultado.confidence_score == 0.92
+    assert resultado.provider_name == "claude"
+    assert chamada_primario["n"] == 1, (
+        f"Primário deveria ser chamado 1 vez (401 permanente), obteve {chamada_primario['n']}"
+    )
+
+
+@respx.mock
+def test_fallback_503_indisponibilidade_troca_provedor():
+    """Provedor primário retorna 503 (indisponibilidade transitória).
+    Deve trocar para o próximo provedor da cadeia de fallback."""
+    rota_primario = respx.post("https://api.deepseek.com/v1/chat/completions")
+    chamada_primario = {"n": 0}
+
+    def handler_primario(request):
+        chamada_primario["n"] += 1
+        return httpx.Response(503, json={"error": {"message": "indisponível"}})
+    rota_primario.mock(side_effect=handler_primario)
+
+    rota_fallback = respx.post("https://api.anthropic.com/v1/messages")
+    _mock_success_claude(rota_fallback, _classification_payload(reasoning="via fallback", confidence_score=0.91))
+
+    primario = DeepSeekProvider(api_key="k1-key")
+    fallback = ClaudeProvider(api_key="sk-ant-test-chave")
+    dispatcher = FallbackLLMDispatcher(
+        [("deepseek", primario), ("claude", fallback)],
+        families=["deepseek", "claude"],
+    )
+
+    resultado = dispatcher.classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert resultado.confidence_score == 0.91
+    assert resultado.provider_name == "claude"
+    assert chamada_primario["n"] == 1, f"Primário deveria ser chamado 1 vez, obteve {chamada_primario['n']}"
+
+
+@respx.mock
+def test_cadeia_fallback_completa_todos_falham_menos_ultimo():
+    """Cadeia completa: Gemini (429 PerDay), NVIDIA (410 Gone), DeepSeek (503)
+    falham; Claude (último) vence. Verifica troca automática entre provedores."""
+    chamado = {"familias": []}
+
+    def _classify_once_gemini(*args, **kwargs):
+        chamado["familias"].append("gemini")
+        raise genai_errors.ClientError(
+            429,
+            {
+                "error": {
+                    "code": 429,
+                    "message": "PerDay",
+                    "details": [
+                        {
+                            "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+                            "violations": [
+                                {
+                                    "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+                                    "quotaDimensions": {"model": "gemini-3.5-flash"},
+                                }
+                            ],
+                        }
+                    ],
+                }
+            },
+        )
+
+    def _classify_once_nvidia(*args, **kwargs):
+        chamado["familias"].append("nvidia")
+        resposta = httpx.Response(410, json={"error": {"code": 410, "message": "Gone"}}, request=MagicMock())
+        raise httpx.HTTPStatusError("erro", request=MagicMock(), response=resposta)
+
+    def _classify_once_deepseek(*args, **kwargs):
+        chamado["familias"].append("deepseek")
+        raise httpx.HTTPStatusError(
+            "erro",
+            request=MagicMock(),
+            response=httpx.Response(503, json={"error": {"message": "indisponível"}}, request=MagicMock()),
+        )
+
+    resultado_claude = _classification_payload(reasoning="via claude final", confidence_score=0.95)
+    resultado_claude["provider_name"] = "claude"
+    resultado_claude["model_name"] = "claude-haiku-5-5"
+
+    def _classify_once_claude(*args, **kwargs):
+        chamado["familias"].append("claude")
+        return ClassificationResult(**resultado_claude)
+
+    k1 = GeminiProvider(api_key="AIzaSyfakekey1234567890", model="gemini-3.5-flash")
+    k1._classify_once = _classify_once_gemini
+
+    nvidia = NvidiaProvider(api_key="nvapi-test-key", model="nvidia/nemotron-3.5-super-vl-120b-a12b")
+    nvidia._classify_once = _classify_once_nvidia
+
+    deepseek = DeepSeekProvider(api_key="sk-test-key", model="deepseek-flash")
+    deepseek._classify_once = _classify_once_deepseek
+
+    claude = ClaudeProvider(api_key="sk-ant-test-key", model="claude-haiku-5-5")
+    claude._classify_once = _classify_once_claude
+
+    dispatcher = FallbackLLMDispatcher(
+        [("gemini", k1), ("nvidia", nvidia), ("deepseek", deepseek), ("claude", claude)],
+        families=["gemini", "nvidia", "deepseek", "claude"],
+    )
+
+    r = dispatcher.classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert r.provider_name == "claude"
+    assert r.model_name == "claude-haiku-5-5"
+    assert r.confidence_score == 0.95
+    assert r.reasoning == "via claude final"
+    # Gemini tenta M1, M2 e M3 (3 modelos) antes de passar à próxima família;
+    # NVIDIA, DeepSeek e Claude têm um único modelo cada.
+    assert chamado["familias"].count("gemini") == 3
+    assert chamado["familias"].count("nvidia") == 1
+    assert chamado["familias"].count("deepseek") == 1
+    assert chamado["familias"].count("claude") == 1
+
+
+# --------------------------------------------------------------------------- #
+# TEST-LLM-02: Cadenciamento do GroqProvider e política de 0-sleep.
+# --------------------------------------------------------------------------- #
+@respx.mock
+def test_groq_cadencia_quando_tokens_restantes_baixos():
+    """GroqProvider dorme (cadencia) quando x-ratelimit-remaining-tokens < 3000,
+    respeitando o teto de 60 s e usando cooldown_state.sleep injetável."""
+    payload_ok = _classification_payload(reasoning="via groq", confidence_score=0.9)
+
+    rota = respx.post("https://api.groq.com/openai/v1/chat/completions")
+    chamadas = {"n": 0}
+
+    def handler(request):
+        chamadas["n"] += 1
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(payload_ok)}}]},
+            headers={
+                "x-ratelimit-remaining-tokens": "500",  # abaixo de 3000 -> cadencia
+                "x-ratelimit-reset-tokens": "2.5",
+                "retry-after": "0",
+            },
+        )
+    rota.mock(side_effect=handler)
+
+    provider = GroqProvider(api_key="gsk_test_chave_valida_1234567890")
+    sleeps = []
+    provider._cooldown_state.sleep = lambda s: sleeps.append(s)
+
+    resultado = provider.classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert resultado.confidence_score == 0.9
+    assert resultado.provider_name == "groq"
+    # Cadenciamento disparado: dormiu pelo menos uma vez (reset-tokens 2.5s)
+    assert len(sleeps) >= 1, f"esperado pelo menos 1 sleep, obteve {len(sleeps)}"
+    # Nenhum sleep excede o teto de 60 s
+    assert all(s <= 60.0 for s in sleeps), f"sleep acima do teto: {sleeps}"
+
+
+@respx.mock
+def test_groq_nao_cadencia_quando_tokens_suficientes():
+    """GroqProvider NÃO dorme quando x-ratelimit-remaining-tokens >= 3000
+    e não há retry-after (política de 0-sleep dentro do provedor)."""
+    payload_ok = _classification_payload(reasoning="via groq", confidence_score=0.9)
+
+    rota = respx.post("https://api.groq.com/openai/v1/chat/completions")
+    chamadas = {"n": 0}
+
+    def handler(request):
+        chamadas["n"] += 1
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": json.dumps(payload_ok)}}]},
+            headers={
+                "x-ratelimit-remaining-tokens": "5000",  # acima de 3000 -> sem cadencia
+                "x-ratelimit-reset-tokens": "0",
+            },
+        )
+    rota.mock(side_effect=handler)
+
+    provider = GroqProvider(api_key="gsk_test_chave_valida_1234567890")
+    sleeps = []
+    provider._cooldown_state.sleep = lambda s: sleeps.append(s)
+
+    resultado = provider.classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert resultado.confidence_score == 0.9
+    assert resultado.provider_name == "groq"
+    assert sleeps == [], f"esperado 0 sleeps (tokens suficientes), obteve {len(sleeps)}"
+
+
+@respx.mock
+def test_groq_zero_sleep_quando_outro_provedor_elegivel():
+    """Política de 0-sleep: quando Groq falha (429 transitório) e há outro
+    provedor elegível na cadeia, o dispatcher NÃO dorme antes de tentar o
+    próximo provedor. Apenas rotaciona imediatamente."""
+    payload_ok = _classification_payload(reasoning="via claude", confidence_score=0.92)
+
+    rota_groq = respx.post("https://api.groq.com/openai/v1/chat/completions")
+    chamada_groq = {"n": 0}
+
+    def handler_groq(request):
+        chamada_groq["n"] += 1
+        return httpx.Response(
+            429,
+            json={
+                "error": {
+                    "message": "rate limited",
+                    "details": [{"quotaId": "PerMinute", "retryDelay": "2s"}],
+                }
+            },
+        )
+    rota_groq.mock(side_effect=handler_groq)
+
+    rota_claude = respx.post("https://api.anthropic.com/v1/messages")
+    _mock_success_claude(rota_claude, payload_ok)
+
+    groq = GroqProvider(api_key="gsk_test_chave_valida_1234567890")
+    claude = ClaudeProvider(api_key="sk-ant-test-chave")
+    estado_compartilhado = _PoolCooldownState()
+    groq._cooldown_state = estado_compartilhado
+    claude._cooldown_state = estado_compartilhado
+
+    sleeps = []
+    estado_compartilhado.sleep = lambda s: sleeps.append(s)
+
+    dispatcher = FallbackLLMDispatcher(
+        [("groq", groq), ("claude", claude)],
+        families=["groq", "claude"],
+    )
+
+    resultado = dispatcher.classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert resultado.confidence_score == 0.92
+    assert resultado.provider_name == "claude"
+    assert chamada_groq["n"] == 1, f"Groq chamado 1 vez, obteve {chamada_groq['n']}"
+    # Política de 0-sleep: não dorme antes de tentar o próximo provedor
+    assert sleeps == [], f"esperado 0 sleeps com outro provedor elegível, obteve {len(sleeps)}"
