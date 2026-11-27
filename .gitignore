@@ -46,3 +46,5 @@ build/
 mockups/
 scratch/
 
+# Relatórios temporários gerados pelo agente (não versionar)
+temp/
