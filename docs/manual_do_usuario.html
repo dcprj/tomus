@@ -270,15 +270,18 @@
         <div class="step-card">
           <div class="step-card-header">
             <span class="step-num">2</span>
-            <h3>Groq (Excelente Reserva Gratuita — 1.000 requisições/dia)</h3>
+            <h3>Groq (Apenas como Reserva de Fallback — Gratuito, Sem Cartão de Crédito)</h3>
           </div>
-          <p>O Groq é ultra-veloz e oferece gratuitamente 1.000 consultas por dia. É o parceiro perfeito para atuar como reserva automática se o Gemini atingir o limite diário.</p>
+          <p>O Groq é ultra-veloz e não exige cartão de crédito, mas sua cota gratuita é restrita a <strong>8.000 tokens por minuto (TPM)</strong> e <strong>200.000 tokens por dia (TPD)</strong>. Por esse motivo, ele <strong>não deve ser usado como provedor principal</strong> em lotes médios ou grandes. Recomendamos configurá-lo <strong>apenas na cadeia de fallback</strong> (atrás do Google Gemini e/ou NVIDIA NIM, provedores principais gratuitos), para que o Tomus acione o Groq automaticamente se o principal atingir o limite.</p>
           <ol>
             <li>Acesse o console: <a href="https://console.groq.com/" target="_blank" rel="noopener"><strong>console.groq.com</strong></a> e crie sua conta gratuita.</li>
             <li>No menu lateral esquerdo, clique em <strong>API Keys</strong>.</li>
             <li>Clique em <strong>Create API Key</strong>, dê o nome de <code>Tomus</code> e confirme.</li>
             <li>Copie a chave gerada (iniciada em <code>gsk_...</code>). Guarde-a logo, pois ela só aparece uma vez!</li>
           </ol>
+          <div class="warning-box">
+            <strong>Limite gratuito do Groq:</strong> 8.000 TPM e 200.000 TPD. O uso isolado como provedor principal em lotes grandes esgota rapidamente a cota e torna o processamento mais lento por causa do cadenciamento de tokens. Prefira Gemini ou NVIDIA NIM como principal.
+          </div>
         </div>
 
         <div class="step-card">

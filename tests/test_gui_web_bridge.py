@@ -151,6 +151,81 @@ def test_preferences_dialog_save_and_reactivity(tmp_path, monkeypatch):
     dlg.close()
 
 
+def test_save_button_async_persists_on_validation_failure(tmp_path, monkeypatch):
+    """Botão Salvar (caminho assíncrono): persiste cfg SEMPRE, mesmo quando validação ao vivo falha (401/offline).
+
+    Reproduz o Achado B do Sentinela: garante que _persist_config é chamado
+    imediatamente (cfg gravado) antes da validação ao vivo, e que o
+    feedback 401/403 não-bloqueante é disparado após a validação assíncrona.
+    """
+    from tomus.gui.widgets.preferences_dialog import PreferencesDialog
+
+    get_qapp()
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig()
+    cfg_file = tmp_path / "config.toml"
+    dlg = PreferencesDialog(cfg, config_path=cfg_file)
+
+    # 1. Digitar chave válida no Gemini
+    dlg._fields["gemini_api_key"].setText("AIzaSyTestKey123")
+
+    # 2. Mockar _start_async_validation para simular falha de validação (HTTP 401)
+    #    sem criar QThread real (evita travar em offscreen/headless).
+    async_started = []
+    validation_emitted = []
+
+    def fake_start_validation(checks):
+        async_started.append(True)
+        for field_name, _key in checks:
+            validation_emitted.append((field_name, "HTTP 401: Não autorizada"))
+            dlg._on_validation_result(field_name, False, "HTTP 401: Não autorizada")
+        dlg._on_validation_finished()
+
+    monkeypatch.setattr(dlg, "_start_async_validation", fake_start_validation)
+
+    # Mockar _on_validation_finished para não disparar QMessageBox em offscreen,
+    # mas ainda validar que o fluxo chega até ele após a persistência.
+    finished_called = []
+
+    def fake_on_validation_finished():
+        finished_called.append(True)
+
+    dlg._on_validation_finished = fake_on_validation_finished
+
+    # 3. Espionar _persist_config: confirmar que é chamado e gravar no cfg
+    #    (sem chamar self.accept(), que fecharia o diálogo).
+    persist_called = []
+
+    def spied_persist():
+        persist_called.append(True)
+        val = dlg._fields["gemini_api_key"].text().strip()
+        cfg.api_keys.gemini_api_key = val
+
+    dlg._persist_config = spied_persist
+
+    # 4. Disparar caminho assíncrono do botão Salvar
+    dlg._salvar_com_validacao_async()
+
+    # 5. Verificar que _persist_config foi chamado imediatamente (cfg persistido)
+    assert len(persist_called) == 1
+    assert cfg.api_keys.gemini_api_key == "AIzaSyTestKey123"
+
+    # 6. Verificar que o caminho assíncrono foi iniciado
+    assert len(async_started) == 1
+    assert len(validation_emitted) >= 1
+    assert any(field == "gemini_api_key" for field, _msg in validation_emitted)
+
+    # 7. Verificar feedback 401/403 não-bloqueante na UI (validação assíncrona)
+    env_lbl = dlg._env_labels["gemini_api_key"]
+    assert "HTTP 401" in env_lbl.text() or "Credenciais Rejeitadas" in env_lbl.text()
+
+    # 8. Verificar que o fluxo chegou até a conclusão assíncrona
+    assert len(finished_called) == 1
+
+    # Fechar diálogo limpo antes do teardown do QApplication offscreen
+    dlg.reject()
+
+
 def test_main_window_web_view_instancia(monkeypatch):
     from unittest.mock import MagicMock
 

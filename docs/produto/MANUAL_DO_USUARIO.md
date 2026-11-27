@@ -106,9 +106,13 @@ O Gemini é o provedor primário padrão do Tomus. Ele é ideal para entender o 
 
 ---
 
-### 3.2 Provedor 2: Groq (Altamente Recomendado como 1º Fallback — Gratuito)
+### 3.2 Provedor 2: Groq (Apenas como 1º Fallback — Gratuito, Sem Cartão de Crédito)
 
-O Groq é um provedor que utiliza processadores ultra-rápidos e oferece gratuitamente uma cota de **1.000 requisições por dia**, sendo o parceiro perfeito para atuar como reserva quando a cota diária do Gemini atingir o limite.
+O Groq é um provedor de processamento ultra-rápido que **não exige cartão de crédito** para usar sua cota gratuita. No entanto, esse plano gratuito é **restrito**: **8.000 tokens por minuto (TPM)** e **200.000 tokens por dia (TPD)**. Por esse motivo, o Groq **não deve ser usado como provedor principal** em lotes médios ou grandes — o uso isolado esgota rapidamente a cota e o processamento fica naturalmente mais lento por causa do cadenciamento de 8.000 TPM.
+
+Recomendamos configurar o Groq **apenas na cadeia de fallback** (atrás do Google Gemini e/ou NVIDIA NIM, que são os provedores principais gratuitos). Assim, se o provedor principal atingir o limite diário no meio de um lote grande, o Tomus migra automaticamente para o Groq sem interromper o seu trabalho.
+
+> **Quando usar o Groq como principal:** apenas para testes rápidos ou lotes muito pequenos (menos de alguns dezenas de documentos). Para acervos de verdade, prefira Gemini ou NVIDIA NIM como principal e deixe o Groq como reserva.
 
 1. Acesse o console da Groq:  
    👉 [https://console.groq.com/](https://console.groq.com/)
