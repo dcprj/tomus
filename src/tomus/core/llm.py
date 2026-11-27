@@ -1557,21 +1557,110 @@ class DeepSeekProvider(_OpenAICompatibleProvider):
 
 
 class GroqProvider(_OpenAICompatibleProvider):
-    """Provedor Groq (OpenAI-compatível) usando httpx diretamente."""
+    """Provedor Groq (OpenAI-compatível) usando httpx diretamente.
+
+    O Groq tem cota gratuita restrita (~8.000 tokens por minuto / 200.000 TPD),
+    então este provedor usa um orçamento enxuto por requisição
+    (_max_tokens = 1024, max_sampled_chars default = 7.000) e aplica
+    cadenciamento com base nos cabeçalhos de rate-limit da API
+    (x-ratelimit-remaining-tokens, x-ratelimit-reset-tokens,
+    x-ratelimit-remaining-requests, retry-after) para evitar 429 em rajada.
+    """
 
     _provider_label = "Groq"
     _provider_id = "groq"
     _use_json_response_format = True
+    _max_tokens = 1024
 
     def __init__(
         self,
         api_key: str,
         model: str = "openai/gpt-oss-120b",
         base_url: str = "https://api.groq.com/openai/v1",
-        max_sampled_chars: int = 15_000,
+        max_sampled_chars: int = 7_000,
         cooldown_state: _PoolCooldownState | None = None,
     ) -> None:
         super().__init__(api_key, model, base_url, max_sampled_chars, cooldown_state=cooldown_state)
+
+    def _call_chat_completions(
+        self, system_prompt: str, context_payload: str, model: str | None = None
+    ) -> str:
+        """Uma única tentativa de chamada OpenAI-compatível com cadenciamento Groq.
+
+        Além do comportamento da classe base, lê os cabeçalhos de rate-limit
+        retornados pela Groq (x-ratelimit-*) e dorme quando a margem de tokens
+        restantes está baixa, respeitando os 8.000 TPM do plano gratuito.
+        """
+        modelo_usado = model or self._model
+        payload: dict[str, Any] = {
+            "model": modelo_usado,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_prompt
+                    + "\n\nResponda APENAS com um objeto JSON válido estritamente no schema solicitado, sem marcação markdown adicional.",
+                },
+                {"role": "user", "content": context_payload},
+            ],
+            "temperature": 0.1,
+            "max_tokens": self._max_tokens,
+        }
+        if self._use_json_response_format:
+            payload["response_format"] = {"type": "json_object"}
+
+        resp = self._client.post("/chat/completions", json=payload)
+
+        # Cadenciamento: ler headers de rate-limit da Groq antes de validar status.
+        self._aplicar_cadenciamento_groq(resp.headers)
+
+        resp.raise_for_status()
+        data = resp.json()
+        choice = data.get("choices", [{}])[0]
+        msg = choice.get("message", {})
+        content = msg.get("content")
+        if (not content or not str(content).strip()) and self._allow_reasoning_fallback:
+            reasoning = msg.get("reasoning_content")
+            if reasoning and "{" in reasoning and "}" in reasoning:
+                content = reasoning
+        if not content or not str(content).strip():
+            raise ValueError(f"Resposta do LLM {self._provider_label} veio vazia")
+        return str(content)
+
+    def _aplicar_cadenciamento_groq(self, headers: Any) -> None:
+        """Ajustar o ritmo de envio da Groq com base nos cabeçalhos de rate-limit.
+
+        Dorme apenas quando a margem de tokens restantes está baixa
+        (< 3.000) ou quando o servidor informa retry-after, respeitando o
+        teto de 60 s para não travar o lote. Usa cooldown_state.sleep para
+        permitir injeção de clock/sleep em testes.
+        """
+        dormir = 0.0
+
+        retry_after = headers.get("retry-after") or headers.get("Retry-After")
+        if retry_after is not None:
+            try:
+                dormir = max(dormir, float(retry_after))
+            except (TypeError, ValueError):
+                pass
+
+        remaining_tokens = headers.get("x-ratelimit-remaining-tokens")
+        reset_tokens = headers.get("x-ratelimit-reset-tokens")
+        if remaining_tokens is not None:
+            try:
+                rt = int(remaining_tokens)
+                if rt < 3_000 and reset_tokens is not None:
+                    try:
+                        reset_in = float(reset_tokens)
+                        # Se o reset for no futuro, aguardar até lá (corto).
+                        dormir = max(dormir, reset_in)
+                    except (TypeError, ValueError):
+                        pass
+            except (TypeError, ValueError):
+                pass
+
+        if dormir > 0:
+            espera = min(max(dormir, 0.0), 60.0)
+            self._cooldown_state.sleep(espera)
 
 
 class ClaudeProvider:
