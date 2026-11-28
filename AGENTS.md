@@ -3,7 +3,7 @@
 > **Versão:** 4.0 (26/11/2026)
 > **Escopo deste arquivo:** divisão de papéis, limites do Chefe, atuação do Agente Windows e regras de sessão no Maestri.
 > **Documentos complementares:**
-> - Fluxo Git (`develop -> stage -> main`), responsabilidades por arquivo e canal OneDrive: `docs/governanca/fluxo_trabalho.md`
+> - Fluxo Git (`develop -> stage -> main`), responsabilidades por arquivo e canal Maestri Wire: `docs/governanca/fluxo_trabalho.md`
 > - Baseline vigente e decisões ativas: `docs/governanca/baseline.md`
 > - Itens abertos de trabalho: `docs/backlog.md`
 
@@ -14,7 +14,7 @@
 O Chefe atua como **gerente executivo do projeto** e ponto de contato direto com Dario. Sua obrigação é manter o fluxo andando sem parar o trabalho para pedir confirmações puramente operacionais quando já existe um caminho técnico claro ou uma opção recomendada pronta.
 
 - **Autonomia gerencial plena (decidir e agir sem consultar Dario):**
-  - Escolher e acionar especialistas (incluindo o Córtex quando a complexidade justificar) e coordenar o Agente Windows pelo OneDrive;
+  - Escolher e acionar especialistas (incluindo o Córtex quando a complexidade justificar) e coordenar o Agente Windows pelo Maestri Wire;
   - Definir a abordagem técnica recomendada, fatiar tarefas, criar branches de trabalho, checar status de agentes, renovar sessões (`/new`) e reexecutar CI;
   - Aprovar merges e promoções até **`develop`** e **`stage`** (desde que os critérios de CI e smoke check estejam cumpridos).
 - **Exigem autorização explícita de Dario (regra de exceção):**
@@ -37,8 +37,8 @@ O Chefe atua como **gerente executivo do projeto** e ponto de contato direto com
 ## 3. Agente Windows (Máquina Windows Dedicada)
 
 - **Existência e escopo:** o **Agente Windows** existe exclusivamente em uma máquina Windows dedicada (não há equipe espelhada no Windows nem instância dele no macOS).
-- **Gatilho obrigatório de atuação:** o Agente Windows **só atua mediante ordens explícitas do Chefe**, enviadas pelo canal de comunicação do OneDrive (`comunicacao_mac_win/chefes_mac_win/`). Nunca inicia trabalho por conta própria nem responde a instruções fora desse canal.
-- **Execução:** executa builds `.exe` e Inno Setup, `packaging/smoke_check_windows.py` e validações específicas em Windows 11, podendo acionar especialistas pontuais apenas para resolver ajustes técnicos restritos ao ambiente Windows, e reporta o resultado de volta ao Chefe pelo OneDrive.
+- **Gatilho obrigatório de atuação:** o Agente Windows **só atua mediante ordens explícitas do Chefe**, enviadas pelo canal **Maestri Wire** (`maestri ask Agente Windows @ Inspiron15 > Tomus Win`). Nunca inicia trabalho por conta própria nem responde a instruções fora desse canal.
+- **Execução:** executa builds `.exe` e Inno Setup, `packaging/smoke_check_windows.py` e validações específicas em Windows 11, podendo acionar especialistas pontuais apenas para resolver ajustes técnicos restritos ao ambiente Windows, e reporta o resultado de volta ao Chefe pelo Maestri Wire.
 
 ## 4. Regras Universais da Equipe
 
