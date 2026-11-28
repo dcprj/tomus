@@ -11,6 +11,8 @@ import os
 import re
 from pathlib import Path
 
+from tomus.core.file_security import set_restrictive_file_permissions
+
 # Loggers de terceiros a serem silenciados/redirecionados para arquivo.
 _THIRD_PARTY_LOGGERS = (
     "RapidOCR",
@@ -100,6 +102,7 @@ def setup_logging(
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        set_restrictive_file_permissions(log_path)
         file_handler.setLevel(level)
         file_handler.setFormatter(logging.Formatter(_LOG_FORMAT))
         file_handler.addFilter(RedactingFilter())

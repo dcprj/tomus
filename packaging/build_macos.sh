@@ -12,11 +12,11 @@ BUILD_DIR="${PROJECT_ROOT}/build"
 
 # Ler a versão do pyproject.toml
 if [ -f "${PROJECT_ROOT}/.venv/bin/python3" ]; then
-    VERSION=$("${PROJECT_ROOT}/.venv/bin/python3" -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.4.2")
+    VERSION=$("${PROJECT_ROOT}/.venv/bin/python3" -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.4.3")
 elif command -v python3 &> /dev/null; then
-    VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || python3 -c "import tomli; print(tomli.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.4.2")
+    VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || python3 -c "import tomli; print(tomli.load(open('${PROJECT_ROOT}/pyproject.toml', 'rb'))['project']['version'])" 2>/dev/null || echo "1.4.3")
 else
-    VERSION="1.4.2"
+    VERSION="1.4.3"
 fi
 
 DMG_NAME="${APP_NAME}-${VERSION}-macOS.dmg"
@@ -123,9 +123,13 @@ if command -v create-dmg &> /dev/null; then
         --icon "${APP_NAME}.app" 150 150 \
         --hide-extension "${APP_NAME}.app" \
         --app-drop-link 450 150 \
+        --background "${SCRIPT_DIR}/icons/dmg_background.png" \
         --overwrite \
         "${DIST_DIR}/${DMG_NAME}" \
         "${DMG_TEMP_DIR}/" || true
+# Fundo do DMG produzido pelo Prisma (FEAT-UX-04). Enquanto o asset
+# dmg_background.png não for adicionado em packaging/icons/, o create-dmg
+# ignora o parâmetro --background e o hdiutil cria o DMG sem fundo.
 fi
 
 # Se create-dmg não criou ou não está disponível, usar hdiutil nativo com link simbólico manual

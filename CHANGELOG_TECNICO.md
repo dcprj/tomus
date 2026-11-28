@@ -5,6 +5,28 @@ Todas as mudanças notáveis neste projeto serão documentadas neste arquivo.
 O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.0/),
 e este projeto adota versionamento semântico ([Semantic Versioning](https://semver.org/lang/pt-BR/)).
 
+## [1.4.3] - (pendente de publicação) — BETA
+
+### BUG-UI-02 — Validação e feedback de todas as chaves de API
+- O seletor de provedor agora valida cada chave de API configurada e fornece feedback ao usuário, mostrando apenas opções com credencial funcional.
+- Arquivos afetados: `src/tomus/gui/widgets/preferences_dialog.py`, `src/tomus/gui/web/app.js`, `src/tomus/core/scanner.py`.
+- Arquivos de teste: `tests/test_multi_provider.py`, `tests/test_gui_web_bridge.py`.
+
+### BUG-UI-01 — Indicador de provedor validado
+- Adicionado indicador visual na GUI que mostra qual provedor está validado e ativo, dando ao usuário confiança sobre qual credencial está sendo usada.
+- Arquivos afetados: `src/tomus/gui/web/index.html`, `src/tomus/gui/widgets/preferences_dialog.py`.
+
+### AUD-RESIDUAL — Scanner com leitura única, validação %PDF-, timeout no OCR, cache de taxonomia
+- O scanner agora lê o arquivo PDF uma única vez, valida o cabeçalho `%PDF-` antes de processar, aplica timeout no OCR para evitar travamentos e utiliza cache de taxonomia para evitar reprocessamentos.
+- Arquivos afetados: `src/tomus/core/scanner.py`, `src/tomus/core/taxonomy.py`, `src/tomus/extractors/native_pdf.py`, `src/tomus/extractors/ocr.py`.
+- Arquivos de teste: `tests/test_periodicals.py`.
+
+### Marcação beta
+- Superfícies do usuário (GUI, landing page, README, manual) marcadas como v1.4.3 Beta (PROD-BETA-01).
+
+### Versão 1.4.2 → 1.4.3
+- `pyproject.toml`, `src/tomus/__init__.py`, `packaging/pyinstaller.spec` (CFBundleVersion e CFBundleShortVersionString), `packaging/windows_installer.iss` (MyAppVersion), fallbacks de `packaging/build_macos.sh` e `packaging/build_windows.ps1`.
+
 ## [1.4.2] - publicada em 2026-11-28
 
 ### Novidades da release 1.4.2
