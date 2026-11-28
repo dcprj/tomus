@@ -1,7 +1,7 @@
 # Manual do Usuário do Tomus
 
 > **Guia Oficial de Uso & Boas Práticas**  
-> **Versão do Aplicativo:** 1.4.1  
+> **Versão do Aplicativo:** 1.4.2  
 > **Sistema Operacional:** macOS 12+ e Windows 10/11 64 bits  
 > **Autor:** Dario Pinheiro e Equipe Tomus  
 > **Suporte Comunitário:** [github.com/dcprj/tomus](https://github.com/dcprj/tomus)
@@ -33,7 +33,7 @@ O Tomus é distribuído como instaladores nativos prontos para uso. Não é nece
 
 A instalação do Tomus no macOS é rápida e segue o padrão amigável da Apple:
 
-1. **Baixe o instalador oficial:** Acesse a página do projeto ou a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus-1.4.1-macOS.dmg`.
+1. **Baixe o instalador oficial:** Acesse a página do projeto ou a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus-1.4.2-macOS.dmg`.
 2. **Abra o arquivo `.dmg`:** Dê um duplo clique no arquivo baixado. Uma janela se abrirá mostrando o ícone do **Tomus** ao lado da pasta **Aplicativos** (*Applications*).
 3. **Arraste e solte:** Arraste o ícone do Tomus para dentro da pasta Aplicativos.
 4. **Inicie o aplicativo:** Abra o seu *Launchpad* ou a pasta Aplicativos no Finder e clique no Tomus.
@@ -44,9 +44,9 @@ A instalação do Tomus no macOS é rápida e segue o padrão amigável da Apple
 
 ### 2.2 Instalação no Windows
 
-O instalador para Windows (`Tomus_Setup_v1.4.1_Windows_x64.exe`) é gerado com **Inno Setup** e é uma instalação **por usuário**: não exige senha nem privilégios de administrador.
+O instalador para Windows (`Tomus_Setup_v1.4.2_Windows_x64.exe`) é gerado com **Inno Setup** e é uma instalação **por usuário**: não exige senha nem privilégios de administrador.
 
-1. **Baixe o instalador oficial:** Acesse a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus_Setup_v1.4.1_Windows_x64.exe`.
+1. **Baixe o instalador oficial:** Acesse a seção de lançamentos (*Releases*) no GitHub e baixe o arquivo `Tomus_Setup_v1.4.2_Windows_x64.exe`.
 2. **Execute o instalador:** Dê um duplo clique no arquivo `.exe` baixado para abrir o assistente do Inno Setup.
 3. **Siga o assistente:** aceite os termos de licença, escolha a pasta de destino (padrão: `%LocalAppData%\Programs\Tomus`) e marque, se desejar, a criação de um atalho opcional na **Área de Trabalho**. Atalhos são criados automaticamente no **Menu Iniciar**.
 4. **Conclua a instalação:** clique em **Concluir** e inicie o Tomus pelo Menu Iniciar ou pelo atalho da Área de Trabalho.
