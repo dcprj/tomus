@@ -103,6 +103,25 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Escopo:** `src/tomus/core/`, `src/tomus/extractors/`, `tomus.example.toml`
 - **Objetivo:** Tratar pendências não-bloqueantes remanescentes: validação explícita de cabeçalho `%PDF-` e timeout no OCR (LINCE-09/10), eliminação de leitura dupla no scanner, cache da estrutura de taxonomia, validação de `int(volume)`, limpeza do campo `github_token` sem uso em `tomus.example.toml` e renomeação de testes com versão no nome (`test_periodicals_v133.py`).
 
+## Qualidade e Automação de Smoke
+
+### [FEAT-QA-01] Automação Completa do Smoke na VM do Windows (Camada C — Clique na GUI)
+- **Status:** Aberto (camadas A e B implementadas na sprint 28/11; camada C pendente)
+- **Responsáveis:** Forja (script) e Agente Windows (execução na VM)
+- **Escopo:** `scripts/vm_smoke_pipeline.py`, `packaging/vm_smoke_installer.ps1`, `packaging/smoke_check_windows.py`
+- **O que já existe:** instalador verificado dentro da VM (tamanho + SHA-256), instalação silenciosa com `EXITCODE=0`, self-test OCR aprovado, boot da GUI confirmado por indicadores (processo vivo, CPU acumulando, QtWebEngine ativo, stderr limpo) e credencial não-interativa do convidado resolvida via **DPAPI** (substitui o `Get-Credential`, que travava por diálogo modal).
+- **O que falta:** confirmar a abertura da janela por `MainWindowHandle` — o `.NET` não detecta o handle do app Qt, então o boot ainda depende de confirmação visual no console; e automatizar o processamento pela GUI.
+- **Objetivo:** avaliar automação de clique com FlaUI ou pywinauto para eliminar a última dependência de operador. **Ressalva técnica:** controles QtWebEngine não expõem árvore de acessibilidade confiável, e um seletor quebrado produz falso negativo — o pior tipo de falha em teste. Manter A+B (instalação + boot + pipeline via API do core) como caminho principal e tratar C como opcional, sem bloquear release.
+- **Limpeza pendente na VM:** remover a instância de diagnóstico em sessão 0 e a Tarefa Agendada `SmokeLaunch143`.
+
+### [FEAT-QA-02] Snapshot Canônico e Conjunto de Referência do Smoke
+- **Status:** Aberto
+- **Responsáveis:** Agente Windows (VM) e Farol (documentação)
+- **Escopo:** VM `Tomus-QA-Win11-x64`, `packaging/smoke_check_windows.py`, documentação de release
+- **Achado:** o snapshot `PFDs_para_testes_no_disco_c` (nome com typo) **não** tem a conta `tomusagent`, portanto a credencial falha ali e ele não serve para execução autônoma. A base que funciona é **`tomusagent_com_pdfs`**, que tem conta e PDFs.
+- **Objetivo:** tornar `tomusagent_com_pdfs` a base canônica do smoke (renomear `PFDs_para_testes_no_disco_c` ou documentar explicitamente a distinção, para que ninguém repita o erro), e manter uma subpasta `pdfs_teste/` com **10 PDFs de referência** cobrindo variedade de tipos documentais (livro, revista, tese, artigo), de tamanhos (ao menos um pequeno e um grande), pelo menos um arquivo escaneado sem camada de texto (para exercitar o OCR) e anos distintos, sem duplicatas óbvias.
+- **Benefício:** conjunto fixo transforma o smoke em teste reproduzível — mesmos arquivos em toda release, resultado comparável entre execuções, e variação no número de organizados passa a indicar regressão em vez de sorte da amostra.
+
 ## Decisões de Produto (Sem Prazo Definido)
 
 ### [PROD-BETA-01] Identificar o Tomus como Versão Beta nas Superfícies Oficiais

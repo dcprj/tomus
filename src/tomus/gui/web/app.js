@@ -144,7 +144,6 @@
     btnSupportOk: document.getElementById('btnSupportOk'),
     btnCopySupportPix: document.getElementById('btnCopySupportPix'),
     supportPixKeyInput: document.getElementById('supportPixKey'),
-    supportQrCode: document.getElementById('supportQrCode'),
 
     // Auditoria de biblioteca (FEAT-AUDIT-01)
     btnAuditLibrary: document.getElementById('btnAuditLibrary'),
@@ -1711,7 +1710,6 @@
   function openSupportModal() {
     if (el.supportModal) {
       el.supportModal.style.display = 'flex';
-      renderSupportQrCode();
     }
   }
 
@@ -1902,86 +1900,9 @@
   }
 
   // --- Geração de QR Code Pix EMVCo (local, sem dependência externa) ---
-  // Payload EMVCo BR Code para Pix (estático, chave Pix fixa)
-  const PIX_PAYLOAD =
-    '000201' + // Payload Format Indicator
-    '26580014' + // Merchant Account Information (GUI + BR.GOV.BCB.PIX)
-    'BR.GOV.BCB.PIX' +
-    '0136' + // Merchant Account Information (GUI + chave)
-    'dpinheiro+tomus@gmail.com' +
-    '52040000' + // Merchant Category Code
-    '5303986' + // Transaction Currency (BRL)
-    '540510.00' + // Transaction Amount (10.00)
-    '5802BR' + // Country Code
-    '5925Dario Pinheiro' + // Merchant Name
-    '6009Sao Paulo' + // Merchant City
-    '62070503***' + // Additional Data Field Template
-    '6304'; // CRC16 placeholder
-
-  function crc16CcittFalse(data) {
-    let crc = 0xFFFF;
-    for (let i = 0; i < data.length; i++) {
-      crc ^= data.charCodeAt(i) << 8;
-      for (let j = 0; j < 8; j++) {
-        if (crc & 0x8000) {
-          crc = (crc << 1) ^ 0x1021;
-        } else {
-          crc = crc << 1;
-        }
-        crc &= 0xFFFF;
-      }
-    }
-    return crc.toString(16).toUpperCase().padStart(4, '0');
-  }
-
-  function buildPixPayload() {
-    const crc = crc16CcittFalse(PIX_PAYLOAD);
-    return PIX_PAYLOAD + crc;
-  }
-
-  function renderSupportQrCode() {
-    if (!el.supportQrCode) return;
-    const payload = buildPixPayload();
-    const size = 200;
-    const moduleSize = 4; // módulos visuais (não módulos reais do QR)
-    el.supportQrCode.innerHTML = '';
-
-    // Gerar um padrão visual de QR Code baseado no payload (simplificado,
-    // sem biblioteca externa, apenas para exibição no modal)
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, size, size);
-    ctx.fillStyle = '#000000';
-
-    // Usar o hash do payload para gerar um padrão determinístico
-    let hash = 0;
-    for (let i = 0; i < payload.length; i++) {
-      hash = ((hash << 5) - hash) + payload.charCodeAt(i);
-      hash |= 0;
-    }
-
-    const modules = 25; // grade 25x25
-    const cell = size / modules;
-    for (let y = 0; y < modules; y++) {
-      for (let x = 0; x < modules; x++) {
-        const bit = ((hash >> ((x + y * modules) % 32)) & 1) === 1;
-        if (bit) {
-          ctx.fillRect(x * cell, y * cell, cell, cell);
-        }
-      }
-    }
-
-    // Adicionar marcador visual do payload no canvas (texto pequeno)
-    ctx.fillStyle = '#333333';
-    ctx.font = '10px monospace';
-    ctx.fillText('Pix QR Code', 10, 20);
-    ctx.fillText(payload.substring(0, 20), 10, size - 10);
-
-    el.supportQrCode.appendChild(canvas);
-  }
+  // TODO: Implementar no backend com biblioteca Python pura (ex: segno) sem
+  // dependência externa de runtime. O QR não é gerado no frontend para evitar
+  // padrão visual falso que não é legível por aplicativos bancários.
 
   // Links externos no Modal Sobre
   document.querySelectorAll('.link-external').forEach(link => {
