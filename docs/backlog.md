@@ -113,7 +113,10 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Status:** Aberto (decorrente do smoke da 1.4.3)
 - **Responsáveis:** Farol (empacotamento)
 - **Escopo:** `packaging/build_macos.sh`, `packaging/`
-- **Contexto:** a imagem de fundo do DMG não renderiza. Causa raiz: o `.DS_Store` carrega `backgroundType_` como **cor** além de `backgroundImageAlias_`, e o `create-dmg` não consegue sobrescrever isso no runner headless do CI (sem WindowServer, o AppleScript falha). Renomear o asset para `background.png` não resolve — verificado duas vezes no smoke.
+- **DOIS problemas, não um** (revisado após o Chefe inspecionar a imagem, 28/11/2026):
+  1. **Conteúdo:** a imagem não tem instrução nenhuma. Visual confirmado: retângulo branco com faixa azul na borda direita, sem seta e sem texto. Corrigir apenas o `.DS_Store` entregaria um fundo inútil.
+  2. **Renderização:** o `.DS_Store` carrega `backgroundType_` como **cor** além de `backgroundImageAlias_`, e o `create-dmg` não sobrescreve isso no runner headless do CI (sem WindowServer, o AppleScript falha). Renomear o asset para `background.png` não resolve — verificado duas vezes no smoke.
+- **Consequência:** os dois defeitos precisam ser corrigidos juntos. Qualquer solução que trate apenas um deles continua entregando um DMG sem instrução utilizável.
 - **Duas fases:** (a) curto prazo — incluir um arquivo `Instrucoes.txt` visível dentro do DMG com a orientação de arrastar `Tomus.app` para Aplicativos. Robusto, independente de `.DS_Store`, funciona em qualquer geração; (b) evolução — gerar o `.dmg` em Mac com Finder e subir como asset, para ter o visual de fato.
 - **Ressalva:** a fase (b) adiciona passo manual ao release, que tende a ser pulado. Recomenda-se (a) como padrão.
 
