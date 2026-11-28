@@ -1,6 +1,6 @@
 # Documentação Técnica e Arquitetura do Tomus
 
-> **Versão da Especificação:** 1.4.1  
+> **Versão da Especificação:** 1.4.2  
 > **Status:** Ativa / Homologada  
 > **Autores:** Dario Pinheiro (Arquiteto-Chefe & Mantenedor) e Equipe de Engenharia Tomus  
 > **Licença:** Código Aberto sob [MIT License](https://github.com/dcprj/tomus/blob/main/LICENSE)  
@@ -253,7 +253,7 @@ stateDiagram-v2
     RevisaoManual --> [*]
 ```
 
-### 6.1 Provedores Oficiais e Modelos Homologados (v1.4.1)
+### 6.1 Provedores Oficiais e Modelos Homologados (v1.4.2)
 
 1. **Google Gemini (`GeminiProvider`):**
    * *Modelo Padrão:* `gemini-3.5-flash`
@@ -326,16 +326,16 @@ Como ferramenta que opera diretamente sobre arquivos do usuário no disco rígid
    * A ponte `QWebChannel` restringe os métodos invocáveis aos slots explicitamente decorados com `@Slot` na classe `WebBridge`. Nenhuma execução de código arbitrário (`eval`) é permitida no lado Python a partir de eventos da interface.
 
 5. **Empacotamento (PyInstaller + smoke check):**
-   * **macOS:** `packaging/build_macos.sh` executa PyInstaller sobre `packaging/pyinstaller.spec`, corrige caminhos do `QtWebEngineProcess`, aplica assinatura ad-hoc (`codesign`) e gera o `.app` e a imagem de disco `Tomus-1.4.1-macOS.dmg` (via `create-dmg` ou `hdiutil`). Validado por `packaging/smoke_check_macos.py` (ausência de `pkg_resources`/`pyi_rth_pkgres`, `libavcodec` em `Contents/Frameworks`, `RapidOCR` + `onnxruntime` embarcados, `--self-test-ocr` com exit 0 e boot offscreen por 5s sem erro).
-   * **Windows:** `packaging/build_windows.ps1` executa PyInstaller, o smoke check `packaging/smoke_check_windows.py` e compila o instalador com Inno Setup (`packaging/windows_installer.iss`): `PrivilegesRequired=lowest` (por usuário, sem senha/administrador), `SolidCompression=yes`, `x64compatible`, ícone e atalhos no Menu Iniciar (opcional na Área de Trabalho), gerando `Tomus_Setup_v1.4.1_Windows_x64.exe` com desinstalador `unins000.exe`.
+   * **macOS:** `packaging/build_macos.sh` executa PyInstaller sobre `packaging/pyinstaller.spec`, corrige caminhos do `QtWebEngineProcess`, aplica assinatura ad-hoc (`codesign`) e gera o `.app` e a imagem de disco `Tomus-1.4.2-macOS.dmg` (via `create-dmg` ou `hdiutil`). Validado por `packaging/smoke_check_macos.py` (ausência de `pkg_resources`/`pyi_rth_pkgres`, `libavcodec` em `Contents/Frameworks`, `RapidOCR` + `onnxruntime` embarcados, `--self-test-ocr` com exit 0 e boot offscreen por 5s sem erro).
+   * **Windows:** `packaging/build_windows.ps1` executa PyInstaller, o smoke check `packaging/smoke_check_windows.py` e compila o instalador com Inno Setup (`packaging/windows_installer.iss`): `PrivilegesRequired=lowest` (por usuário, sem senha/administrador), `SolidCompression=yes`, `x64compatible`, ícone e atalhos no Menu Iniciar (opcional na Área de Trabalho), gerando `Tomus_Setup_v1.4.2_Windows_x64.exe` com desinstalador `unins000.exe`.
    * **Comum (macOS/Windows):** `src/tomus/gui/app.py` injeta `QTWEBENGINE_DISABLE_SANDBOX=1` e resolve `QtWebEngineProcess` dentro de `sys._MEIPASS` (`QTWEBENGINEPROCESS_PATH`, `QTWEBENGINE_PROCESS_PATH`, `QTWEBENGINE_RESOURCES_PATH`); o aviso `urllib3 v2 only supports OpenSSL` é filtrado para evitar ruído de inicialização.
    * **CI / Release:** `.github/workflows/ci.yml` executa testes (`pytest`) nos runners `macos-latest` e `windows-latest` (Python 3.11) a cada PR; `.github/workflows/release.yml` roda `build-macos` + `build-windows` e o smoke check correspondente nas tags `v*`, publicando os artefatos `.dmg` e `.exe` no release do GitHub.
 
 ---
 
-## 9. Melhorias da Release v1.4.1
+## 9. Melhorias da Release v1.4.2
 
-A release v1.4.1 introduz as seguintes melhorias técnicas:
+A release v1.4.2 introduz as seguintes melhorias técnicas:
 
 * **`src/tomus/core/periodicals.py` (`Tipo = Revista`):** Novo módulo de suporte a periódicos/revistas como tipo documental, com dedup serial em camadas L2/L3 (DOI/ISSN e impressão digital bibliográfica) e fascículos, atendendo à ABNT NBR 6023:2025.
 * **`[PERF-OCR-01]` (Performance OCR):** OCR seletivo a **150 DPI** com páginas prioritárias (primeiras e últimas) e *early stop* em 15k caracteres alfanuméricos, reduzindo tempo de processamento e consumo de memória em PDFs escaneados.
