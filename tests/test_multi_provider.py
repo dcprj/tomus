@@ -2106,3 +2106,175 @@ def test_groq_zero_sleep_quando_outro_provedor_elegivel():
     assert chamada_groq["n"] == 1, f"Groq chamado 1 vez, obteve {chamada_groq['n']}"
     # Política de 0-sleep: não dorme antes de tentar o próximo provedor
     assert sleeps == [], f"esperado 0 sleeps com outro provedor elegível, obteve {len(sleeps)}"
+
+
+# --------------------------------------------------------------------------- #
+# BUG-LLM-01: Validacao ponta a ponta de todos os provedores de classificacao.
+# Contexto: em teste real no macOS (27/11) TODAS as 14 classificacoes usaram
+# claude/claude-haiku-5-5 com sucesso. Investigar por que o Claude respondeu de
+# forma estavel onde outros falharam, e verificar regressao na selecao de
+# provedor. Gemini e mantido como referencia.
+# --------------------------------------------------------------------------- #
+@respx.mock
+def test_bug_llm_01_cada_provedor_classifica_isoladamente():
+    """Cada provedor (Groq, NVIDIA, DeepSeek, Claude) consegue classificar
+    isoladamente quando e o unico com chave valida. Gemini e referencia."""
+    payload_ok = _classification_payload(reasoning="ok", confidence_score=0.9)
+
+    # Groq
+    rota_g = respx.post("https://api.groq.com/openai/v1/chat/completions")
+    _mock_success_openai(rota_g, payload_ok)
+    r_g = GroqProvider(api_key="gsk_test_chave_valida_1234567890").classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert r_g.provider_name == "groq"
+    assert r_g.confidence_score == 0.9
+
+    # NVIDIA
+    rota_n = respx.post("https://integrate.api.nvidia.com/v1/chat/completions")
+    _mock_success_openai(rota_n, payload_ok)
+    r_n = NvidiaProvider(api_key="nvapi-test_chave_valida_1234567890").classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert r_n.provider_name == "nvidia"
+    assert r_n.confidence_score == 0.9
+
+    # DeepSeek
+    rota_d = respx.post("https://api.deepseek.com/v1/chat/completions")
+    _mock_success_openai(rota_d, payload_ok)
+    r_d = DeepSeekProvider(api_key="sk_test_chave_valida_1234567890").classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert r_d.provider_name == "deepseek"
+    assert r_d.confidence_score == 0.9
+
+    # Claude
+    rota_c = respx.post("https://api.anthropic.com/v1/messages")
+    _mock_success_claude(rota_c, payload_ok)
+    r_c = ClaudeProvider(api_key="sk-ant-test_chave_valida_1234567890").classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert r_c.provider_name == "claude"
+    assert r_c.confidence_score == 0.9
+
+
+@respx.mock
+def test_bug_llm_01_cadeia_apenas_claude_disponivel(monkeypatch):
+    """Cenario real do macOS (27/11): apenas Claude tem chave valida; os demais
+    provedores (Gemini sem chave, NVIDIA/DeepSeek/Groq sem chave) nao sao
+    adicionados a cadeia. Deve classificar com Claude e apenas Claude."""
+    from tomus.core.config import AppConfig
+    from tomus.core.llm import create_provider_chain
+
+    # Isolar o ambiente: remover variaveis de sistema que poderiam injetar
+    # chaves de outros provedores.
+    for env_var in (
+        "TOMUS_GEMINI_API_KEY",
+        "BIBLIOTEC_GEMINI_API_KEY",
+        "GEMINI_API_KEY",
+        "TOMUS_NVIDIA_API_KEY",
+        "NVIDIA_API_KEY",
+        "TOMUS_DEEPSEEK_API_KEY",
+        "DEEPSEEK_API_KEY",
+        "TOMUS_GROQ_API_KEY",
+        "GROQ_API_KEY",
+        "TOMUS_CLAUDE_API_KEY",
+        "CLAUDE_API_KEY",
+        "ANTHROPIC_API_KEY",
+    ):
+        monkeypatch.delenv(env_var, raising=False)
+
+    cfg = AppConfig()
+    cfg.llm.provider = "gemini"  # padrao, mas sem chave -> nao entra na cadeia
+    # Zerar TODAS as chaves exceto Claude (o config global ~ tem todas preenchidas)
+    cfg.api_keys.gemini_api_key = ""
+    cfg.api_keys.groq_api_key = ""
+    cfg.api_keys.nvidia_api_key = ""
+    cfg.api_keys.deepseek_api_key = ""
+    cfg.api_keys.claude_api_key = "sk-ant-test_chave_valida_1234567890"
+    # Forcar cadeia com apenas claude
+    cfg.llm.fallback_chain = ["claude"]
+
+    dispatcher = create_provider_chain(cfg)
+    nomes = dispatcher.provider_names
+    # Apenas Claude deve estar na cadeia
+    assert nomes == ["claude"], f"esperado apenas ['claude'], obteve {nomes}"
+
+    # Chamada real: Claude deve vencer (e o unico disponível)
+    rota_c = respx.post("https://api.anthropic.com/v1/messages")
+    _mock_success_claude(rota_c, _classification_payload(reasoning="via claude", confidence_score=0.93))
+
+    r = dispatcher.classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert r.provider_name == "claude"
+    assert r.confidence_score == 0.93
+
+
+@respx.mock
+def test_bug_llm_01_cadeia_sequencial_outros_falham_claude_vence():
+    """Cadeia: Gemini (401 credencial invalida, permanente) -> NVIDIA (503
+    indisponivel) -> DeepSeek (429 cota esgotada) -> Claude vence.
+    Verifica que nao ha regressao na selecao de provedor: cada um e tentado
+    na ordem da cadeia e Claude vence por ser o ultimo com sucesso."""
+    chamado = {"familias": []}
+
+    def _classify_once_gemini(*args, **kwargs):
+        chamado["familias"].append("gemini")
+        raise genai_errors.ClientError(
+            401,
+            {"error": {"code": 401, "message": "credencial invalida", "details": []}},
+        )
+
+    def _classify_once_nvidia(*args, **kwargs):
+        chamado["familias"].append("nvidia")
+        raise httpx.HTTPStatusError(
+            "erro",
+            request=MagicMock(),
+            response=httpx.Response(503, json={"error": {"message": "indisponível"}}, request=MagicMock()),
+        )
+
+    def _classify_once_deepseek(*args, **kwargs):
+        chamado["familias"].append("deepseek")
+        raise httpx.HTTPStatusError(
+            "erro",
+            request=MagicMock(),
+            response=httpx.Response(429, json={"error": {"message": "cota esgotada"}}, request=MagicMock()),
+        )
+
+    resultado_claude = _classification_payload(reasoning="via claude final", confidence_score=0.95)
+    resultado_claude["provider_name"] = "claude"
+    resultado_claude["model_name"] = "claude-haiku-5-5"
+
+    def _classify_once_claude(*args, **kwargs):
+        chamado["familias"].append("claude")
+        return ClassificationResult(**resultado_claude)
+
+    k1 = GeminiProvider(api_key="AIzaSyfakekey1234567890", model="gemini-3.5-flash")
+    k1._classify_once = _classify_once_gemini
+
+    nvidia = NvidiaProvider(api_key="nvapi-test-key", model="nvidia/nemotron-3.5-super-vl-120b-a12b")
+    nvidia._classify_once = _classify_once_nvidia
+
+    deepseek = DeepSeekProvider(api_key="sk-test-key", model="deepseek-flash")
+    deepseek._classify_once = _classify_once_deepseek
+
+    claude = ClaudeProvider(api_key="sk-ant-test-key", model="claude-haiku-5-5")
+    claude._classify_once = _classify_once_claude
+
+    dispatcher = FallbackLLMDispatcher(
+        [("gemini", k1), ("nvidia", nvidia), ("deepseek", deepseek), ("claude", claude)],
+        families=["gemini", "nvidia", "deepseek", "claude"],
+    )
+
+    r = dispatcher.classify(
+        sampled_text="x" * 60, cip_text="", external_metadata=None
+    )
+    assert r.provider_name == "claude"
+    assert r.confidence_score == 0.95
+    assert r.reasoning == "via claude final"
+    # Cada provedor da cadeia foi tentado exatamente uma vez (sem regressao na selecao)
+    assert chamado["familias"].count("gemini") == 1
+    assert chamado["familias"].count("nvidia") == 1
+    assert chamado["familias"].count("deepseek") == 1
+    assert chamado["familias"].count("claude") == 1

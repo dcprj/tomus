@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from pathlib import Path
 
 import fitz  # PyMuPDF
@@ -56,6 +57,12 @@ _MAX_DIM_PX_AT_DEFAULT_DPI = 4000
 # atingir esse valor com cobertura mínima de páginas, para o processamento
 # antecipadamente sem perder precisão da capa/folha de rosto.
 _OCR_TARGET_ALPHANUM = 15_000
+
+# Tempo absoluto máximo (parede/wall-clock) para a execução completa do OCR de
+# um documento, independentemente do número de páginas. Quando atingido, o OCR
+# é interrompido e retorna o texto parcial extraído até aquele momento, sem
+# travar o pipeline (LINCE-10).
+_OCR_ABSOLUTE_TIMEOUT_S = 60.0
 
 
 _RAPIDOCR_ENGINE: object | None = None
@@ -164,7 +171,9 @@ def _order_priority_pages(pages: list[int]) -> tuple[list[int], int]:
     return list(pages), len(pages)
 
 
-def _ocr_with_rapidocr(doc: fitz.Document, pages: list[int]) -> str:
+def _ocr_with_rapidocr(
+    doc: fitz.Document, pages: list[int], deadline: float | None = None
+) -> str:
     """Extrair texto via RapidOCR renderizando páginas selecionadas.
 
     Processa as páginas em ordem de prioridade retornada por
@@ -196,6 +205,9 @@ def _ocr_with_rapidocr(doc: fitz.Document, pages: list[int]) -> str:
     processed = 0
 
     for idx in ordered_pages:
+        # Timeout absoluto: interromper sem travar o pipeline (LINCE-10).
+        if deadline is not None and time.monotonic() >= deadline:
+            break
         try:
             dpi = _dpi_for_page(doc, idx, base_dpi=_DEFAULT_OCR_DPI)
             pix = doc[idx].get_pixmap(dpi=dpi)
@@ -406,7 +418,9 @@ def ocr_scanned_pages(path: Path) -> str:
         # Limitar a no máximo 8 páginas.
         selected = empty_in_window[:_OCR_MAX_PAGES]
 
-        return _ocr_with_rapidocr(doc, selected)
+        # Timeout absoluto de parede para o OCR do documento (LINCE-10).
+        deadline = time.monotonic() + _OCR_ABSOLUTE_TIMEOUT_S
+        return _ocr_with_rapidocr(doc, selected, deadline=deadline)
     except Exception as exc:  # pragma: no cover - defesa geral
         _logger.warning("Erro durante OCR seletivo para %s: %s", path.name, exc)
         return ""

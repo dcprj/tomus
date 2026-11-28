@@ -1,4 +1,4 @@
-"""Testes do PR #14 v1.3.3 — Fascículos de revista (critérios 1 a 5 do Cortex).
+"""Testes do PR #14 — Fascículos de revista (critérios 1 a 5 do Cortex).
 
 Cobrem:
 1. periodicals.py (canonical_journal, parse_roman V/5/Ano V, parse_issue simples/52-53/52A/0, datas PT/EN)
