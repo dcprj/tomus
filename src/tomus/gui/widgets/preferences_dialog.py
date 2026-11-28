@@ -556,15 +556,19 @@ class FallbackItemDelegate(QStyledItemDelegate):
 class KeyValidationWorker(QObject):
     """Executa validação ativa de chaves em thread de fundo, sem travar a UI.
 
-    Cada item de ``checks`` é um par ``(field_name, api_key)``. Para cada um,
-    chama :func:`tomus.core.key_validator.validate_provider_key_live` e emite
-    ``result_ready`` com o desfecho. Ao finalizar, emite ``finished``.
+    Cada item de ``checks`` é um par ``(field_name, [chave1, chave2, ...])``
+    contendo TODAS as chaves separadas por v\u00edrgula de um campo. Para cada
+    chave, chama :func:`tomus.core.key_validator.validate_provider_key_live` e
+    emite ``result_ready`` com o desfecho individual da chave. Ao finalizar,
+    emite ``finished``.
     """
 
-    result_ready = Signal(str, bool, str)
+    result_ready = Signal(str, int, str, bool, str)
     finished = Signal()
 
-    def __init__(self, checks: list[tuple[str, str]], timeout: float = 8.0) -> None:
+    def __init__(
+        self, checks: list[tuple[str, list[str]]], timeout: float = 8.0
+    ) -> None:
         super().__init__()
         self._checks = checks
         self._timeout = timeout
@@ -574,11 +578,15 @@ class KeyValidationWorker(QObject):
         self._cancelled = True
 
     def run(self) -> None:
-        for field_name, key in self._checks:
+        for field_name, keys in self._checks:
             if self._cancelled:
                 break
-            ok, msg = validate_provider_key_live(field_name, key, timeout=self._timeout)
-            self.result_ready.emit(field_name, ok, msg or "")
+            for key_index, key in enumerate(keys):
+                if self._cancelled:
+                    break
+                masked = mask_key(key)
+                ok, msg = validate_provider_key_live(field_name, key, timeout=self._timeout)
+                self.result_ready.emit(field_name, key_index, masked, ok, msg or "")
         self.finished.emit()
 
 
@@ -1369,9 +1377,14 @@ class PreferencesDialog(QDialog):
     # Validação assíncrona no salvamento
     # ------------------------------------------------------------------ #
 
-    def _gather_pending_credentials(self) -> list[tuple[str, str]]:
-        """Coletar credenciais preenchidas (fora de ENV) que ainda não foram validadas."""
-        pending: list[tuple[str, str]] = []
+    def _gather_pending_credentials(self) -> list[tuple[str, list[str]]]:
+        """Coletar credenciais preenchidas (fora de ENV) que ainda não foram validadas.
+
+        Retorna uma lista de pares ``(field_name, [chave1, chave2, ...])`` com
+        TODAS as chaves separadas por v\u00edrgula de cada campo, validadas
+        sintaticamente.
+        """
+        pending: list[tuple[str, list[str]]] = []
         for field_name, _label, env_names in ALL_CREDENTIAL_FIELDS:
             edit = self._fields.get(field_name)
             if edit is None:
@@ -1379,14 +1392,16 @@ class PreferencesDialog(QDialog):
             raw = edit.text().strip()
             if not raw or _env_active(env_names):
                 continue
-            first = raw.split(",")[0].strip()
-            ok_syntax, _ = _validate_single_key(field_name, first)
-            if not ok_syntax:
+            keys = [k.strip() for k in raw.split(",") if k.strip()]
+            if not keys:
                 continue
-            pending.append((field_name, first))
+            # Valida sintaticamente todas as chaves; descarta o campo se alguma
+            # estiver com formato inválido (feedback já dado pelo _on_change).
+            if all(_validate_single_key(field_name, k)[0] for k in keys):
+                pending.append((field_name, keys))
         return pending
 
-    def _start_async_validation(self, checks: list[tuple[str, str]]) -> None:
+    def _start_async_validation(self, checks: list[tuple[str, list[str]]]) -> None:
         if self._validating:
             return
         self._validating = True
@@ -1407,44 +1422,105 @@ class PreferencesDialog(QDialog):
         self._worker_thread.started.connect(self._worker.run)
         self._worker_thread.start()
 
-    def _on_validation_result(self, field_name: str, ok: bool, msg: str) -> None:
-        """Registrar o desfecho de cada credencial e atualizar o label de status."""
-        self._validation_results[field_name] = (ok, msg)
+    def _on_validation_result(
+        self, field_name: str, key_index: int, masked_key: str, ok: bool, msg: str
+    ) -> None:
+        """Registrar o desfecho individual de cada chave e atualizar o label do campo.
+
+        ``msg`` pode trazer feedback contextualizado (HTTP 401 credenciais
+        rejeitadas / 403 acesso proibido). Cada chave de um campo com v\u00edrgula
+        recebe seu pr\u00f3prio resultado, mas o label do campo exibe o status
+        agregado.
+        """
+        self._validation_results[(field_name, key_index)] = (ok, msg)
         edit = self._fields.get(field_name)
         env_lbl = self._env_labels.get(field_name)
         error_lbl = self._error_labels.get(field_name)
-        msg_lower = msg.lower()
 
-        if ok:
+        # Status agregado do campo com base em todos os resultados atuais.
+        field_keys = [
+            (f, i)
+            for (f, i) in self._validation_results
+            if f == field_name
+        ]
+        total = len(field_keys)
+        ok_count = sum(1 for (f, i) in field_keys if self._validation_results[(f, i)][0])
+        rejected_auth = [
+            (f, i)
+            for (f, i) in field_keys
+            if (not self._validation_results[(f, i)][0])
+            and (
+                "401" in self._validation_results[(f, i)][1].lower()
+                or "n\u00e3o autorizada" in self._validation_results[(f, i)][1].lower()
+                or "credenciais rejeitadas" in self._validation_results[(f, i)][1].lower()
+            )
+        ]
+        rejected_access = [
+            (f, i)
+            for (f, i) in field_keys
+            if (not self._validation_results[(f, i)][0])
+            and (
+                "403" in self._validation_results[(f, i)][1].lower()
+                or "acesso proibido" in self._validation_results[(f, i)][1].lower()
+                or "proibido" in self._validation_results[(f, i)][1].lower()
+            )
+        ]
+
+        if ok_count == total and total > 0:
+            # Todas as chaves do campo v\u00e1lidas
             if env_lbl:
-                env_lbl.setText("✓ Validado ao Vivo")
-                env_lbl.setStyleSheet("color: #16A34A; font-size: 11px; font-weight: 600;")
+                env_lbl.setText(f"\u2713 {total} validada(s) ao Vivo")
+                env_lbl.setStyleSheet(
+                    "color: #16A34A; font-size: 11px; font-weight: 600;"
+                )
             if edit:
                 edit.setStyleSheet(
-                    "QLineEdit { background-color: #F0FDF4; border: 1px solid #16A34A; border-radius: 6px; padding: 6px 10px; font-size: 13px; }"
+                    "QLineEdit { background-color: #F0FDF4; border: 1px solid #16A34A; "
+                    "border-radius: 6px; padding: 6px 10px; font-size: 13px; }"
                 )
             if error_lbl:
                 error_lbl.hide()
-        else:
-            # Feedback contextualizado: 401 credenciais rejeitadas / 403 acesso proibido
-            if "401" in msg_lower or "não autorizada" in msg_lower or "credenciais rejeitadas" in msg_lower:
-                status = "✗ Credenciais Rejeitadas (HTTP 401)"
-                color = "#DC2626"
-            elif "403" in msg_lower or "acesso proibido" in msg_lower or "proibido" in msg_lower:
-                status = "✗ Acesso Proibido (HTTP 403)"
-                color = "#DC2626"
-            else:
-                status = "✗ Validação Falhou"
-                color = "#DC2626"
-
+        elif rejected_auth:
+            # Alguma chave rejeitada com HTTP 401
+            first_rejected = rejected_auth[0]
+            _, r_msg = self._validation_results[first_rejected]
             if env_lbl:
-                env_lbl.setText(status)
-                env_lbl.setStyleSheet(f"color: {color}; font-size: 11px; font-weight: 600;")
+                env_lbl.setText(f"\u2717 Chave {first_rejected[1] + 1} rejeitada (HTTP 401)")
+                env_lbl.setStyleSheet("color: #DC2626; font-size: 11px; font-weight: 600;")
             if edit:
                 edit.setStyleSheet(
-                    "QLineEdit { background-color: #FEF2F2; border: 1px solid #DC2626; border-radius: 6px; padding: 6px 10px; font-size: 13px; }"
+                    "QLineEdit { background-color: #FEF2F2; border: 1px solid #DC2626; "
+                    "border-radius: 6px; padding: 6px 10px; font-size: 13px; }"
                 )
             if error_lbl:
+                error_lbl.setText(r_msg)
+                error_lbl.show()
+        elif rejected_access:
+            # Alguma chave rejeitada com HTTP 403
+            first_rejected = rejected_access[0]
+            _, r_msg = self._validation_results[first_rejected]
+            if env_lbl:
+                env_lbl.setText(f"\u2717 Chave {first_rejected[1] + 1} proibida (HTTP 403)")
+                env_lbl.setStyleSheet("color: #DC2626; font-size: 11px; font-weight: 600;")
+            if edit:
+                edit.setStyleSheet(
+                    "QLineEdit { background-color: #FEF2F2; border: 1px solid #DC2626; "
+                    "border-radius: 6px; padding: 6px 10px; font-size: 13px; }"
+                )
+            if error_lbl:
+                error_lbl.setText(r_msg)
+                error_lbl.show()
+        else:
+            # Alguma chave falhou por outro motivo (rede, timeout, etc.)
+            if env_lbl:
+                env_lbl.setText("\u2717 Valida\u00e7\u00e3o falhou")
+                env_lbl.setStyleSheet("color: #DC2626; font-size: 11px; font-weight: 600;")
+            if edit:
+                edit.setStyleSheet(
+                    "QLineEdit { background-color: #FEF2F2; border: 1px solid #DC2626; "
+                    "border-radius: 6px; padding: 6px 10px; font-size: 13px; }"
+                )
+            if error_lbl and msg:
                 error_lbl.setText(msg)
                 error_lbl.show()
 
@@ -1452,11 +1528,11 @@ class PreferencesDialog(QDialog):
             self._update_primary_status()
 
     def _on_validation_finished(self) -> None:
-        """Ao terminar a validação de todas as credenciais, decidir persistência."""
+        """Ao terminar a validação de todas as credenciais, decidir persist\u00eancia."""
         self._validating = False
 
         self.btn_save.setEnabled(True)
-        self.btn_save.setText("Salvar Configuração")
+        self.btn_save.setText("Salvar Configura\u00e7\u00e3o")
         self.btn_cancel.setEnabled(True)
 
         # Limpar worker e thread
@@ -1474,41 +1550,61 @@ class PreferencesDialog(QDialog):
             self._worker_thread.deleteLater()
             self._worker_thread = None
 
-        # 3. Feedback não-bloqueante após a validação (cfg já persistido no passo 1)
-        rejected = [
-            (field, msg)
-            for field, (ok, msg) in self._validation_results.items()
-            if not ok and ("401" in msg.lower() or "403" in msg.lower() or "credenciais rejeitadas" in msg.lower())
+        # 3. Feedback n\u00e3o-bloqueante ap\u00f3s a valida\u00e7\u00e3o (cfg j\u00e1 persistido no passo 1)
+        rejected_auth = [
+            (field, idx, msg)
+            for (field, idx), (ok, msg) in self._validation_results.items()
+            if not ok
+            and (
+                "401" in msg.lower()
+                or "n\u00e3o autorizada" in msg.lower()
+                or "credenciais rejeitadas" in msg.lower()
+            )
         ]
 
-        if rejected:
-            details = "\n\n".join(f"• {field} — {msg}" for field, msg in rejected[:5])
+        if rejected_auth:
+            details = "\n\n".join(
+                f"• {field} — chave {idx + 1} — {msg}"
+                for (field, idx, msg) in rejected_auth[:5]
+            )
             QMessageBox.warning(
                 self,
                 "Credenciais Rejeitadas pela API",
                 (
-                    "Algumas credenciais não passaram na validação ativa com a API oficial.\n\n"
+                    "Algumas chaves de API n\u00e3o passaram na valida\u00e7\u00e3o ativa com "
+                    "a API oficial.\n\n"
                     f"{details}\n\n"
-                    "A configuração foi salva. Verifique e corrija as credenciais rejeitadas nas Preferências."
+                    "A configura\u00e7\u00e3o foi salva. Verifique e corrija as chaves "
+                    "rejeitadas nas Prefer\u00eancias."
                 ),
                 QMessageBox.StandardButton.Ok,
             )
 
-        # Offline / erro de rede: aviso informativo (cfg já salvo, não bloqueante)
+        # Offline / erro de rede: aviso informativo (cfg j\u00e1 salvo, n\u00e3o bloqueante)
         offline = [
-            (field, msg)
-            for field, (ok, msg) in self._validation_results.items()
-            if not ok and ("conexão" in msg.lower() or "tempo limite" in msg.lower() or "sem acesso à rede" in msg.lower())
+            (field, idx, msg)
+            for (field, idx), (ok, msg) in self._validation_results.items()
+            if not ok
+            and (
+                "conex\u00e3o" in msg.lower()
+                or "tempo limite" in msg.lower()
+                or "sem acesso \u00e0 rede" in msg.lower()
+            )
         ]
         if offline:
-            details = "\n".join(f"• {field} — {msg}" for field, msg in offline[:5])
+            details = "\n".join(
+                f"• {field} — chave {idx + 1} — {msg}"
+                for (field, idx, msg) in offline[:5]
+            )
             QMessageBox.information(
                 self,
-                "Sem Acesso à Rede",
+                "Sem Acesso \u00e0 Rede",
                 (
-                    "Não foi possível contatar os endpoints de validação (offline ou sem rede).\n\n"
+                    "N\u00e3o foi poss\u00edvel contatar os endpoints de valida\u00e7\u00e3o "
+                    "(offline ou sem rede).\n\n"
                     f"{details}\n\n"
-                    "A configuração foi salva e a validação será retomada quando houver rede."
+                    "A configura\u00e7\u00e3o foi salva e a valida\u00e7\u00e3o ser\u00e1 retomada "
+                    "quando houver rede."
                 ),
                 QMessageBox.StandardButton.Ok,
             )
