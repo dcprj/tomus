@@ -26,12 +26,12 @@ def test_redacting_filter_mascara_credenciais_em_logs():
         level=logging.INFO,
         pathname="",
         lineno=0,
-        msg="GET https://www.googleapis.com/books/v1/volumes?q=isbn&key=[REDACTED_GOOGLE_API_KEY]",
+        msg="GET https://www.googleapis.com/books/v1/volumes?q=isbn&key=AIzaSyTEST-FIXTURE-ONLY",
         args=(),
         exc_info=None,
     )
     assert filtro.filter(record) is True
-    assert "[REDACTED_GOOGLE_API_KEY]" not in record.msg
+    assert "AIzaSyTEST-FIXTURE-ONLY" not in record.msg
     assert "***REDACTED***" in record.msg
 
     # Teste com chave OpenAI / DeepSeek (sk-...)
