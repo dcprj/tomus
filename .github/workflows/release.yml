@@ -197,6 +197,46 @@ jobs:
             release-assets/macos/*.dmg
             release-assets/windows/*.exe
             SHA256SUMS.txt
-          generate_release_notes: true
+          generate_release_notes: false
+          draft: true
+          body: |
+            # Tomus ${{ github.ref_name }}
+
+            ## Novidades desta release
+
+            - **FEAT-LLM-02:** Groq ao fim da cadeia de fallback de provedores LLM.
+            - **FEAT-LLM-03:** Cadenciamento e orçamento do GroqProvider.
+            - **FEAT-UI-05:** Dropdown de provedor somente com chaves validadas.
+            - **FEAT-UI-06:** Groq sinalizado como opção de fallback na GUI.
+            - **FEAT-DOC-01:** Limites gratuitos do Groq no manual do usuário.
+
+            ## Correções de qualidade
+
+            - **ACL fail-closed no preferences_dialog:** `set_restrictive_file_permissions` aplicado antes da gravação do TOML; removido `except OSError: pass` que engolia falhas silenciosamente, eliminando a janela de exposição de chaves de API.
+            - **Persistência garantida no botão Salvar:** gravação antes da validação ao vivo (httpx, timeout 8s), assegurando que `_persist_config` execute mesmo quando a validação de rede falhar. Novo teste `test_save_button_async_persists_on_validation_failure`.
+
+            ## Instalação
+
+            Baixe o instalador oficial para seu sistema operacional na seção de assets desta release:
+            - macOS: `Tomus-{{VERSION}}-macOS.dmg`
+            - Windows: `Tomus_Setup_{{VERSION}}_Windows_x64.exe`
+
+            ## Verificação de integridade
+
+            Use o arquivo `SHA256SUMS.txt` anexado para verificar os downloads:
+
+            ```bash
+            sha256sum -c SHA256SUMS.txt
+            ```
+
+            Os nomes no manifesto são relativos (basename), então coloque o manifesto e os instaladores no mesmo diretório antes de verificar.
+
+            ## Requisitos de sistema
+
+            - macOS 12+ (Apple Silicon ou Intel)
+            - Windows 10/11 (64 bits)
+
+            ---
+            Este release é um **rascunho**. Teste os instaladores em ambos os sistemas operacionais antes de promovê-lo para release definitiva (`gh release edit <TAG> --draft=false`).
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

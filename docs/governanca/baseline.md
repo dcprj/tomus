@@ -12,7 +12,7 @@
 
 ## Decisões Arquiteturais Vigentes
 
-1. **Estrutura de times enxuta (desde 26/11/2026):** equipe principal centralizada no macOS (Chefe, Córtex sob demanda, Forja, Prisma, Sentinela e Farol) e atuação no Windows concentrada em um único Agente Windows sob ordens do Chefe via OneDrive.
+1. **Estrutura de times enxuta (desde 26/11/2026):** equipe principal centralizada no macOS (Chefe, Córtex sob demanda, Forja, Prisma, Sentinela e Farol) e atuação no Windows concentrada em um único Agente Windows sob ordens do Chefe via Maestri Wire.
 2. **OCR local primário (desde v1.3.3):** PyMuPDF + RapidOCR/ONNXRuntime 100% offline. `docling`, `torch`, `torchvision` e `transformers` removidos do empacotamento e validados via `--self-test-ocr` nos smoke checks de macOS e Windows.
 3. **Segurança de arquivos e ponte GUI (desde v1.4.1):** precedência de configuração `ENV > ./tomus.toml > global`, contenção de caminhos em `startOrganize`/`revealPath`/`openPdf`, e ACL fail-closed via `src/tomus/core/file_security.py` (`chmod 0o600` em POSIX e `icacls` atômico em Windows).
 4. **Empacotamento multiplataforma:** macOS (`.app` / `.dmg` via PyInstaller + `create-dmg`) e Windows (`.exe` por usuário em `%LocalAppData%\Programs\Tomus` via PyInstaller + Inno Setup), ambos integrados ao CI e ao `release.yml`.
