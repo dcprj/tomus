@@ -54,3 +54,8 @@ temp/
 scripts/monitorar_novas_mensagens_win.sh
 scripts/monitorar_mensagens_gate.sh
 scripts/verificar_novas_mensagens_windows.ps1
+
+# Artefatos operacionais internos de VM/smoke (Windows) e roteiros de operação.
+# Uso interno da orquestração: NUNCA entram em releases.
+scripts/vm_smoke_installer.ps1
+scripts/vm_smoke_roteiro_dario.md
