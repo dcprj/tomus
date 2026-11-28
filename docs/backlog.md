@@ -109,17 +109,14 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Escopo:** `src/tomus/gui/web/index.html`, `src/tomus/gui/web/style.css`
 - **Objetivo:** o badge de provedor validado na barra principal não reduz proporcionalmente quando a janela é estreitada, ficando cortado ou sobrepondo o campo de modelo. Aplicar responsividade (flex-shrink, min-width, ellipsis ou reorganização em duas linhas).
 
-### [FEAT-UX-05] Instrução de Instalação no DMG com Mecanismo Robusto
-- **Status:** Aberto (decorrente do smoke da 1.4.3)
+### [FEAT-UX-05] Instrução de Instalação no DMG — RESOLVIDO, item arquivado
+- **Status:** Resolvido em 28/11/2026 (PR #30, entra na 1.4.4)
 - **Responsáveis:** Farol (empacotamento)
-- **Escopo:** `packaging/build_macos.sh`, `packaging/`
-- **DOIS problemas, não um** (revisado após o Chefe inspecionar a imagem, 28/11/2026):
-  1. **Conteúdo:** a imagem não tem instrução nenhuma. Visual confirmado: retângulo branco com faixa azul na borda direita, sem seta e sem texto. Corrigir apenas o `.DS_Store` entregaria um fundo inútil.
-  2. **Renderização:** o `.DS_Store` carrega `backgroundType_` como **cor** além de `backgroundImageAlias_`, e o `create-dmg` não sobrescreve isso no runner headless do CI (sem WindowServer, o AppleScript falha). Renomear o asset para `background.png` não resolve — verificado duas vezes no smoke.
-- **Consequência:** os dois defeitos precisam ser corrigidos juntos. Qualquer solução que trate apenas um deles continua entregando um DMG sem instrução utilizável.
-- **Duas fases:** (a) curto prazo — incluir um arquivo `Instrucoes.txt` visível dentro do DMG com a orientação de arrastar `Tomus.app` para Aplicativos. Robusto, independente de `.DS_Store`, funciona em qualquer geração; (b) evolução — gerar o `.dmg` em Mac com Finder e subir como asset, para ter o visual de fato.
-- **Ressalva:** a fase (b) adiciona passo manual ao release, que tende a ser pulado. Recomenda-se (a) como padrão.
-
+- **Escopo:** `packaging/icons/background.png`
+- **O que era:** um defeito só, não dois. A imagem de fundo era um retângulo branco com faixa azul, sem seta nem texto. Ela renderizava normalmente — era branco sobre branco, invisível.
+- **Correção:** asset substituído por imagem com seta e texto "Arraste TOMUS para Aplicativos", redimensionada para 600x400 (bate com o `--window-size 600 400` do `create-dmg`). Aprovada visualmente pelo Chefe em build local.
+- **Diagnóstico que estavam errados e ficam registrados para não repetir:** (1) suspeitei de problema de `backgroundImageAlias_` no `.DS_Store` — não era; (2) suspeitei que o runner headless do CI não conseguia gerar o `.DS_Store` — o build local com Finder produziu o mesmo `.DS_Store` e renderizou; (3) cheguei a afirmar que eram "dois defeitos" — era um. Em nenhuma das três hipóteses eu tinha olhado a imagem antes de diagnosticar.
+- **Aprendizado:** antes de diagnosticar renderização, abrir o artefato. `strings` em `.DS_Store` não substitui ver a imagem.
 ### [FEAT-UX-06] QR Code Pix Real no Modal de Apoio
 - **Status:** Aberto (o QR falso foi removido na 1.4.3)
 - **Responsáveis:** Forja (backend) e Prisma (interface)
