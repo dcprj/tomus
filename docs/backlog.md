@@ -95,6 +95,12 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 
 ## Prioridade Média (Enriquecimento, Arquitetura e UX)
 
+### [GOV-01] Higiene Pós-Aposentadoria do Canal OneDrive
+- **Status:** Aberto (decisão do Chefe em 28/11/2026)
+- **Responsáveis:** Sentinela (auditoria) e Farol (docs/governança)
+- **Escopo:** `scripts/validate_onedrive_protocol.py` (trackeado), `AGENTS.md`, `docs/governanca/fluxo_trabalho.md`, `scripts/sync_maestri_roles.py`
+- **Objetivo:** com o canal OneDrive aposentado (substituído pelo Maestri Wire), o validador do protocolo OneDrive (`scripts/validate_onedrive_protocol.py`) e seu teste (`tests/test_validate_onedrive_protocol.py`) ficam obsoletos, assim como as seções de `AGENTS.md` e `fluxo_trabalho.md` que descrevem o canal e o Agente Windows operando "mediante ordens do Chefe pelo OneDrive". Avaliar por `develop`: remover o script e o teste, atualizar a documentação de governança para refletir o Maestri Wire como canal primário, e registrar que os artefatos operacionais internos (scripts de monitoramento, VM/smoke e roteiros) estão protegidos no `.gitignore`.
+
 ### [REFACT-MOD-01] Modularização Gradual dos 4 Módulos Monolíticos
 - **Status:** Aberto (pré-requisito técnico antes de `[FEAT-BATCH-01]` e da v2.0)
 - **Responsáveis:** Atlas (Foundation) e Forja (Pipeline)
@@ -107,6 +113,7 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Escopo:** `.github/workflows/release.yml`
 - **Objetivo:** adicionar `draft: true` ao passo `softprops/action-gh-release` para que os bundles gerados pela action sejam publicados como rascunho e testados **antes** da publicação definitiva. Fluxo alvo: criar tag `v*` no commit da `stage` → action gera `.dmg`, `.exe` e `SHA256SUMS.txt` e publica como **draft** → baixar os assets do draft e aplicar o smoke real nos dois SOs → aprovado, publicar (`gh release edit <tag> --draft=false`) → promover `stage → main`. Benefício: o artefato testado é **exatamente** o publicado (mesmo run), eliminando a divergência de hash entre o bundle gerado localmente e o publicado pela action — builds PyInstaller/Inno não são bit-a-bit reproduzíveis.
 - **Observação:** hoje o job `release` exige tag com prefixo `v` e valida a tag contra `pyproject.toml`; tags `RC-*` não disparam o job de release, por isso a solução por rascunho é preferível à estratégia de tag RC.
+- **Notas de release curadas:** na 1.4.2 o `generate_release_notes: true` gerou um "What's Changed" listando todos os PRs (inclusive chores internos e promoções de branch), o que polui o changelog — o texto teve de ser reescrito manualmente após a publicação. Para a próxima release: usar `generate_release_notes: false` e um corpo curado (novidades em linguagem de usuário, correções, instalação, verificação de hashes e requisitos), mantendo o `CHANGELOG.md` do repositório como registro técnico completo.
 
 ### [FEAT-ENRICH-01] Suporte Opcional a `openalex_api_key` (OpenAlex)
 - **Status:** Aberto
