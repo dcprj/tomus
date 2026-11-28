@@ -46,6 +46,29 @@ def test_cache_conexao_wal_cria_tabela(tmp_path: Path):
     cache.close()
 
 
+def test_cache_aplica_permissao_0600_no_db_e_wal(tmp_path: Path):
+    """_connect deve aplicar permissao 0600 no banco e arquivos auxiliares WAL."""
+    db_path = tmp_path / "state.db"
+    cache = FileCache(enabled=True, db_path=db_path)
+    cache._ensure_conn()
+    assert cache._conn is not None
+
+    # Banco principal.
+    modo_db = db_path.stat().st_mode & 0o777
+    assert modo_db == 0o600, f"esperado 0o600 no db, obteve {oct(modo_db)}"
+
+    # Arquivos auxiliares do WAL, se existirem.
+    for sufixo in ("-wal", "-shm"):
+        aux = db_path.with_suffix(db_path.suffix + sufixo)
+        if aux.exists():
+            modo_aux = aux.stat().st_mode & 0o777
+            assert modo_aux == 0o600, (
+                f"esperado 0o600 em {aux.name}, obteve {oct(modo_aux)}"
+            )
+
+    cache.close()
+
+
 def test_cache_schema_tem_chave_composta(tmp_path: Path):
     """A tabela deve ter PRIMARY KEY (sha256, taxonomy_version, model_name)."""
     db_path = tmp_path / "state.db"

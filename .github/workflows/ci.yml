@@ -8,6 +8,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   changes:
     name: Detectar alterações relevantes
@@ -22,17 +25,20 @@ jobs:
 
       - name: Detectar se há alteração de código (não apenas docs/.md)
         id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
             echo "code_changed=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          if [ "${EVENT_NAME}" != "pull_request" ]; then
             echo "code_changed=false" >> $GITHUB_OUTPUT
             exit 0
           fi
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          FILES=$(git diff --name-only "origin/${{ github.base_ref }}...HEAD" || true)
+          git fetch origin "${BASE_REF}" --depth=1
+          FILES=$(git diff --name-only "origin/${BASE_REF}...HEAD" || true)
           if echo "$FILES" | grep -vE '^(docs/|.*\.md$)' | grep -q .; then
             echo "code_changed=true" >> $GITHUB_OUTPUT
           else
@@ -63,6 +69,28 @@ jobs:
       - name: Validar nomes de arquivo apenas ASCII
         run: |
           python3 -c "import subprocess, sys; bad = [f.decode(\"utf-8\", \"replace\") for f in subprocess.check_output([\"git\", \"ls-files\", \"-z\"]).split(b\"\0\") if any(b > 127 for b in f)]; print(\"NON-ASCII:\", bad); sys.exit(1 if bad else 0)"
+
+  secrets:
+    name: Secret scanning (gitleaks)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Executar gitleaks
+        uses: zricethezav/gitleaks-action@v2.1.9
+        with:
+          args: --verbose --report-format sarif --report-path gitleaks-report.sarif
+
+      - name: Enviar resultados ao Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gitleaks-report.sarif
 
   build-macos:
     name: Build e testes (macOS ${{ matrix.python-version }})
@@ -141,7 +169,7 @@ jobs:
   ci-gate:
     name: CI Gate
     runs-on: ubuntu-latest
-    needs: [changes, lint, build-macos, build-windows]
+    needs: [changes, lint, secrets, build-macos, build-windows]
     if: always()
     steps:
       - name: Avaliar gate de CI
@@ -150,9 +178,14 @@ jobs:
           CODE_CHANGED="${{ needs.changes.outputs.code_changed }}"
           MACOS_STATUS="${{ needs.build-macos.result }}"
           WINDOWS_STATUS="${{ needs.build-windows.result }}"
-          echo "lint=$LINT_STATUS code_changed=$CODE_CHANGED macos=$MACOS_STATUS windows=$WINDOWS_STATUS"
+          SECRETS_STATUS="${{ needs.secrets.result }}"
+          echo "lint=$LINT_STATUS code_changed=$CODE_CHANGED macos=$MACOS_STATUS windows=$WINDOWS_STATUS secrets=$SECRETS_STATUS"
           if [ "$LINT_STATUS" != "success" ]; then
             echo "::error::lint job nao obteve sucesso ($LINT_STATUS)"
+            exit 1
+          fi
+          if [ "$SECRETS_STATUS" != "success" ]; then
+            echo "::error::secrets job nao obteve sucesso ($SECRETS_STATUS)"
             exit 1
           fi
           if [ "$CODE_CHANGED" = "true" ]; then

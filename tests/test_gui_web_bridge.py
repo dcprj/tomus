@@ -626,3 +626,81 @@ def test_approve_manual_triage_redige_segredo_no_erro_json(tmp_path, monkeypatch
     assert "REDACTED" in error_msg
 
 
+# --------------------------------------------------------------------------- #
+# Testes de segurança: recusa de caminho não autorizado (path traversal)
+# --------------------------------------------------------------------------- #
+def test_recolocar_na_fila_recusa_caminho_fora_das_raizes(tmp_path):
+    """recolocarNaFila deve rejeitar caminhos fora de source_dir/target_dir."""
+    from tomus.gui.bridge import WebBridge
+
+    cfg = AppConfig()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True)
+
+    bridge = WebBridge(cfg)
+    bridge.source_dir = str(tmp_path / "origem")
+    bridge.target_dir = str(target_dir)
+
+    # Caminho fora das raízes (sistema)
+    caminho_malicioso = "/etc/passwd"
+    resultado = bridge.recolocarNaFila(caminho_malicioso)
+    resultado_dict = json.loads(resultado) if isinstance(resultado, str) else resultado
+    assert resultado_dict.get("success") is False
+    assert "não autorizado" in resultado_dict.get("error", "")
+
+
+def test_promote_from_manual_review_recusa_caminho_fora_das_raizes(tmp_path):
+    """promoteFromManualReview deve rejeitar source_path fora de source_dir/target_dir."""
+    from tomus.gui.bridge import WebBridge
+
+    cfg = AppConfig()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True)
+
+    bridge = WebBridge(cfg)
+    bridge.source_dir = str(tmp_path / "origem")
+    bridge.target_dir = str(target_dir)
+
+    # Caminho malicioso no JSON de promoção
+    promocao_payload = {
+        "source_path": "/etc/shadow",
+        "classificacao": {
+            "titulo": "Qualquer Título",
+            "autores": ["Autor, A."],
+            "ano": 2020,
+            "tipo": "Livro",
+            "grande_area": "Ciências Humanas",
+            "area_basica": "Psicologia",
+        },
+    }
+    resultado = bridge.promoteFromManualReview(json.dumps(promocao_payload))
+    resultado_dict = json.loads(resultado) if isinstance(resultado, str) else resultado
+    assert resultado_dict.get("success") is False
+    assert "não autorizado" in resultado_dict.get("error", "")
+    assert resultado_dict.get("recusado") is True
+
+
+def test_recolocar_na_fila_aceita_caminho_dentro_da_raiz(tmp_path, monkeypatch):
+    """recolocarNaFila deve aceitar caminho válido dentro de target_dir."""
+    import subprocess
+
+    from tomus.gui.bridge import WebBridge
+
+    cfg = AppConfig()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True)
+
+    bridge = WebBridge(cfg)
+    bridge.source_dir = str(tmp_path / "origem")
+    bridge.target_dir = str(target_dir)
+
+    # Criar um PDF válido dentro do target_dir
+    pdf_valido = target_dir / "documento_valido.pdf"
+    pdf_valido.write_bytes(b"%PDF-1.4 dummy content")
+
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd: cmd)
+    resultado = bridge.recolocarNaFila(str(pdf_valido))
+    resultado_dict = json.loads(resultado) if isinstance(resultado, str) else resultado
+    assert resultado_dict.get("success") is True
+
+

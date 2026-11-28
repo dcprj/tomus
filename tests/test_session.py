@@ -81,6 +81,15 @@ def test_save_e_load_roundtrip(tmp_path: Path):
     assert estado_carregado.workers == 2
 
 
+def test_save_session_aplica_permissao_0600(tmp_path: Path):
+    """save_session deve aplicar permissao 0600 (somente o dono) no arquivo de sessao."""
+    session_path = tmp_path / ".tomus_session.json"
+    estado = SessionState(source_dir="/o", target_dir="/d")
+    save_session(estado, path=session_path)
+    modo = session_path.stat().st_mode & 0o777
+    assert modo == 0o600, f"esperado 0o600, obteve {oct(modo)}"
+
+
 def test_load_session_arquivo_inexistente_retorna_none(tmp_path: Path):
     """load_session deve retornar None quando o arquivo não existe."""
     session_path = tmp_path / "nao_existe.json"
