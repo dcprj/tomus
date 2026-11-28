@@ -18,6 +18,10 @@ e este projeto adota versionamento semântico ([Semantic Versioning](https://sem
 ### Versão 1.4.1 → 1.4.2
 - `pyproject.toml`, `src/tomus/__init__.py`, `packaging/pyinstaller.spec` (CFBundleVersion e CFBundleShortVersionString), `packaging/windows_installer.iss` (MyAppVersion), fallbacks de `packaging/build_macos.sh` e `packaging/build_windows.ps1`.
 
+### Correções de qualidade
+- **ACL fail-closed no preferences_dialog:** `set_restrictive_file_permissions` aplicado ANTES da gravação do TOML (igual a `cache.py`); removido o `except OSError: pass` que engolia falhas silenciosamente no `os_integration.py` (janela de exposição de chaves de API eliminada).
+- **Persistência garantida no botão Salvar:** o caminho assíncrono `_salvar_com_validacao_async` agora grava antes da validação ao vivo (httpx, timeout 8s), garantindo que `_persist_config` seja executado mesmo quando a validação de rede falhar. Novo teste `test_save_button_async_persists_on_validation_failure`.
+
 ## [1.4.1] - (pendente de publicação)
 
 ### Correções de empacotamento e CI/CD

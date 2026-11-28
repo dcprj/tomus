@@ -32,6 +32,13 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Escopo:** `src/tomus/gui/`, `src/tomus/gui/web/`, `src/tomus/core/key_validator.py`
 - **Objetivo:** O badge de "provedor validado" na tela principal não reflete a troca de chave entre provedores (ex.: testando apenas NVIDIA, a tela ainda exibe "Groq validado"). A chave de execução está correta (modelo real usado no lote é `nvidia/nemotron-3.5-super-vl-120b-a12b`), mas o indicador visual fica desatualizado, gerando confusão sobre qual provedor está realmente ativo. Sincronizar o indicador com a chave validada/selecionada no momento.
 
+### [BUG-UI-02] Validação de Múltiplas Chaves sem Feedback Individual no Campo do Provedor
+- **Status:** Aberto (relato do Chefe em 27/11/2026, confirmado em código)
+- **Responsáveis:** Prisma (UX/UI) e Forja (Worker/Validação)
+- **Escopo:** `src/tomus/gui/widgets/preferences_dialog.py` (`_gather_pending_credentials`, `_on_validation_result`, `KeyValidationWorker`), `tests/`
+- **Diagnóstico confirmado:** o campo de chave do provedor aceita múltiplas chaves separadas por vírgula, mas `_gather_pending_credentials()` aplica `raw.split(",")[0]` e valida ao vivo **apenas a primeira** — as demais são gravadas no `config.toml` sem nunca serem testadas. Além disso `_on_validation_result()` registra o resultado em `_validation_results[field_name]` (por provedor), então o feedback visual é **um único ✓/✗ por campo**, sem distinguir as chaves.
+- **Objetivo:** validar **todas** as chaves informadas em cada campo e apresentar feedback individual por chave (ex.: lista com a chave mascarada e status ✓ validado / ✗ 401 / ✗ 403 / ✗ formato inválido), mantendo a persistência sempre garantida antes da validação e o comportamento não-bloqueante. Alinhar com o feedback por chave que o `KeyPoolDialog` já oferece.
+
 ### [FEAT-LLM-02] Rebaixar Groq para o Fim da Cadeia de Fallback
 - **Status:** Aberto
 - **Responsáveis:** Forja (Core/LLM)
@@ -94,6 +101,13 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Escopo:** `src/tomus/core/llm.py`, `src/tomus/storage/organizer.py`, `src/tomus/gui/web/app.js`, `src/tomus/gui/widgets/preferences_dialog.py`
 - **Objetivo:** Quebrar esses quatro arquivos em submódulos menores e coesos sem alterar o comportamento externo nem quebrar testes.
 
+### [FEAT-REL-01] Publicar Release como Draft até o Smoke dos Assets Gerados pela Action
+- **Status:** Aberto (decisão do Chefe em 27/11/2026 — fica para a **próxima** release; a 1.4.2 já está testada e validada)
+- **Responsáveis:** Farol (Release & GitOps)
+- **Escopo:** `.github/workflows/release.yml`
+- **Objetivo:** adicionar `draft: true` ao passo `softprops/action-gh-release` para que os bundles gerados pela action sejam publicados como rascunho e testados **antes** da publicação definitiva. Fluxo alvo: criar tag `v*` no commit da `stage` → action gera `.dmg`, `.exe` e `SHA256SUMS.txt` e publica como **draft** → baixar os assets do draft e aplicar o smoke real nos dois SOs → aprovado, publicar (`gh release edit <tag> --draft=false`) → promover `stage → main`. Benefício: o artefato testado é **exatamente** o publicado (mesmo run), eliminando a divergência de hash entre o bundle gerado localmente e o publicado pela action — builds PyInstaller/Inno não são bit-a-bit reproduzíveis.
+- **Observação:** hoje o job `release` exige tag com prefixo `v` e valida a tag contra `pyproject.toml`; tags `RC-*` não disparam o job de release, por isso a solução por rascunho é preferível à estratégia de tag RC.
+
 ### [FEAT-ENRICH-01] Suporte Opcional a `openalex_api_key` (OpenAlex)
 - **Status:** Aberto
 - **Responsáveis:** Lince (Extractors) e Atlas (Foundation)
@@ -105,6 +119,12 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Responsáveis:** Prisma (UX/UI) e Sentinela (Validação)
 - **Escopo:** `src/tomus/gui/web/index.html`, `src/tomus/gui/web/styles.css`, `src/tomus/gui/web/app.js`, `tests/`
 - **Objetivo:** Adicionar botão discreto `Apoio` na barra utilitária abrindo modal com chave Pix (`dpinheiro+tomus@gmail.com`), botão copiar, aviso legal (Art. 538 CC) e QR Code Pix EMVCo BR Code gerado localmente sem dependência externa.
+
+### [FEAT-UX-04] Imagem de Fundo no DMG Instruindo "Arraste Tomus.app para Aplicativos"
+- **Status:** Aberto (sugestão do Chefe em 27/11/2026, durante smoke do `.dmg`)
+- **Responsáveis:** Prisma (UX/UI) e Farol (Empacotamento)
+- **Escopo:** `packaging/build_macos.sh`, imagem de fundo do DMG (ex.: `packaging/dmg_background.png`), `packaging/`
+- **Objetivo:** Adicionar imagem de fundo à janela do DMG montado instruindo usuários novatos a arrastar `Tomus.app` para a pasta `Applications`. Hoje o volume abre mostrando apenas `Tomus.app`, o `.Volumelcon.icns` e a pasta Aplicativos, sem nenhuma instrução visual — há risco de o usuário executar o aplicativo direto do volume montado. Adotar o padrão de apps estabelecidos (ilustração/seta com "Arraste para Aplicativos"), aplicado via `create-dmg --background` (ou o mecanismo de posicionamento/background já usado no build macOS), mantendo o tamanho do instalador inalterado.
 
 ### [AUD-RESIDUAL] Itens Médios e Baixos Remanescentes da Auditoria de 24/11/2026
 - **Status:** Aberto (ref. detalhada em `docs/historico/2026-11-24_auditoria_completa.md`)
