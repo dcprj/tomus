@@ -106,6 +106,12 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Escopo:** `src/tomus/gui/web/index.html`, `src/tomus/gui/web/styles.css`, `src/tomus/gui/web/app.js`, `tests/`
 - **Objetivo:** Adicionar botão discreto `Apoio` na barra utilitária abrindo modal com chave Pix (`dpinheiro+tomus@gmail.com`), botão copiar, aviso legal (Art. 538 CC) e QR Code Pix EMVCo BR Code gerado localmente sem dependência externa.
 
+### [FEAT-UX-04] Imagem de Fundo no DMG Instruindo "Arraste Tomus.app para Aplicativos"
+- **Status:** Aberto (sugestão do Chefe em 27/11/2026, durante smoke do `.dmg`)
+- **Responsáveis:** Prisma (UX/UI) e Farol (Empacotamento)
+- **Escopo:** `packaging/build_macos.sh`, imagem de fundo do DMG (ex.: `packaging/dmg_background.png`), `packaging/`
+- **Objetivo:** Adicionar imagem de fundo à janela do DMG montado instruindo usuários novatos a arrastar `Tomus.app` para a pasta `Applications`. Hoje o volume abre mostrando apenas `Tomus.app`, o `.Volumelcon.icns` e a pasta Aplicativos, sem nenhuma instrução visual — há risco de o usuário executar o aplicativo direto do volume montado. Adotar o padrão de apps estabelecidos (ilustração/seta com "Arraste para Aplicativos"), aplicado via `create-dmg --background` (ou o mecanismo de posicionamento/background já usado no build macOS), mantendo o tamanho do instalador inalterado.
+
 ### [AUD-RESIDUAL] Itens Médios e Baixos Remanescentes da Auditoria de 24/11/2026
 - **Status:** Aberto (ref. detalhada em `docs/historico/2026-11-24_auditoria_completa.md`)
 - **Responsáveis:** Atlas, Lince e Sentinela
