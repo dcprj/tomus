@@ -704,6 +704,150 @@ class WebBridge(QObject):
         return json.dumps({"success": ok, "message": msg})
 
     # ------------------------------------------------------------------ #
+    # Revisão Manual - Listagem e Promoção (FEAT-TRIAGE-01)
+    # ------------------------------------------------------------------ #
+
+    @Slot(result=str)
+    def listManualReviewItems(self) -> str:
+        """Listar itens pendentes na pasta revisao_manual/."""
+        target = getattr(self, "target_dir", None) or getattr(self.config.general, "target_dir", None)
+        if not target or not Path(target).exists():
+            return json.dumps({"success": True, "itens": []})
+        try:
+            from tomus.storage.organizer import LibraryOrganizer
+            org = LibraryOrganizer(target)
+            itens = org.list_manual_review_items()
+            return json.dumps({"success": True, "itens": itens}, ensure_ascii=False)
+        except Exception as exc:  # pragma: no cover - defesa geral
+            safe = _sanitize_error_message(str(exc))
+            print(f"[WebBridge] Erro ao listar revisão manual: {safe}")
+            return json.dumps({"success": False, "error": safe, "itens": []})
+
+    @Slot(str, result=str)
+    def promoteFromManualReview(self, promo_json: str) -> str:
+        """Promover um item de revisao_manual para a árvore definitiva.
+
+        Não reclassifica via LLM. Recusa com motivo claro se campos
+        obrigatórios estiverem incompletos.
+        """
+        target = getattr(self, "target_dir", None) or getattr(self.config.general, "target_dir", None)
+        if not target or not Path(target).exists():
+            return json.dumps({"success": False, "error": "Diretório de destino não configurado"})
+        try:
+            data = json.loads(promo_json)
+            source_path = data.get("source_path")
+            classificacao = data.get("classificacao")
+            motivo_promocao = data.get("motivo_promocao", "Promovido manualmente pelo usuário")
+            usuario_responsavel = data.get("usuario_responsavel", "local")
+
+            from tomus.storage.organizer import LibraryOrganizer
+            org = LibraryOrganizer(target)
+            entry = org.promote_from_manual_review(
+                source_path=source_path,
+                classificacao=classificacao,
+                motivo_promocao=motivo_promocao,
+                usuario_responsavel=usuario_responsavel,
+            )
+            # Notificar o frontend com evento de atualização
+            event = PipelineEvent(
+                stage="organizer",
+                source_path=entry.source_path,
+                destination_path=entry.destination_path,
+                sha256=entry.sha256,
+                status=ProcessStatus.ORGANIZED.value,
+                message=f"Promovido de revisão manual: {Path(entry.destination_path or '').name}",
+                classification=entry.classification,
+            )
+            self._on_worker_event(event)
+            return json.dumps({"success": True, "destination_path": str(entry.destination_path or "")})
+        except ValueError as exc:
+            # Recusa com motivo claro (campos obrigatórios incompletos)
+            return json.dumps({"success": False, "error": str(exc), "recusado": True})
+        except Exception as exc:  # pragma: no cover - defesa geral
+            safe = _sanitize_error_message(str(exc))
+            print(f"[WebBridge] Erro ao promover revisão manual: {safe}")
+            return json.dumps({"success": False, "error": safe})
+
+    # ------------------------------------------------------------------ #
+    # Auditoria de Biblioteca (FEAT-AUDIT-01)
+    # ------------------------------------------------------------------ #
+
+    @Slot(result=str)
+    def auditLibrary(self) -> str:
+        """Auditor read-only de toda a biblioteca organizada.
+
+        Identifica problemas de integridade sem gravar nada no disco.
+        Retorna resumo e lista de itens com problemas e ação sugerida.
+        """
+        target = getattr(self, "target_dir", None) or getattr(self.config.general, "target_dir", None)
+        if not target or not Path(target).exists():
+            return json.dumps({"success": False, "error": "Diretório de destino não configurado", "itens": [], "resumo": {}})
+        try:
+            from tomus.storage.organizer import LibraryOrganizer
+            org = LibraryOrganizer(target)
+            resultado = org.auditar_biblioteca(target)
+            return json.dumps({"success": True, **resultado}, ensure_ascii=False)
+        except Exception as exc:  # pragma: no cover - defesa geral
+            safe = _sanitize_error_message(str(exc))
+            print(f"[WebBridge] Erro ao auditar biblioteca: {safe}")
+            return json.dumps({"success": False, "error": safe, "itens": [], "resumo": {}})
+
+    @Slot(str, result=str)
+    def recolocarNaFila(self, source_path: str) -> str:
+        """Encaminhar um item para a fila de classificação (revisao_manual).
+
+        Ação explícita do usuário — nunca executada automaticamente.
+        Copia o PDF para revisao_manual/ e gera o .md companheiro com motivo
+        de auditoria.
+        """
+        target = getattr(self, "target_dir", None) or getattr(self.config.general, "target_dir", None)
+        if not target or not Path(target).exists():
+            return json.dumps({"success": False, "error": "Diretório de destino não configurado"})
+        try:
+            from tomus.storage.organizer import LibraryOrganizer
+            org = LibraryOrganizer(target)
+            entry = org.recolocar_na_fila(Path(source_path))
+            event = PipelineEvent(
+                stage="organizer",
+                source_path=entry.source_path,
+                destination_path=entry.destination_path,
+                sha256=entry.sha256,
+                status=ProcessStatus.MANUAL_REVIEW.value,
+                message=f"Enviado para fila de classificação (auditoria): {Path(entry.source_path or '').name}",
+                classification=entry.classification,
+            )
+            self._on_worker_event(event)
+            return json.dumps({"success": True, "destination_path": str(entry.destination_path or "")})
+        except Exception as exc:  # pragma: no cover - defesa geral
+            safe = _sanitize_error_message(str(exc))
+            print(f"[WebBridge] Erro ao recolocar na fila: {safe}")
+            return json.dumps({"success": False, "error": safe})
+
+    @Slot(str, str, result=str)
+    def confirmarIntegridade(self, item_caminho_rel: str, usuario_responsavel: str = "local") -> str:
+        """Confirmar integrência de um item no bloco de auditoria do companion.
+
+        Atualiza o front matter do .md companheiro com uma transição de
+        auditoria "organizado -> confirmado". Ação explícita do usuário.
+        """
+        target = getattr(self, "target_dir", None) or getattr(self.config.general, "target_dir", None)
+        if not target or not Path(target).exists():
+            return json.dumps({"success": False, "error": "Diretório de destino não configurado"})
+        try:
+            from tomus.storage.organizer import LibraryOrganizer
+            org = LibraryOrganizer(target)
+            org.confirmar_integridade(item_caminho_rel, usuario_responsavel=usuario_responsavel)
+            return json.dumps({"success": True, "message": "Integridade confirmada com sucesso"})
+        except FileNotFoundError as exc:
+            return json.dumps({"success": False, "error": str(exc)})
+        except ValueError as exc:
+            return json.dumps({"success": False, "error": str(exc)})
+        except Exception as exc:  # pragma: no cover - defesa geral
+            safe = _sanitize_error_message(str(exc))
+            print(f"[WebBridge] Erro ao confirmar integridade: {safe}")
+            return json.dumps({"success": False, "error": safe})
+
+    # ------------------------------------------------------------------ #
     # Preferências & Cache
     # ------------------------------------------------------------------ #
 

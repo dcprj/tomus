@@ -1,10 +1,12 @@
 # Manual do Usuário do Tomus
 
 > **Guia Oficial de Uso & Boas Práticas**  
-> **Versão do Aplicativo:** 1.4.2  
+> **Versão do Aplicativo:** 1.4.3 Beta  
 > **Sistema Operacional:** macOS 12+ e Windows 10/11 64 bits  
 > **Autor:** Dario Pinheiro e Equipe Tomus  
 > **Suporte Comunitário:** [github.com/dcprj/tomus](https://github.com/dcprj/tomus)
+>
+> **[Versão Beta]** Esta é uma versão em fase de teste público. Funcionalidades podem mudar entre releases. Relate problemas no [GitHub](https://github.com/dcprj/tomus/issues).
 
 ---
 
