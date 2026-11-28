@@ -8,8 +8,11 @@
 [![Plataformas](https://img.shields.io/badge/Plataformas-macOS%20%7C%20Windows-green.svg)](#como-baixar-e-instalar)
 [![100% Gratuito](https://img.shields.io/badge/Software-100%25%20Gratuito-orange.svg)](#apoie-o-projeto-doação-voluntária)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue.svg)](https://www.python/)
+[![Versão Beta](https://img.shields.io/badge/Versão-Beta-amber.svg)](https://github.com/dcprj/tomus/releases)
 
 O **Tomus** é uma aplicação desktop acadêmica livre e gratuita projetada para automatizar a triagem, enriquecimento bibliográfico, padronização de nomes e catalogação temática de acervos de PDFs.
+
+> **[Versão Beta]** Esta é uma versão em fase de teste público. Funcionalidades podem mudar entre releases. Relate problemas no [GitHub](https://github.com/dcprj/tomus/issues).
 
 Ele organiza seus documentos diretamente em seu computador conforme a taxonomia oficial de áreas do conhecimento da **CAPES/CNPq** e gera arquivos de metadados complementares (`.md`) com fichamento e referências completas estritamente formatadas segundo a norma **ABNT NBR 6023**, incluindo suporte a **Revistas/Periódicos (Artigo)** com citação de periódico, volume, número e páginas.
 

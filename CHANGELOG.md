@@ -2,6 +2,16 @@
 
 Este arquivo é o registro de versões do Tomus, escrito em linguagem clara para usuários finais. Ele descreve, de forma resumida, o que mudou em cada versão do aplicativo — sem detalhes técnicos de implementação.
 
+## [1.4.3] - (pendente de publicação) — BETA
+
+### O que há de novo
+- As superfícies do aplicativo (GUI, landing page, README e manual) agora identificam esta como uma versão **beta** da 1.4.3.
+- O seletor de provedor agora valida e dá feedback sobre todas as chaves de API configuradas, mostrando apenas opções funcionais.
+- Um indicador mostra qual provedor está validado e ativo, dando ao usuário confiança sobre qual credencial está sendo usada.
+
+### Correções
+- O scanner de documentos agora faz uma leitura única do arquivo, valida o cabeçalho %PDF-, aplica timeout no OCR e usa cache de taxonomia, evitando reprocessamentos e travamentos em arquivos grandes ou corrompidos.
+
 ## [1.4.2] - publicada em 2026-11-28
 
 ### O que há de novo
