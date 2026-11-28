@@ -312,6 +312,12 @@ code {
   color: var(--text-dim);
 }
 
+.badge-chip.beta-chip {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #F59E0B;
+}
+
 .hero-headline {
   font-size: 3.5rem;
   line-height: 1.15;
