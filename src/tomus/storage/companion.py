@@ -17,6 +17,41 @@ from tomus.core.periodicals import is_redundant_issue_designation
 from tomus.core.prompts import is_institutional_author
 
 
+def _auditoria_bloco(
+    status_atual: str,
+    transicoes: list[dict[str, str]] | None = None,
+    usuario_responsavel: str | None = None,
+    data_ultima_alteracao: str | None = None,
+) -> list[str]:
+    """Gerar o bloco YAML auditoria padronizado para front matter.
+
+    Cada transicao e um dict com chaves: de, para, data, motivo.
+    Quando transicoes nao e informado, gera uma transicao inicial de
+    nulo para o status_atual com data atual.
+    """
+    agora = data_ultima_alteracao or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    if transicoes is None:
+        transicoes = [
+            {"de": "", "para": status_atual, "data": agora, "motivo": ""},
+        ]
+    usuario = (usuario_responsavel or "local").strip() or "local"
+
+    lines: list[str] = []
+    lines.append("auditoria:")
+    lines.append(f"  status_atual: {status_atual!r}")
+    lines.append("  historico:")
+    for t in transicoes:
+        lines.append("    - {")
+        lines.append(f"        de: {t.get('de', '')!r},")
+        lines.append(f"        para: {t.get('para', '')!r},")
+        lines.append(f"        data: {t.get('data', agora)!r},")
+        lines.append(f"        motivo: {t.get('motivo', '')!r}")
+        lines.append("    }")
+    lines.append(f"  usuario_responsavel: {usuario!r}")
+    lines.append(f"  data_ultima_alteracao: {agora!r}")
+    return lines
+
+
 def _sobrenome_maiusculo(autor: str) -> str:
     """Extrair o sobrenome e colocá-lo em maiúsculas, preservando o restante.
 
@@ -242,6 +277,8 @@ def generate_companion_markdown(
     sha256: str,
     classification: dict[str, Any],
     used_ocr: bool = False,
+    usuario_responsavel: str | None = None,
+    transicoes_auditoria: list[dict[str, str]] | None = None,
 ) -> str:
     """Gerar o conteúdo Markdown completo do arquivo companheiro."""
     authors = classification.get("authors") or []
@@ -271,6 +308,15 @@ def generate_companion_markdown(
 
     lines: list[str] = []
     lines.append("---")
+    lines.append("status: 'organizado'")
+    lines.extend(
+        _auditoria_bloco(
+            "organizado",
+            transicoes=transicoes_auditoria,
+            usuario_responsavel=usuario_responsavel,
+            data_ultima_alteracao=organized_at,
+        )
+    )
     lines.append(f"titulo: {title!r}")
     if subtitle:
         lines.append(f"subtitulo: {subtitle!r}")
@@ -371,6 +417,96 @@ def generate_companion_markdown(
     return "\n".join(lines) + "\n"
 
 
+def generate_manual_review_companion_markdown(
+    destination_path: Path,
+    source_path: Path,
+    sha256: str,
+    motivo: str,
+    classificacao: dict[str, Any] | None = None,
+    usuario_responsavel: str | None = None,
+) -> str:
+    """Gerar o conteudo Markdown do companheiro de um item em revisao_manual.
+
+    Front matter inclui: status='revisao_manual', motivo da revisao, sha256,
+    arquivo_origem, detectado_em, bloco auditoria padronizado (historico com
+    transicao nulo -> revisao_manual) e, quando disponivel, a classificacao
+    parcial ja obtida (titulo, autores, ano, taxonomia, tipo).
+    """
+    agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    data_detectada = agora
+    cls = classificacao or {}
+
+    title = cls.get("titulo") or cls.get("title") or source_path.name
+    authors = cls.get("authors") or cls.get("autores") or []
+    year = cls.get("ano") or cls.get("year")
+    tipo = cls.get("tipo") or ""
+    grande_area = cls.get("grande_area", "")
+    area_basica = cls.get("area_basica", "")
+    subarea = cls.get("subarea", "")
+    especialidade = cls.get("especialidade", "")
+
+    lines: list[str] = []
+    lines.append("---")
+    lines.append("status: 'revisao_manual'")
+    lines.append(f"motivo: {motivo!r}")
+    lines.append(f"arquivo_origem: {source_path.name!r}")
+    lines.append(f"sha256: {sha256}")
+    lines.append("destino_arvore: null")
+    lines.append(f"detectado_em: {data_detectada!r}")
+    lines.extend(
+        _auditoria_bloco(
+            "revisao_manual",
+            transicoes=[
+                {
+                    "de": "",
+                    "para": "revisao_manual",
+                    "data": agora,
+                    "motivo": motivo,
+                }
+            ],
+            usuario_responsavel=usuario_responsavel,
+            data_ultima_alteracao=agora,
+        )
+    )
+    if title:
+        lines.append(f"titulo: {title!r}")
+    if authors:
+        lines.append("autores:")
+        for a in authors:
+            lines.append(f"  - {a!r}")
+    if year is not None:
+        lines.append(f"ano: {year}")
+    if tipo:
+        lines.append(f"tipo: {tipo!r}")
+    if grande_area:
+        lines.append(f"grande_area: {grande_area!r}")
+    if area_basica:
+        lines.append(f"area_basica: {area_basica!r}")
+    if subarea:
+        lines.append(f"subarea: {subarea!r}")
+    if especialidade:
+        lines.append(f"especialidade: {especialidade!r}")
+    lines.append("---")
+    lines.append("")
+
+    lines.append(f"# {title}")
+    lines.append("")
+    lines.append("## Item em Revisao Manual")
+    lines.append("")
+    lines.append(f"- **Motivo da revisao:** {motivo}")
+    lines.append(f"- **Detectado em:** {data_detectada}")
+    lines.append(f"- **Arquivo original:** {source_path.name}")
+    lines.append(f"- **SHA-256:** {sha256}")
+    lines.append("")
+    lines.append(
+        "Este arquivo aguarda revisao manual. Quando a classificacao estiver completa, "
+        "use a acao de promocao para mover o item para a arvore definitiva."
+    )
+    lines.append("")
+
+    return "\n".join(lines) + "\n"
+
+
 def _resolve_canonical_paths(
     canonical_dest: Path,
     target_dir: Path | None = None,
@@ -428,6 +564,21 @@ def generate_duplicate_companion_markdown(
     lines: list[str] = []
     lines.append("---")
     lines.append("status: 'duplicata'")
+    lines.extend(
+        _auditoria_bloco(
+            "duplicata",
+            transicoes=[
+                {
+                    "de": "",
+                    "para": "duplicata",
+                    "data": detected_at,
+                    "motivo": "Duplicata detectada na mesma edicao",
+                }
+            ],
+            usuario_responsavel="local",
+            data_ultima_alteracao=detected_at,
+        )
+    )
     lines.append(f"camada_deteccao: {camada_pt!r}")
     lines.append(f"arquivo_origem: {duplicate_source.name!r}")
     lines.append(f"sha256: {sha256}")
@@ -487,6 +638,21 @@ def generate_obsolete_companion_markdown(
     lines: list[str] = []
     lines.append("---")
     lines.append("status: 'obsoleto'")
+    lines.extend(
+        _auditoria_bloco(
+            "obsoleto",
+            transicoes=[
+                {
+                    "de": "",
+                    "para": "obsoleto",
+                    "data": detected_at,
+                    "motivo": "Edicao superada arquivada em obsoletos",
+                }
+            ],
+            usuario_responsavel="local",
+            data_ultima_alteracao=detected_at,
+        )
+    )
     lines.append(f"camada_deteccao: {camada_pt!r}")
     lines.append(f"substituiu_existente: {str(replaced_existing).lower()}")
     lines.append(f"arquivo_origem: {obsolete_source.name!r}")
