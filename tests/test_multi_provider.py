@@ -434,8 +434,8 @@ def test_pool_round_robin_alternando_chaves():
 
         mock_client.side_effect = client_factory
 
-        k1 = GeminiProvider(api_key="AIzaSyK1111111111111111111111111", model="gemini-3.5-flash")
-        k2 = GeminiProvider(api_key="AIzaSyK2222222222222222222222222", model="gemini-3.5-flash")
+        k1 = GeminiProvider(api_key="AIzaSyK111111111111111", model="gemini-3.5-flash")
+        k2 = GeminiProvider(api_key="AIzaSyK222222222222222", model="gemini-3.5-flash")
         # Compartilhar estado de cooldown para o dispatcher rotacionar entre K1 e K2
         estado_compartilhado = _PoolCooldownState()
         k1._cooldown_state = estado_compartilhado
@@ -474,12 +474,12 @@ def test_pool_round_robin_alternando_chaves():
 
     # Deduplicacao de chaves em create_provider_chain: precedencia CLI > env > config
     cfg = AppConfig()
-    cfg.api_keys.gemini_api_key = "AIzaSyCONFIGKEYAAAAAAAAAAAAAAAAAAAA"
+    cfg.api_keys.gemini_api_key = "AIzaSyCONFIGKEYAAAAAAA"
     cfg.llm.provider = "gemini"
     cfg.llm.fallback_chain = []  # nao adicionar fallbacks para isolar o teste
-    os.environ["BIBLIOTEC_GEMINI_API_KEY"] = "AIzaSyENVKEYBBBBBBBBBBBBBBBBBBBBB"
+    os.environ["BIBLIOTEC_GEMINI_API_KEY"] = "AIzaSyENVKEYBBBBBBBBBB"
     try:
-        dispatcher_env = create_provider_chain(cfg, cli_provider="gemini", cli_api_key="AIzaSyCLIKEYCCCCCCCCCCCCCCCCCCCCC")
+        dispatcher_env = create_provider_chain(cfg, cli_provider="gemini", cli_api_key="AIzaSyCLIKEYCCCCCCCCCC")
         # CLI vence: apenas 1 provedor com a chave CLI (deduplicado)
         assert len(dispatcher_env._providers) == 1, f"esperado 1 provedor (deduplicado), obteve {len(dispatcher_env._providers)}"
         nome, _inst = dispatcher_env._providers[0]
@@ -549,8 +549,8 @@ def test_workers_reservam_sonda_unica():
 
         mock_client.side_effect = client_factory
 
-        k1 = GeminiProvider(api_key="AIzaSyK1111111111111111111111111", model="gemini-3.5-flash")
-        k2 = GeminiProvider(api_key="AIzaSyK2222222222222222222222222", model="gemini-3.5-flash")
+        k1 = GeminiProvider(api_key="AIzaSyK111111111111111", model="gemini-3.5-flash")
+        k2 = GeminiProvider(api_key="AIzaSyK222222222222222", model="gemini-3.5-flash")
         estado_compartilhado = _PoolCooldownState()
         k1._cooldown_state = estado_compartilhado
         k2._cooldown_state = estado_compartilhado
@@ -638,8 +638,8 @@ def test_sucesso_atrasado_preserva_bloqueio():
 
         mock_client.side_effect = client_factory
 
-        k1 = GeminiProvider(api_key="AIzaSyK1111111111111111111111111", model="gemini-3.5-flash")
-        k2 = GeminiProvider(api_key="AIzaSyK2222222222222222222222222", model="gemini-3.5-flash")
+        k1 = GeminiProvider(api_key="AIzaSyK111111111111111", model="gemini-3.5-flash")
+        k2 = GeminiProvider(api_key="AIzaSyK222222222222222", model="gemini-3.5-flash")
         estado_compartilhado = _PoolCooldownState()
         k1._cooldown_state = estado_compartilhado
         k2._cooldown_state = estado_compartilhado
@@ -732,7 +732,7 @@ def test_modelo_vencedor_com_model_version_presente():
             model_version="gemini-3.8-flash",
         )
 
-        prov = GeminiProvider(api_key="AIzaSyfakekey1234567890", model="gemini-3.5-flash")
+        prov = GeminiProvider(api_key="AIzaSyfakekey123456789", model="gemini-3.5-flash")
         resultado = prov.classify(
             sampled_text="x" * 60, cip_text="", external_metadata=None
         )
@@ -754,7 +754,7 @@ def test_modelo_vencedor_sem_model_version():
         resp.model_version = None
         mock_instance.models.generate_content.return_value = resp
 
-        prov = GeminiProvider(api_key="AIzaSyfakekey1234567890", model="gemini-3.5-flash")
+        prov = GeminiProvider(api_key="AIzaSyfakekey123456789", model="gemini-3.5-flash")
         resultado = prov.classify(
             sampled_text="x" * 60, cip_text="", external_metadata=None
         )
@@ -986,8 +986,8 @@ def test_cota_por_modelo_e_404_preservam_outros_pares():
 
         mock_client.side_effect = client_factory
 
-        k1 = GeminiProvider(api_key="AIzaSyK1111111111111111111111111", model="gemini-3.5-flash")
-        k2 = GeminiProvider(api_key="AIzaSyK2222222222222222222222222", model="gemini-3.5-flash")
+        k1 = GeminiProvider(api_key="AIzaSyK111111111111111", model="gemini-3.5-flash")
+        k2 = GeminiProvider(api_key="AIzaSyK222222222222222", model="gemini-3.5-flash")
         estado_compartilhado = _PoolCooldownState()
         k1._cooldown_state = estado_compartilhado
         k2._cooldown_state = estado_compartilhado
@@ -1051,7 +1051,7 @@ def test_transitorio_respeita_prazo_e_orcamento():
 
         mock_instance.models.generate_content.side_effect = generate_content_side_effect
 
-        prov = GeminiProvider(api_key="AIzaSyfakekey1234567890", model="gemini-3.5-flash")
+        prov = GeminiProvider(api_key="AIzaSyfakekey123456789", model="gemini-3.5-flash")
         clock = [0.0]
         sleeps = []
         prov._cooldown_state.clock = lambda: clock[0]
@@ -1086,7 +1086,7 @@ def test_pool_indisponivel_sem_rede_apos_perday():
     def handler(request):
         chamada["n"] += 1
         if chamada["n"] == 1:
-            return httpx.Response(429, json={"error": {"message": "PerDay esgotada", "details": "AIzaSySECRETO1234567890"}})
+            return httpx.Response(429, json={"error": {"message": "PerDay esgotada", "details": "AIzaSySECRETO123456789"}})
         return httpx.Response(200, json={"choices": [{"message": {"content": json.dumps(_classification_payload(reasoning="ok", confidence_score=0.9))}}]})
 
     rota.mock(side_effect=handler)
@@ -1182,7 +1182,7 @@ def test_state_db_modelo_vencedor_e_cache_hit(tmp_path):
     config = AppConfig()
     config.general.confidence_min = 0.70
     config.llm.model = "gemini-3.5-flash"
-    config.api_keys.gemini_api_key = "AIzaSyfakekey1234567890"
+    config.api_keys.gemini_api_key = "AIzaSyfakekey123456789"
 
     provider = GeminiSimulado()
     target_dir = tmp_path / "saida"
@@ -1507,8 +1507,8 @@ def test_cadeia_gemini_3_modelos_k1m3_vence():
         # M3 sucesso
         return resultado_esperado
 
-    k1 = GeminiProvider(api_key="AIzaSyK1111111111111111111111111", model="gemini-3.5-flash")
-    k2 = GeminiProvider(api_key="AIzaSyK2222222222222222222222222", model="gemini-3.5-flash")
+    k1 = GeminiProvider(api_key="AIzaSyK111111111111111", model="gemini-3.5-flash")
+    k2 = GeminiProvider(api_key="AIzaSyK222222222222222", model="gemini-3.5-flash")
     k1._fallback_models = ["gemini-3.8-flash", "gemini-3.1-flash-lite"]
     k2._fallback_models = ["gemini-3.8-flash", "gemini-3.1-flash-lite"]
     k1._classify_once = _classify_once_mock
@@ -1583,8 +1583,8 @@ def test_cadeia_gemini_e_nvidia_410_falham_claude_vence():
         chamado["familias"].append("claude")
         return resultado_claude
 
-    k1 = GeminiProvider(api_key="AIzaSyK1111111111111111111111111", model="gemini-3.5-flash")
-    k2 = GeminiProvider(api_key="AIzaSyK2222222222222222222222222", model="gemini-3.5-flash")
+    k1 = GeminiProvider(api_key="AIzaSyK111111111111111", model="gemini-3.5-flash")
+    k2 = GeminiProvider(api_key="AIzaSyK222222222222222", model="gemini-3.5-flash")
     k1._fallback_models = ["gemini-3.8-flash", "gemini-3.1-flash-lite"]
     k2._fallback_models = ["gemini-3.8-flash", "gemini-3.1-flash-lite"]
     k1._classify_once = _classify_once_gemini
@@ -1775,7 +1775,7 @@ def test_e2e_geminha_classificacao_real_referencia():
         resp.model_version = "gemini-3.5-flash"
         mock_instance.models.generate_content.return_value = resp
 
-        provider = GeminiProvider(api_key="AIzaSyfakekey1234567890")
+        provider = GeminiProvider(api_key="AIzaSyfakekey123456789")
         resultado = provider.classify(
             sampled_text="Texto de amostra com conteúdo suficiente para classificação.",
             cip_text="",
@@ -1953,7 +1953,7 @@ def test_cadeia_fallback_completa_todos_falham_menos_ultimo():
         chamado["familias"].append("claude")
         return ClassificationResult(**resultado_claude)
 
-    k1 = GeminiProvider(api_key="AIzaSyfakekey1234567890", model="gemini-3.5-flash")
+    k1 = GeminiProvider(api_key="AIzaSyfakekey123456789", model="gemini-3.5-flash")
     k1._classify_once = _classify_once_gemini
 
     nvidia = NvidiaProvider(api_key="nvapi-test-key", model="nvidia/nemotron-3.5-super-vl-120b-a12b")
@@ -2250,7 +2250,7 @@ def test_bug_llm_01_cadeia_sequencial_outros_falham_claude_vence():
         chamado["familias"].append("claude")
         return ClassificationResult(**resultado_claude)
 
-    k1 = GeminiProvider(api_key="AIzaSyfakekey1234567890", model="gemini-3.5-flash")
+    k1 = GeminiProvider(api_key="AIzaSyfakekey123456789", model="gemini-3.5-flash")
     k1._classify_once = _classify_once_gemini
 
     nvidia = NvidiaProvider(api_key="nvapi-test-key", model="nvidia/nemotron-3.5-super-vl-120b-a12b")

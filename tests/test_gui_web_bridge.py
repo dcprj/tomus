@@ -253,7 +253,7 @@ def test_save_button_async_validates_each_comma_key(tmp_path, monkeypatch):
 
     # 1. Duas chaves Gemini separadas por v\u00edrgula (1 v\u00e1lida, 1 rejeitada 401)
     dlg._fields["gemini_api_key"].setText(
-        "AIzaSyValidKey0000000000, AIzaSyInvalidKey1111111111"
+        "AIzaSyValidKey00000000, AIzaSyInvalidKey111111"
     )
 
     # 2. Mockar _start_async_validation (evita QThread real em offscreen)
@@ -292,7 +292,7 @@ def test_save_button_async_validates_each_comma_key(tmp_path, monkeypatch):
 
     # 6. _persist_config chamado imediatamente (cfg persistido)
     assert len(persist_called) == 1
-    assert cfg.api_keys.gemini_api_key == "AIzaSyValidKey0000000000, AIzaSyInvalidKey1111111111"
+    assert cfg.api_keys.gemini_api_key == "AIzaSyValidKey00000000, AIzaSyInvalidKey111111"
 
     # 7. Caminho ass\u00edncoco iniciado com feedback individual de cada chave
     assert len(async_started) == 1
@@ -314,7 +314,7 @@ def test_badge_updates_when_switching_provider(monkeypatch):
     """BUG-UI-01: badge de provedor validado atualiza ao trocar de provedor na tela principal."""
     get_qapp()
     cfg = AppConfig()
-    cfg.api_keys.gemini_api_key = "AIzaSyValidKey0000000000"
+    cfg.api_keys.gemini_api_key = "AIzaSyValidKey00000000"
     cfg.api_keys.groq_api_key = ""  # sem chave
 
     # Simular o WebBridge / main_window sem QWebEngine real
