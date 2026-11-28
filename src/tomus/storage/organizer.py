@@ -37,14 +37,17 @@ from tomus.core.models import (
 )
 from tomus.core.periodicals import canonical_journal, journal_sort_key
 from tomus.core.prompts import extract_first_author_key
+from tomus.core.scanner import PDF_SIGNATURE, PDF_SIGNATURE_BYTES
 from tomus.extractors.identifiers import (
     normalize_doi,
     normalize_isbn,
     normalize_issn,
 )
 from tomus.storage.companion import (
+    _auditoria_bloco,
     generate_companion_markdown,
     generate_duplicate_companion_markdown,
+    generate_manual_review_companion_markdown,
     generate_obsolete_companion_markdown,
 )
 from tomus.storage.namer import MAX_BYTES, WIN_SAFE_FULL_PATH_CHARS
@@ -1018,11 +1021,16 @@ class LibraryOrganizer:
         destination_path: Path,
         sha256: str,
         status: ProcessStatus,
+        forcar_copia: bool = False,
     ) -> bool:
         """Copiar/mover o arquivo para o destino (ou apenas simular no dry-run).
 
         AppSec A-02: validar source_path (exists/is_file) e _is_within antes
         de copiar/mover.
+
+        Quando ``forcar_copia`` é True, nunca remove o arquivo de origem
+        (independente de ``file_operation``), honrando o contrato de "não
+        destrutivo".
         """
         if self.dry_run:
             return True
@@ -1040,7 +1048,7 @@ class LibraryOrganizer:
             return True
 
         shutil.copy2(source_path, destination_path)
-        if self.file_operation == "move":
+        if self.file_operation == "move" and not forcar_copia:
             try:
                 source_path.unlink()
             except OSError:
@@ -1431,6 +1439,7 @@ class LibraryOrganizer:
         reason: str,
         used_ocr: bool = False,
         classification: dict[str, Any] | None = None,
+        forcar_copia: bool = False,
     ) -> FileManifestEntry:
         """Registrar arquivo enviado para revisao_manual preservando o nome original."""
         revisao_dir = self.target_dir / REVISAO_DIR
@@ -1472,7 +1481,196 @@ class LibraryOrganizer:
         )
         self.entries.append(entry)
         self._manual_review_count += 1
-        self._materialize(source_path, destination_path, sha256, ProcessStatus.MANUAL_REVIEW)
+        self._materialize(
+            source_path,
+            destination_path,
+            sha256,
+            ProcessStatus.MANUAL_REVIEW,
+            forcar_copia=forcar_copia,
+        )
+        # Gerar companheiro .md com motivo da revisao e bloco de auditoria.
+        if not self.dry_run:
+            md_content = generate_manual_review_companion_markdown(
+                destination_path=destination_path.with_suffix(".md"),
+                source_path=source_path,
+                sha256=sha256,
+                motivo=reason,
+                classificacao=classification,
+                usuario_responsavel="local",
+            )
+            destination_path.with_suffix(".md").write_text(md_content, encoding="utf-8")
+        return entry
+
+    def list_manual_review_items(self) -> list[dict[str, Any]]:
+        """Varredura de revisao_manual/ retornando itens pendentes.
+
+        Retorna lista de dicionarios com: nome, caminho (relativo ao target_dir),
+        status, motivo, data_detectada e classificacao (quando disponivel no front matter).
+        Serve a GUI e o FEAT-AUDIT-01.
+        """
+        revisao_dir = self.target_dir / REVISAO_DIR
+        if not revisao_dir.exists():
+            return []
+        itens: list[dict[str, Any]] = []
+        for md_path in sorted(revisao_dir.glob("*.md")):
+            pdf_path = md_path.with_suffix(".pdf")
+            fm = _parse_front_matter_safe(md_path)
+            if not fm:
+                continue
+            itens.append(
+                {
+                    "nome": md_path.name,
+                    "caminho": str(md_path.relative_to(self.target_dir)),
+                    "pdf_caminho": str(pdf_path.relative_to(self.target_dir))
+                    if pdf_path.exists()
+                    else None,
+                    "status": fm.get("status", "revisao_manual"),
+                    "motivo": fm.get("motivo", ""),
+                    "data_detectada": fm.get("detectado_em", ""),
+                    "classificacao": {
+                        "titulo": fm.get("titulo"),
+                        "autores": fm.get("autores", []),
+                        "ano": fm.get("ano"),
+                        "tipo": fm.get("tipo"),
+                        "grande_area": fm.get("grande_area"),
+                        "area_basica": fm.get("area_basica"),
+                        "subarea": fm.get("subarea"),
+                        "especialidade": fm.get("especialidade"),
+                    },
+                    "auditoria": fm.get("auditoria", {}),
+                }
+            )
+        return itens
+
+    def _campos_obrigatorios_completos(
+        self, classificacao: dict[str, Any] | None
+    ) -> tuple[bool, str]:
+        """Validar que os campos obrigatorios para promocao estao preenchidos.
+
+        Retorna (ok, motivo_vazio). Quando nao ok, motivo_vazio explica quais
+        campos estao faltando.
+        """
+        cls = classificacao or {}
+        faltando: list[str] = []
+        if not (cls.get("titulo") or cls.get("title")):
+            faltando.append("titulo")
+        if not (cls.get("authors") or cls.get("autores")):
+            faltando.append("autores")
+        if cls.get("ano") is None and cls.get("year") is None:
+            faltando.append("ano")
+        if not cls.get("tipo"):
+            faltando.append("tipo")
+        if not cls.get("grande_area") and not cls.get("area_basica"):
+            faltando.append("taxonomia (grande_area/area_basica)")
+        if faltando:
+            return False, "Campos obrigatorios nao preenchidos: " + ", ".join(faltando)
+        return True, ""
+
+    def promote_from_manual_review(
+        self,
+        source_path: Path,
+        destino_arvore: Path | None = None,
+        classificacao: dict[str, Any] | None = None,
+        motivo_promocao: str | None = None,
+        usuario_responsavel: str | None = None,
+    ) -> FileManifestEntry:
+        """Promover um item de revisao_manual para a arvore definitiva.
+
+        Aceita a classificacao existente lida do .md companheiro (editavel pelo
+        usuario no inspetor). Nao reclassifica via LLM. Se os campos
+        obrigatorios estiverem vazios/incompletos, recusa com motivo claro.
+        Atualiza o bloco de auditoria com a transicao revisao_manual -> organizado.
+        """
+        revisao_dir = self.target_dir / REVISAO_DIR
+        md_path = revisao_dir / source_path.name.replace(".pdf", ".md")
+        if not md_path.exists():
+            # Tentar encontrar por nome base sem sufixo
+            md_path = revisao_dir / f"{source_path.stem}.md"
+
+        fm = _parse_front_matter_safe(md_path) if md_path.exists() else None
+        cls_existente = fm.get("classificacao", {}) if fm else {}
+        # Mesclar classificacao existente com eventual nova informacao do usuario.
+        cls_final = dict(cls_existente)
+        if classificacao:
+            cls_final.update(classificacao)
+
+        ok, motivo_recusa = self._campos_obrigatorios_completos(cls_final)
+        if not ok:
+            raise ValueError(motivo_recusa)
+
+        # Determinar destino na arvore definitiva.
+        if destino_arvore is None:
+            # Construir caminho padrao a partir da classificacao.
+            area_basica = cls_final.get("area_basica") or "Geral"
+            subarea = cls_final.get("subarea") or "Geral"
+            tipo = cls_final.get("tipo") or "Outros"
+            destino_arvore = self.target_dir / area_basica / subarea / tipo
+
+        # Nome do arquivo de destino.
+        filename = source_path.name
+        destination_path = destino_arvore / filename
+
+        # Materializar o PDF na arvore definitiva.
+        self._planned_destinations[destination_path] = sha256_md = (
+            fm.get("sha256") if fm else ""
+        )
+        status = ProcessStatus.ORGANIZED
+        self._organized_count += 1
+        self._materialize(source_path, destination_path, sha256_md or "", status)
+
+        # Gerar companheiro .md na arvore com status organizado e auditoria.
+        now = datetime.now()
+        organizado_at = now.strftime("%Y-%m-%d %H:%M:%S")
+        transicoes = [
+            {"de": "revisao_manual", "para": "organizado", "data": organizado_at, "motivo": motivo_promocao or "Promocao a arvore definitiva"},
+        ]
+        md_content = generate_companion_markdown(
+            destination_path=destination_path.with_suffix(".md"),
+            source_path=source_path,
+            sha256=sha256_md or "",
+            classification=cls_final,
+            used_ocr=False,
+            usuario_responsavel=usuario_responsavel or "local",
+            transicoes_auditoria=transicoes,
+        )
+        destination_path.with_suffix(".md").write_text(md_content, encoding="utf-8")
+
+        # Remover o item de revisao_manual (PDF e .md).
+        revisao_pdf = revisao_dir / source_path.name
+        revisao_md = revisao_dir / source_path.name.replace(".pdf", ".md")
+        if not revisao_md.exists():
+            revisao_md = revisao_dir / f"{source_path.stem}.md"
+        if revisao_pdf.exists():
+            try:
+                revisao_pdf.unlink()
+            except OSError:
+                pass
+        if revisao_md.exists():
+            try:
+                revisao_md.unlink()
+            except OSError:
+                pass
+
+        # Registrar no indice da biblioteca.
+        rec = LibraryIndex.build_record(
+            sha256=sha256_md or "",
+            classification=cls_final,
+            source_path=source_path,
+            pdf_path=destination_path,
+            pages=cls_final.get("paginas_pdf"),
+            from_same_run=True,
+        )
+        self.index.register_canonical(rec)
+
+        entry = FileManifestEntry(
+            source_path=str(source_path),
+            destination_path=str(destination_path),
+            sha256=sha256_md or "",
+            status=status,
+            used_ocr=False,
+            classification=cls_final,
+        )
+        self.entries.append(entry)
         return entry
 
     def add_error(
@@ -1664,3 +1862,211 @@ class LibraryOrganizer:
         self.write_manifest(summary)
         self.write_relatorio_revisao(summary)
         return summary
+
+    # ------------------------------------------------------------------ #
+    # FEAT-AUDIT-01: Inspeção de biblioteca organizada (read-only).
+    # ------------------------------------------------------------------ #
+    def _eh_diretorio_canonico(self, caminho: Path) -> bool:
+        """Verificar se o caminho está dentro de um diretório canônico da árvore.
+
+        Retorna False para revisao_manual/, duplicatas/, obsoletos/ e para a
+        raiz de target_dir (essas não são árvore temática definitiva).
+        """
+        try:
+            rel = caminho.relative_to(self.target_dir)
+        except ValueError:
+            return False
+        partes = rel.parts
+        if not partes or partes[0] in _NON_CANONICAL_DIRS:
+            return False
+        return True
+
+    def _auditar_um_pdf(self, pdf_path: Path) -> dict[str, Any]:
+        """Inspecionar um único PDF e retornar diagnóstico de integridade.
+
+        Resultado é puramente informativo (read-only): não altera nada no disco.
+        """
+        resultado: dict[str, Any] = {
+            "caminho": str(pdf_path.relative_to(self.target_dir)),
+            "nome": pdf_path.name,
+            "problemas": [],
+            "acao_sugerida": "confirmar_integridade",
+        }
+
+        # 1. Verificar se está na árvore temática (não é cópia solta).
+        if not self._eh_diretorio_canonico(pdf_path):
+            resultado["problemas"].append("copia_solta")
+            resultado["acao_sugerida"] = "recolocar_na_fila"
+            return resultado
+
+        # 2. Verificar se tem companion .md ao lado.
+        md_path = pdf_path.with_suffix(".md")
+        if not md_path.exists():
+            resultado["problemas"].append("orfao")
+            resultado["acao_sugerida"] = "recolocar_na_fila"
+            return resultado
+
+        # 3. Validar front matter do companion.
+        fm = _parse_front_matter_safe(md_path)
+        if not fm or not fm.get("sha256"):
+            resultado["problemas"].append("front_matter_invalido")
+            resultado["acao_sugerida"] = "recolocar_na_fila"
+            return resultado
+
+        # 4. Validar assinatura %PDF- do próprio PDF.
+        try:
+            with open(pdf_path, "rb") as fh:
+                header = fh.read(PDF_SIGNATURE_BYTES)
+            if PDF_SIGNATURE not in header:
+                resultado["problemas"].append("corrompido")
+                resultado["acao_sugerida"] = "recolocar_na_fila"
+        except OSError:
+            resultado["problemas"].append("corrompido")
+            resultado["acao_sugerida"] = "recolocar_na_fila"
+
+        return resultado
+
+    def auditar_biblioteca(self, target_dir: Path | None = None) -> dict[str, Any]:
+        """Inspecionar toda a biblioteca organizada (read-only).
+
+        Varre todos os PDFs de target_dir e identifica problemas de integridade:
+        orfãos (sem companion .md), front matter inválido/incompleto, PDFs
+        corrompidos (sem assinatura %PDF-) e cópias soltas (fora da árvore).
+
+        Não grava nada no disco. Retorna um relatório serializável (JSON-amigável)
+        com resumo e lista de itens problema, cada um com ação sugerida.
+        """
+        alvo = target_dir or self.target_dir
+        if not alvo.exists():
+            return {"erro": f"Diretório não encontrado: {alvo}", "itens": [], "resumo": {}}
+
+        itens: list[dict[str, Any]] = []
+        contador: dict[str, int] = {
+            "total_pdf": 0,
+            "ok": 0,
+            "orfao": 0,
+            "front_matter_invalido": 0,
+            "corrompido": 0,
+            "copia_solta": 0,
+        }
+
+        for pdf_path in sorted(alvo.rglob("*.pdf")):
+            # Pular arquivos dentro de revisao_manual/ (já são itens pendentes
+            # conhecidos, listados por list_manual_review_items).
+            try:
+                rel = pdf_path.relative_to(alvo)
+            except ValueError:
+                continue
+            if rel.parts and rel.parts[0] == REVISAO_DIR:
+                continue
+
+            contador["total_pdf"] += 1
+            diagnostico = self._auditar_um_pdf(pdf_path)
+            if not diagnostico["problemas"]:
+                contador["ok"] += 1
+            else:
+                for problema in diagnostico["problemas"]:
+                    contador[problema] = contador.get(problema, 0) + 1
+                itens.append(diagnostico)
+
+        resumo = {
+            "total_pdf": contador["total_pdf"],
+            "ok": contador["ok"],
+            "com_problemas": len(itens),
+            "por_tipo": {
+                "orfao": contador["orfao"],
+                "front_matter_invalido": contador["front_matter_invalido"],
+                "corrompido": contador["corrompido"],
+                "copia_solta": contador["copia_solta"],
+            },
+        }
+
+        return {
+            "target_dir": str(alvo),
+            "resumo": resumo,
+            "itens": itens,
+        }
+
+    def recolocar_na_fila(self, source_path: Path) -> FileManifestEntry:
+        """Mover um item para a fila de classificação (revisao_manual).
+
+        Função explícita separada da auditoria read-only. É executada pelo
+        usuário via GUI/CLI, nunca automaticamente. Motivo: "auditoria".
+        Não é destrutiva: copia o PDF para revisao_manual/ e gera o .md
+        companheiro com motivo de auditoria.
+        """
+        return self.add_manual_review(
+            source_path=source_path,
+            sha256="",
+            reason="auditoria: item encaminhado para reclassificação",
+            used_ocr=False,
+            classification=None,
+            forcar_copia=True,
+        )
+
+    def confirmar_integridade(
+        self, item_caminho_rel: str, usuario_responsavel: str | None = None
+    ) -> None:
+        """Registrar confirmação de integridade no bloco de auditoria do companion.
+
+        Lê o .md companheiro do item (identificado pelo caminho relativo ao
+        target_dir) e adiciona uma transição de auditoria "organizado -> confirmado".
+        Reaproveita a trilha de auditoria criada no FEAT-TRIAGE-01, deixando rastro
+        de quem confirmou e quando.
+
+        Não é destrutiva: apenas atualiza o front matter do .md companheiro.
+        """
+        md_path = self.target_dir / item_caminho_rel
+        if not md_path.exists() or md_path.suffix != ".md":
+            # Tentar adicionar .md se o caminho for do PDF.
+            md_path = md_path.with_suffix(".md")
+        if not md_path.exists():
+            raise FileNotFoundError(f"Companion não encontrado: {item_caminho_rel}")
+
+        # Segurança (Sentinela): conter o caminho dentro de target_dir antes de
+        # qualquer leitura/escrita. Rejeita tentativas de path traversal (ex.: '../').
+        if not _is_within(md_path, self.target_dir):
+            raise ValueError(
+                f"Caminho fora do diretório alvo bloqueado: {item_caminho_rel}"
+            )
+
+        fm = _parse_front_matter_safe(md_path)
+        if not fm:
+            raise ValueError(f"Front matter inválido: {item_caminho_rel}")
+
+        agora = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        historico = fm.get("auditoria", {}).get("historico", [])
+        status_atual = fm.get("auditoria", {}).get("status_atual", "organizado")
+        historico.append(
+            {
+                "de": status_atual,
+                "para": "confirmado",
+                "data": agora,
+                "motivo": "Integridade confirmada na auditoria",
+            }
+        )
+
+        # Reconstruir o front matter com a nova transação de auditoria.
+        # Ler o conteúdo completo do .md para preservar o restante.
+        conteudo = md_path.read_text(encoding="utf-8")
+        # Substituir o bloco auditoria existente.
+        novo_bloco = "\n".join(
+            _auditoria_bloco(
+                "confirmado",
+                transicoes=historico,
+                usuario_responsavel=usuario_responsavel or "local",
+                data_ultima_alteracao=agora,
+            )
+        )
+
+        import re as _re
+
+        padrao = _re.compile(r"(^---\n)(.*?)(^---)", _re.S | _re.M)
+        if padrao.search(conteudo):
+            conteudo_novo = padrao.sub(
+                lambda m: m.group(1) + novo_bloco + "\n" + m.group(3), conteudo
+            )
+        else:
+            conteudo_novo = conteudo + "\n" + novo_bloco + "\n"
+
+        md_path.write_text(conteudo_novo, encoding="utf-8")
