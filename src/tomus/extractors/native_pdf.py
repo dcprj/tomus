@@ -13,6 +13,7 @@ from typing import Any
 
 import fitz  # PyMuPDF
 
+from tomus.core.scanner import PDF_SIGNATURE, PDF_SIGNATURE_BYTES
 from tomus.core.text_utils import normalize_tex_accents
 
 # Limiares (Item 14).
@@ -38,6 +39,24 @@ def extract_native_pdf(path: Path) -> dict[str, Any]:
         menos de 30 caracteres alfanuméricos.
     """
     file_size_bytes = path.stat().st_size if path.exists() else 0
+
+    # Validar a assinatura %PDF- antes de abrir com PyMuPDF (LINCE-09).
+    # Arquivos sem a assinatura sao tratados como nao-PDF/invalidos liminarmente,
+    # sem lançar excecao de parsing do PyMuPDF.
+    try:
+        with open(path, "rb") as fh:
+            header = fh.read(PDF_SIGNATURE_BYTES)
+    except OSError:
+        header = b""
+    if PDF_SIGNATURE not in header:
+        return {
+            "metadata": {},
+            "total_pages": 0,
+            "sampled_text": "",
+            "file_size_bytes": file_size_bytes,
+            "needs_ocr": False,
+            "inspected_pages": [],
+        }
 
     doc = fitz.open(str(path))
     try:

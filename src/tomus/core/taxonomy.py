@@ -38,14 +38,23 @@ _TAXONOMY_PATH = _find_taxonomy_file()
 TAXONOMY_VERSION = "capes-cnpq-v1"
 
 _taxonomy_cache: dict[str, Any] | None = None
+# Cache em nível de módulo dos índices derivados da taxonomia (ATL-09).
+# Construídos uma única vez e reutilizados; invalidados quando a taxonomia é
+# recarregada via _load_taxonomy(force_reload=True).
+_index_areas_basicas_cache: tuple[dict[str, str], dict[str, tuple[str, str]]] | None = None
+_area_to_grande_cache: dict[str, str] | None = None
 
 
-def _load_taxonomy() -> dict[str, Any]:
-    global _taxonomy_cache
-    if _taxonomy_cache is None:
+def _load_taxonomy(force_reload: bool = False) -> dict[str, Any]:
+    global _taxonomy_cache, _index_areas_basicas_cache, _area_to_grande_cache
+    if _taxonomy_cache is None or force_reload:
         path = _find_taxonomy_file()
         with open(path, encoding="utf-8") as fh:
             _taxonomy_cache = json.load(fh)
+        # Invalida os índices derivados quando a taxonomia é (re)carregada,
+        # para que sejam reconstruídos na próxima invocação (ATL-09).
+        _index_areas_basicas_cache = None
+        _area_to_grande_cache = None
     return _taxonomy_cache
 
 
@@ -79,13 +88,22 @@ def get_subareas(area_basica: str) -> list[str]:
 
 
 def _build_area_to_grande_area() -> dict[str, str]:
-    """Mapear cada Área Básica para sua Grande Área pai."""
+    """Mapear cada Área Básica para sua Grande Área pai.
+
+    Resultado memoizado em nível de módulo (ATL-09): construído uma única vez
+    e reutilizado em chamadas subsequentes. Invalidado quando a taxonomia é
+    recarregada via _load_taxonomy(force_reload=True).
+    """
+    global _area_to_grande_cache
+    if _area_to_grande_cache is not None:
+        return _area_to_grande_cache
     mapping: dict[str, str] = {}
     for grande_area, basicas in _load_taxonomy().get("areas", {}).items():
         if isinstance(basicas, dict):
             basicas = basicas.get("subareas", [])
         for area_basica in basicas:
             mapping[area_basica] = grande_area
+    _area_to_grande_cache = mapping
     return mapping
 
 
@@ -124,7 +142,14 @@ def _index_areas_basicas() -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
 
     grande_por_dobra: rótulo de Grande Área dobrado -> rótulo canônico.
     basica_por_dobra: rótulo de Área Básica dobrado -> (Grande Área mãe, canônico).
+
+    Resultado memoizado em nível de módulo (ATL-09): construído uma única vez
+    e reutilizado em chamadas subsequentes. Invalidado quando a taxonomia é
+    recarregada via _load_taxonomy(force_reload=True).
     """
+    global _index_areas_basicas_cache
+    if _index_areas_basicas_cache is not None:
+        return _index_areas_basicas_cache
     taxonomy = _load_taxonomy()
     areas = taxonomy.get("areas", {})
     grande_por_dobra: dict[str, str] = {}
@@ -135,6 +160,7 @@ def _index_areas_basicas() -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
             basicas = basicas.get("subareas", [])
         for area_basica in basicas:
             basica_por_dobra.setdefault(_fold_tax(area_basica), (grande_area, area_basica))
+    _index_areas_basicas_cache = (grande_por_dobra, basica_por_dobra)
     return grande_por_dobra, basica_por_dobra
 
 
