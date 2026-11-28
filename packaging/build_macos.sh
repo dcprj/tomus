@@ -123,13 +123,13 @@ if command -v create-dmg &> /dev/null; then
         --icon "${APP_NAME}.app" 150 150 \
         --hide-extension "${APP_NAME}.app" \
         --app-drop-link 450 150 \
-        --background "${SCRIPT_DIR}/icons/dmg_background.png" \
+        --background "${SCRIPT_DIR}/icons/background.png" \
         --overwrite \
         "${DIST_DIR}/${DMG_NAME}" \
         "${DMG_TEMP_DIR}/" || true
-# Fundo do DMG produzido pelo Prisma (FEAT-UX-04). Enquanto o asset
-# dmg_background.png não for adicionado em packaging/icons/, o create-dmg
-# ignora o parâmetro --background e o hdiutil cria o DMG sem fundo.
+# Fundo do DMG: o arquivo icons/background.png segue a convencao do Finder
+# (.background/background.png) que resolve sem depender de alias em .DS_Store,
+# garantindo renderizacao correta em qualquer maquina que monte o DMG.
 fi
 
 # Se create-dmg não criou ou não está disponível, usar hdiutil nativo com link simbólico manual
