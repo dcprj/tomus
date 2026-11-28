@@ -9,9 +9,9 @@
 A engenharia, arquitetura e orquestração do projeto concentram-se na **equipe principal no macOS** (Chefe + especialistas). Não há uma segunda equipe espelhada no Windows.
 
 - **No macOS (Equipe Principal):** conduz o desenvolvimento em `src/tomus/`, `tests/`, `docs/`, `pyproject.toml`, empacotamento macOS e a orquestração geral.
-- **No Windows (Agente Windows):** existe exclusivamente em uma máquina Windows dedicada e **só atua mediante ordens explícitas do Chefe**, enviadas pelo canal de comunicação do OneDrive. Executa builds, testes e smoke checks em Windows 11 (podendo acionar especialistas pontuais apenas para resolver questões específicas do Windows) e reporta o resultado de volta ao Chefe.
+- **No Windows (Agente Windows):** existe exclusivamente em uma máquina Windows dedicada e **só atua mediante ordens explícitas do Chefe**, enviadas pelo canal **Maestri Wire** (`maestri ask Agente Windows @ Inspiron15 > Tomus Win`). Executa builds, testes e smoke checks em Windows 11 (podendo acionar especialistas pontuais apenas para resolver questões específicas do Windows) e reporta o resultado de volta ao Chefe pelo Maestri Wire.
 - **Registro de decisões:** decisões técnicas, contratos e mudanças de escopo só passam a valer quando registradas no repositório (`docs/governanca/baseline.md`, `docs/backlog.md` ou no corpo de um Pull Request).
-- **Canal assíncrono (quando necessário entre máquinas):** pasta `comunicacao_mac_win/chefes_mac_win/` no OneDrive, mantendo mensagens objetivas em `NNNN_YYYY-MM-DD_slug.md` e sem expor chaves ou segredos (validação opcional via `scripts/validate_onedrive_protocol.py`).
+- **Canal assíncrono primário:** **Maestri Wire** (`maestri ask Agente Windows @ Inspiron15 > Tomus Win`), substituindo a antiga pasta `comunicacao_mac_win/chefes_mac_win/` no OneDrive.
 
 ## 2. Fluxo Git Vigente: `develop -> stage -> main`
 
