@@ -83,8 +83,9 @@ jobs:
           fetch-depth: 0
 
       - name: Executar gitleaks
-        uses: zricethezav/gitleaks-action@v2.1.9
+        uses: zricethezav/gitleaks-action@v2.3.9#ff98106e4c7b2bc287b24eaf42907196329070c7
         with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           args: --verbose --report-format sarif --report-path gitleaks-report.sarif
 
       - name: Enviar resultados ao Code Scanning
