@@ -190,6 +190,38 @@ jobs:
           } | tr -d '\r' > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      - name: Extrair notas do release do CHANGELOG.md
+        id: release_body
+        run: |
+          PY_VERSION=$(python3 -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          {
+            echo "# Tomus v${PY_VERSION}"
+            echo ""
+            awk -v ver="$PY_VERSION" 'index($0, "## [" ver "]") {found=1; next} found && index($0, "## [") {exit} found {print}' CHANGELOG.md
+            echo ""
+            echo "---"
+            echo ""
+            echo "## Verificação de integridade"
+            echo ""
+            echo "Use o arquivo SHA256SUMS.txt anexado para verificar os downloads:"
+            echo ""
+            echo "```bash"
+            echo "sha256sum -c SHA256SUMS.txt"
+            echo "```"
+            echo ""
+            echo "Os nomes no manifesto são relativos (basename), então coloque o manifesto e os instaladores no mesmo diretório antes de verificar."
+            echo ""
+            echo "## Requisitos de sistema"
+            echo ""
+            echo "- macOS 12+ (Apple Silicon ou Intel)"
+            echo "- Windows 10/11 (64 bits)"
+            echo ""
+            echo "---"
+            echo ""
+            echo "Este release é um **rascunho**. Teste os instaladores em ambos os sistemas operacionais antes de promovê-lo para release definitiva (\`gh release edit <TAG> --draft=false\`)."
+          } > release_body.md
+          echo "body_path=release_body.md" >> $GITHUB_OUTPUT
+
       - name: Criar ou Atualizar Release no GitHub
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
@@ -197,6 +229,8 @@ jobs:
             release-assets/macos/*.dmg
             release-assets/windows/*.exe
             SHA256SUMS.txt
-          generate_release_notes: true
+          generate_release_notes: false
+          draft: true
+          body_path: ${{ steps.release_body.outputs.body_path }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

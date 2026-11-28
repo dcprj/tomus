@@ -79,6 +79,31 @@ def _validate_pdf_signature(path: Path) -> bool:
         return False
 
 
+def _scan_pdf_once(path: Path) -> tuple[str, int, bool]:
+    """Ler o arquivo PDF uma única vez e retornar (sha256, tamanho, is_valid_pdf).
+
+    Na mesma passagem (mesmo descritor de arquivo) sao calculados:
+    (a) SHA-256 em blocos de 64 KB e (b) validacao da assinatura %PDF- nos
+    primeiros bytes. Evita a leitura dupla do disco (ATL-04).
+    """
+    h = hashlib.sha256()
+    header = b""
+    file_size = 0
+    try:
+        with open(path, "rb") as fh:
+            # Ler a assinatura nos primeiros bytes primeiro.
+            header = fh.read(PDF_SIGNATURE_BYTES)
+            file_size = len(header)
+            # Resto do arquivo em blocos de 64 KB para o hash.
+            for chunk in iter(lambda: fh.read(HASH_BLOCK_SIZE), b""):
+                h.update(chunk)
+                file_size += len(chunk)
+    except OSError:
+        return "", 0, False
+    h.update(header)
+    return h.hexdigest(), file_size, PDF_SIGNATURE in header
+
+
 def _is_within(path: Path, parent: Path) -> bool:
     """Verificar se path está contido dentro de parent (subárvore)."""
     try:
@@ -145,11 +170,9 @@ def scan_directory(
             )
             continue
 
-        # Calcular SHA-256 e validar assinatura
+        # Calcular SHA-256 e validar assinatura em uma unica passagem (ATL-04).
         try:
-            file_size = entry.stat().st_size
-            sha256 = _compute_sha256(entry)
-            is_valid_pdf = _validate_pdf_signature(entry)
+            sha256, file_size, is_valid_pdf = _scan_pdf_once(entry)
         except OSError as exc:
             errors.append(f"Erro ao processar {entry}: {exc}")
             continue

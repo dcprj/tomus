@@ -2,6 +2,45 @@
 
 Este arquivo é o registro de versões do Tomus, escrito em linguagem clara para usuários finais. Ele descreve, de forma resumida, o que mudou em cada versão do aplicativo — sem detalhes técnicos de implementação.
 
+## [1.4.3] - (pendente de publicação) — BETA
+
+### O que há de novo
+
+**O Tomus agora é uma versão beta**
+
+A interface, a página de download, o README e o manual identificam explicitamente que o produto está em versão beta — deixando claro que ainda está em amadurecimento e que seu retorno é bem-vindo.
+
+**A revisão manual ficou muito mais útil**
+
+- Documentos enviados para revisão manual agora ganham um arquivo companheiro que explica o motivo da revisão
+- Você pode editar os campos (título, autores, ano, taxonomia e tipo) direto no inspetor e promover o item para a árvore definitiva — sem precisar reclassificar
+- O inspetor passou a exibir a trilha de auditoria, mostrando quem alterou o quê e quando
+- A barra lateral lista os itens pendentes de revisão
+
+**Auditoria da sua biblioteca**
+
+Um painel novo percorre a biblioteca já organizada e encontra: PDFs sem arquivo companheiro, PDFs com metadados incompletos ou inválidos, arquivos corrompidos (sem assinatura de PDF válida) e arquivos fora da árvore temática (cópias soltas). Para cada problema você escolhe: recolocar na fila de classificação ou confirmar que está correto. Nada é movido ou alterado sem o seu clique.
+
+**Instalação no macOS mais clara**
+
+A imagem do disco agora traz uma orientação visual para arrastar o Tomus.app até a pasta Aplicativos — evitando que o aplicativo seja executado direto do disco.
+
+**Apoio ao projeto**
+
+Um botão discreto na barra superior abre um modal com a chave Pix e um QR Code gerado localmente, sem enviar dados para lugar nenhum.
+
+**Chaves de API**
+
+- Todas as chaves de um provedor são validadas, com retorno individual por chave (antes apenas a primeira era testada)
+- O indicador de provedor validado na tela principal agora acompanha corretamente a troca de provedor
+- O seletor de provedor mostra apenas opções com chave válida
+
+### Correções
+
+- **Suas chaves estão mais protegidas:** o arquivo de configuração recebe permissão restrita de forma garantida. Antes a proteção podia falhar em silêncio, deixando o arquivo exposto
+- **Salvar funciona mesmo offline:** suas configurações são gravadas antes da verificação da chave, então uma falha de rede não impede o salvamento
+- **Processamento mais robusto:** o scanner faz uma única leitura de cada arquivo, valida o cabeçalamento dos PDFs, tem tempo limite no OCR e usa cache da taxonomia — arquivos grandes ou corrompidos não travam mais o lote
+
 ## [1.4.2] - publicada em 2026-11-28
 
 ### O que há de novo

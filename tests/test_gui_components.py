@@ -337,7 +337,7 @@ def test_invalid_key_rejected_by_syntax_and_ui(qapp, tmp_path, monkeypatch):
     assert ok_aq is True
     assert err_aq == ""
 
-    ok_aiza, err_aiza = validate_key_syntax("gemini_api_key", "AIzaSyDummyTestKeyForVerification12345")
+    ok_aiza, err_aiza = validate_key_syntax("gemini_api_key", "AIzaSyDummyTestKeyForV")
     assert ok_aiza is True
     assert err_aiza == ""
 

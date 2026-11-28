@@ -97,6 +97,10 @@
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
             Sobre
           </button>
+          <button class="btn btn-outline btn-support" id="btnSupport" type="button" title="Apoie o projeto via Pix">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06a5.5 5.5 0 0 0 7.78-7.78 5.5 5.5 0 0 0 0-7.78z"></path><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z"></path></svg>
+            Apoio
+          </button>
         </div>
       </div>
     </header>
@@ -149,6 +153,35 @@
           <div class="tree-container" id="capesTree">
             <div class="tree-empty">Nenhuma área classificada ainda</div>
           </div>
+        </div>
+
+        <div class="sidebar-divider"></div>
+
+        <div class="sidebar-section review-section">
+          <div class="section-title">Itens Pendentes de Revisão</div>
+          <div class="section-subtitle">Revisão Manual</div>
+          <ul class="filter-list" id="manualReviewList">
+            <li class="filter-item" style="color: #94A3B8; font-style: italic; font-size: 12px; padding: 12px;">
+              Nenhum item pendente
+            </li>
+          </ul>
+        </div>
+
+        <div class="sidebar-section audit-section">
+          <div class="section-title">Auditoria de Biblioteca</div>
+          <div class="section-subtitle">Integridade dos arquivos</div>
+          <button class="btn btn-outline btn-audit" id="btnAuditLibrary" type="button" style="width: 100%; margin-bottom: 8px;">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12.01" y2="8"></line><path d="M12 16h.01"></path></svg>
+            Auditar Biblioteca
+          </button>
+          <div id="auditSummary" style="font-size: 11px; color: #64748B; margin-bottom: 8px; min-height: 20px;">
+            Nenhuma auditoria executada
+          </div>
+          <ul class="filter-list" id="auditItemsList" style="max-height: 200px; overflow-y: auto;">
+            <li class="filter-item" style="color: #94A3B8; font-style: italic; font-size: 12px; padding: 12px;">
+              Execute a auditoria para ver problemas
+            </li>
+          </ul>
         </div>
       </aside>
 
@@ -303,6 +336,23 @@
               <button class="btn btn-primary btn-block" id="btnApproveTriage" type="button">
                 Aprovar e Materializar na Biblioteca
               </button>
+
+              <!-- Promover item de revisão manual para árvore definitiva (FEAT-TRIAGE-01) -->
+              <div class="triage-promote-box" id="triagePromoteBox" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #E2E8F0;">
+                <button class="btn btn-outline btn-block" id="btnPromoteReview" type="button" style="background: #F0FDF4; color: #16A34A; border-color: #16A34A;">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                  Promover para Árvore Definitiva
+                </button>
+                <div id="promoteResult" style="margin-top: 8px; font-size: 12px;"></div>
+              </div>
+
+              <!-- Trilha de Auditoria (FEAT-TRIAGE-01) -->
+              <div class="triage-audit-box" id="triageAuditBox" style="margin-top: 16px; padding: 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px;">
+                <div style="font-weight: 600; font-size: 13px; color: #0F172A; margin-bottom: 8px;">Trilha de Auditoria</div>
+                <div id="triageAuditTrail" style="font-size: 11px; color: #475569; line-height: 1.6;">
+                  <div style="color: #94A3B8; font-style: italic;">Nenhuma entrada de auditoria disponível</div>
+                </div>
+              </div>
             </form>
           </div>
 
@@ -441,7 +491,7 @@
             <div class="about-brand-info">
               <div class="about-brand-title">
                 <span class="brand-name">Tomus</span>
-                <span class="badge-pill badge-primary">v1.4.1</span>
+                <span class="badge-pill badge-primary">v1.4.3 Beta</span>
               </div>
             </div>
           </div>
@@ -452,6 +502,10 @@
           <p class="about-description">
             O <strong>Tomus</strong> é um utilitário livre e <strong>100% gratuito</strong> concebido para acelerar a pesquisa científica e economizar horas de organização de bibliotecas de PDFs de acadêmicos, professores e pesquisadores.
           </p>
+
+          <div class="warning-box">
+            <strong>Versão Beta:</strong> Esta é uma versão em fase de teste público. Funcionalidades podem mudar entre releases. Relate problemas no <a href="https://github.com/dcprj/tomus/issues" class="link-external" target="_blank" rel="noopener">GitHub</a>.
+          </div>
 
           <!-- Card de Doação Voluntária -->
           <div class="donation-card">
@@ -498,6 +552,85 @@
         <div class="modal-actions" style="margin-top: 18px;">
           <button type="button" class="btn btn-primary modal-btn" id="btnAboutOk">
             OK, Entendi
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL DE APOIO (Pix QR Code) -->
+    <div id="supportModal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="supportTitle">
+      <div class="modal-card modal-card-support">
+        <button type="button" class="modal-close-btn" id="btnSupportClose" title="Fechar (Esc)">&times;</button>
+
+        <div class="modal-header">
+          <div class="about-brand-wrap">
+            <span class="donation-icon">☕</span>
+            <div class="about-brand-info">
+              <div class="about-brand-title">
+                <span class="brand-name">Apoie o Tomus</span>
+                <span class="badge-pill badge-primary">Pix</span>
+              </div>
+            </div>
+          </div>
+          <p class="about-subtitle">Contribuição espontânea para apoiar o desenvolvimento contínuo do Tomus.</p>
+        </div>
+
+        <div class="support-content">
+          <div class="support-pix-box">
+            <div class="support-pix-label">Chave Pix</div>
+            <div class="support-pix-input-wrap">
+              <input type="text" id="supportPixKey" class="support-pix-input" readonly value="dpinheiro+tomus@gmail.com">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnCopySupportPix">Copiar Pix</button>
+            </div>
+            <p class="support-pix-hint">Toque ou clique para copiar a chave para a área de transferência.</p>
+          </div>
+        </div>
+
+        <div class="support-legal">
+          <p><strong>Aviso legal:</strong> Contribuições configuram <strong>Doação Pura e Simples</strong> (Art. 538 do Código Civil Brasileiro), por mera liberalidade e apreço, sem contraprestação mercantil, garantia de SLA ou relação de consumo. Todos os usuários têm acesso irrestrito às mesmas versões e recursos do Tomus sem distinção.</p>
+        </div>
+
+        <div class="modal-actions" style="margin-top: 18px;">
+          <button type="button" class="btn btn-primary modal-btn" id="btnSupportOk">
+            OK, Entendi
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL DE AUDITORIA (FEAT-AUDIT-01) -->
+    <div id="auditModal" class="modal-overlay" style="display: none;" role="dialog" aria-modal="true" aria-labelledby="auditTitle">
+      <div class="modal-card modal-card-audit">
+        <button type="button" class="modal-close-btn" id="btnAuditClose" title="Fechar (Esc)">&times;</button>
+
+        <div class="modal-header">
+          <div class="about-brand-wrap">
+            <span class="donation-icon">🔍</span>
+            <div class="about-brand-info">
+              <div class="about-brand-title">
+                <span class="brand-name">Auditoria de Biblioteca</span>
+                <span class="badge-pill badge-primary">FEAT-AUDIT-01</span>
+              </div>
+            </div>
+          </div>
+          <p class="about-subtitle">Inspeção read-only de integridade dos arquivos organizados.</p>
+        </div>
+
+        <div class="audit-content">
+          <div id="auditResumo" style="margin-bottom: 16px; padding: 12px; background: #F8FAFC; border-radius: 6px; border: 1px solid #E2E8F0;">
+            <div style="font-weight: 600; font-size: 13px; color: #0F172A; margin-bottom: 4px;">Resumo</div>
+            <div id="auditResumoDetalhes" style="font-size: 12px; color: #475569;">—</div>
+          </div>
+
+          <div style="font-weight: 600; font-size: 13px; color: #0F172A; margin-bottom: 8px;">Itens com Problemas</div>
+          <div id="auditItens" style="max-height: 300px; overflow-y: auto; border: 1px solid #E2E8F0; border-radius: 6px; background: #FFFFFF;">
+            <div style="color: #94A3B8; font-style: italic; font-size: 12px; padding: 12px;">Nenhum problema detectado</div>
+          </div>
+        </div>
+
+        <div class="modal-actions" style="margin-top: 18px;">
+          <button type="button" class="btn btn-outline modal-btn" id="btnAuditFechar">
+            Fechar
           </button>
         </div>
       </div>

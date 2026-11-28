@@ -20,12 +20,6 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Escopo:** `src/tomus/core/llm.py`, `src/tomus/core/config.py`, `tests/test_multi_provider.py`
 - **Objetivo:** Testar de forma efetiva o comportamento quando uma chave esgota cota ou falha (HTTP 429, erro de autenticação ou indisponibilidade), garantindo tanto a rotação para a próxima chave válida no pool do mesmo provedor quanto a troca automática para o próximo provedor com chave validada na cadeia de fallback.
 
-### [FEAT-UI-05] Filtrar Dropdown de Provedor Apenas para Chaves Testadas e Validadas
-- **Status:** Aberto
-- **Responsáveis:** Prisma (UX/UI) e Forja (Bridge/Config)
-- **Escopo:** `src/tomus/gui/web/index.html`, `src/tomus/gui/web/app.js`, `src/tomus/gui/bridge.py`, `src/tomus/gui/widgets/preferences_dialog.py`
-- **Objetivo:** No seletor (dropdown) da barra principal para escolher o provedor usado na classificação, exibir exclusivamente os provedores que possuem chave testada e validada nas Preferências, evitando que o usuário selecione um provedor sem credencial funcional.
-
 ### [BUG-UI-01] Indicador de Provedor Validado na Tela Principal Não Atualiza ao Trocar Chave
 - **Status:** Aberto
 - **Responsáveis:** Prisma (UX/UI) e Forja (Bridge/Config)
@@ -38,36 +32,6 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Escopo:** `src/tomus/gui/widgets/preferences_dialog.py` (`_gather_pending_credentials`, `_on_validation_result`, `KeyValidationWorker`), `tests/`
 - **Diagnóstico confirmado:** o campo de chave do provedor aceita múltiplas chaves separadas por vírgula, mas `_gather_pending_credentials()` aplica `raw.split(",")[0]` e valida ao vivo **apenas a primeira** — as demais são gravadas no `config.toml` sem nunca serem testadas. Além disso `_on_validation_result()` registra o resultado em `_validation_results[field_name]` (por provedor), então o feedback visual é **um único ✓/✗ por campo**, sem distinguir as chaves.
 - **Objetivo:** validar **todas** as chaves informadas em cada campo e apresentar feedback individual por chave (ex.: lista com a chave mascarada e status ✓ validado / ✗ 401 / ✗ 403 / ✗ formato inválido), mantendo a persistência sempre garantida antes da validação e o comportamento não-bloqueante. Alinhar com o feedback por chave que o `KeyPoolDialog` já oferece.
-
-### [FEAT-LLM-02] Rebaixar Groq para o Fim da Cadeia de Fallback
-- **Status:** Aberto
-- **Responsáveis:** Forja (Core/LLM)
-- **Escopo:** `src/tomus/core/config.py`
-- **Objetivo:** Alterar o padrão de `fallback_chain` para priorizar provedores mais estáveis antes do Groq (ex.: `["nvidia", "claude", "deepseek", "groq"]`), atualizando também `generate_config_template()` e substituindo o comentário obsoleto `llama-3.3-70b-versatile` na linha 350 por `openai/gpt-oss-120b`. Motivo: o Groq (`openai/gpt-oss-120b`) tem cota gratuita restrita (8.000 TPM) e travou 10 de 14 PDFs por cooldown quando colocado em primeiro na cadeia (relatório em `temp/relatorios/relatorio_provedores_llm_2026-11-26.md`).
-
-### [FEAT-LLM-03] Ajustar Consumo de Tokens e Cadenciamento do GroqProvider
-- **Status:** Aberto
-- **Responsáveis:** Forja (Core/LLM)
-- **Escopo:** `src/tomus/core/llm.py`
-- **Objetivo:** Reduzir o orçamento por requisição no `GroqProvider` (`max_sampled_chars` para 6.000–8.000 caracteres, `max_tokens = 1024`) para gastar ~3.000–3.500 tokens por PDF e caber nos 8.000 TPM gratuitos da Groq. Ler os cabeçalhos de rate-limit da Groq (`x-ratelimit-remaining-tokens`, `x-ratelimit-reset-tokens`, `x-ratelimit-remaining-requests`, `retry-after`) para controlar o ritmo de envio: com outros provedores saudáveis na cadeia, um `429` deve acionar fallback imediato; quando o Groq for o último recurso, respeitar a janela de reset de TPM antes de falhar o lote em cascata. Manter `openai/gpt-oss-120b` como modelo padrão.
-
-### [TEST-LLM-02] Testes de Nova Ordem de Fallback e Cadenciamento do Groq
-- **Status:** Aberto
-- **Responsáveis:** Forja (Core/LLM) e Lince (Testes/Integração)
-- **Escopo:** `tests/test_multi_provider.py`, `tests/test_config.py`
-- **Objetivo:** Validar a nova ordem padrão de `fallback_chain` com Groq ao final; testar envio reduzido (`max_tokens` / `max_sampled_chars`) e o respeito aos headers de rate-limit/cadenciamento do `GroqProvider` sem quebrar a política de 0-sleep quando há outro provedor elegível no `FallbackLLMDispatcher`.
-
-### [FEAT-UI-06] Sinalizar Groq como Opção de Fallback na GUI
-- **Status:** Aberto
-- **Responsáveis:** Prisma (UX/UI)
-- **Escopo:** `src/tomus/gui/web/index.html`, `src/tomus/gui/widgets/preferences_dialog.py`
-- **Objetivo:** Identificar o Groq como opção recomendada apenas para fallback (ex.: `Groq — Fallback (openai/gpt-oss-120b)`), orientando o usuário a usar Gemini ou NVIDIA NIM como provedor principal gratuito. Inclui a correção de atualização visual do seletor/indicador de provedor na tela principal ao trocar de provedor (ref. BUG-UI-01).
-
-### [FEAT-DOC-01] Documentar Limites Gratuitos do Groq no Manual do Usuário
-- **Status:** Aberto
-- **Responsáveis:** Prisma (UX/UI)
-- **Escopo:** `docs/produto/MANUAL_DO_USUARIO.md`, `docs/manual_do_usuario.html`, `README.md`
-- **Objetivo:** Registrar explicitamente que o Groq não exige cartão de crédito, mas tem limite gratuito restrito a 8.000 tokens por minuto (TPM) e 200.000 tokens por dia (TPD). Recomendar configurá-lo apenas na cadeia de fallback (atrás de Gemini e NVIDIA NIM), explicando que o uso isolado em lotes médios/grandes é naturalmente mais lento por conta do cadenciamento de 8.000 TPM.
 
 ### [FEAT-TRIAGE-01] Companion Markdown em Revisão Manual, Edição Guiada e Materialização Seletiva
 - **Status:** Aberto
@@ -138,6 +102,25 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Responsáveis:** Atlas, Lince e Sentinela
 - **Escopo:** `src/tomus/core/`, `src/tomus/extractors/`, `tomus.example.toml`
 - **Objetivo:** Tratar pendências não-bloqueantes remanescentes: validação explícita de cabeçalho `%PDF-` e timeout no OCR (LINCE-09/10), eliminação de leitura dupla no scanner, cache da estrutura de taxonomia, validação de `int(volume)`, limpeza do campo `github_token` sem uso em `tomus.example.toml` e renomeação de testes com versão no nome (`test_periodicals_v133.py`).
+
+## Qualidade e Automação de Smoke
+
+### [FEAT-QA-01] Automação Completa do Smoke na VM do Windows (Camada C — Clique na GUI)
+- **Status:** Aberto (camadas A e B implementadas na sprint 28/11; camada C pendente)
+- **Responsáveis:** Forja (script) e Agente Windows (execução na VM)
+- **Escopo:** `scripts/vm_smoke_pipeline.py`, `packaging/vm_smoke_installer.ps1`, `packaging/smoke_check_windows.py`
+- **O que já existe:** instalador verificado dentro da VM (tamanho + SHA-256), instalação silenciosa com `EXITCODE=0`, self-test OCR aprovado, boot da GUI confirmado por indicadores (processo vivo, CPU acumulando, QtWebEngine ativo, stderr limpo) e credencial não-interativa do convidado resolvida via **DPAPI** (substitui o `Get-Credential`, que travava por diálogo modal).
+- **O que falta:** confirmar a abertura da janela por `MainWindowHandle` — o `.NET` não detecta o handle do app Qt, então o boot ainda depende de confirmação visual no console; e automatizar o processamento pela GUI.
+- **Objetivo:** avaliar automação de clique com FlaUI ou pywinauto para eliminar a última dependência de operador. **Ressalva técnica:** controles QtWebEngine não expõem árvore de acessibilidade confiável, e um seletor quebrado produz falso negativo — o pior tipo de falha em teste. Manter A+B (instalação + boot + pipeline via API do core) como caminho principal e tratar C como opcional, sem bloquear release.
+- **Limpeza pendente na VM:** remover a instância de diagnóstico em sessão 0 e a Tarefa Agendada `SmokeLaunch143`.
+
+### [FEAT-QA-02] Snapshot Canônico e Conjunto de Referência do Smoke
+- **Status:** Aberto
+- **Responsáveis:** Agente Windows (VM) e Farol (documentação)
+- **Escopo:** VM `Tomus-QA-Win11-x64`, `packaging/smoke_check_windows.py`, documentação de release
+- **Achado:** o snapshot `PFDs_para_testes_no_disco_c` (nome com typo) **não** tem a conta `tomusagent`, portanto a credencial falha ali e ele não serve para execução autônoma. A base que funciona é **`tomusagent_com_pdfs`**, que tem conta e PDFs.
+- **Objetivo:** tornar `tomusagent_com_pdfs` a base canônica do smoke (renomear `PFDs_para_testes_no_disco_c` ou documentar explicitamente a distinção, para que ninguém repita o erro), e manter uma subpasta `pdfs_teste/` com **10 PDFs de referência** cobrindo variedade de tipos documentais (livro, revista, tese, artigo), de tamanhos (ao menos um pequeno e um grande), pelo menos um arquivo escaneado sem camada de texto (para exercitar o OCR) e anos distintos, sem duplicatas óbvias.
+- **Benefício:** conjunto fixo transforma o smoke em teste reproduzível — mesmos arquivos em toda release, resultado comparável entre execuções, e variação no número de organizados passa a indicar regressão em vez de sorte da amostra.
 
 ## Decisões de Produto (Sem Prazo Definido)
 

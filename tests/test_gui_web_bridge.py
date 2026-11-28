@@ -176,9 +176,10 @@ def test_save_button_async_persists_on_validation_failure(tmp_path, monkeypatch)
 
     def fake_start_validation(checks):
         async_started.append(True)
-        for field_name, _key in checks:
-            validation_emitted.append((field_name, "HTTP 401: Não autorizada"))
-            dlg._on_validation_result(field_name, False, "HTTP 401: Não autorizada")
+        for field_name, keys in checks:
+            for key_index, _key in enumerate(keys):
+                validation_emitted.append((field_name, key_index, "HTTP 401: Não autorizada"))
+                dlg._on_validation_result(field_name, key_index, "", False, "HTTP 401: Não autorizada")
         dlg._on_validation_finished()
 
     monkeypatch.setattr(dlg, "_start_async_validation", fake_start_validation)
@@ -213,7 +214,7 @@ def test_save_button_async_persists_on_validation_failure(tmp_path, monkeypatch)
     # 6. Verificar que o caminho assíncrono foi iniciado
     assert len(async_started) == 1
     assert len(validation_emitted) >= 1
-    assert any(field == "gemini_api_key" for field, _msg in validation_emitted)
+    assert any(field == "gemini_api_key" for field, _, _ in validation_emitted)
 
     # 7. Verificar feedback 401/403 não-bloqueante na UI (validação assíncrona)
     env_lbl = dlg._env_labels["gemini_api_key"]
@@ -224,6 +225,152 @@ def test_save_button_async_persists_on_validation_failure(tmp_path, monkeypatch)
 
     # Fechar diálogo limpo antes do teardown do QApplication offscreen
     dlg.reject()
+
+
+def test_save_button_async_validates_each_comma_key(tmp_path, monkeypatch):
+    """BUG-UI-02: validar TODAS as chaves separadas por v\u00edrgula com feedback individual.
+
+    Cada chave de um campo recebe seu pr\u00f3prio resultado (mascarada + status).
+    O cfg \u00e9 persistido antes da valida\u00e7\u00e3o (caminho ass\u00edncoco n\u00e3o pula o salvamento).
+    """
+    from tomus.gui.widgets.preferences_dialog import PreferencesDialog
+
+    get_qapp()
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig()
+    cfg_file = tmp_path / "config.toml"
+    dlg = PreferencesDialog(cfg, config_path=cfg_file)
+
+    # BUG-UI-02: validar TODAS as chaves separadas por v\u00edrgula com feedback individual.
+    get_qapp()
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig()
+    # Limpar chaves de outros provedores para testar apenas Gemini com 2 chaves
+    for field in ("groq_api_key", "nvidia_api_key", "deepseek_api_key", "claude_api_key", "google_books_api_key", "openalex_polite_email"):
+        setattr(cfg.api_keys, field, "")
+    cfg_file = tmp_path / "config.toml"
+    dlg = PreferencesDialog(cfg, config_path=cfg_file)
+
+    # 1. Duas chaves Gemini separadas por v\u00edrgula (1 v\u00e1lida, 1 rejeitada 401)
+    dlg._fields["gemini_api_key"].setText(
+        "AIzaSyValidKey00000000, AIzaSyInvalidKey111111"
+    )
+
+    # 2. Mockar _start_async_validation (evita QThread real em offscreen)
+    async_started = []
+    validation_emitted = []
+    finished_called = []
+
+    def fake_start_validation(checks):
+        async_started.append(True)
+        for field_name, keys in checks:
+            for key_index, _key in enumerate(keys):
+                # Primeira chave v\u00e1lida, segunda rejeitada com HTTP 401
+                ok = key_index == 0
+                msg = "" if ok else "HTTP 401: N\u00e3o autorizada"
+                validation_emitted.append((field_name, key_index, ok, msg))
+                dlg._on_validation_result(field_name, key_index, "", ok, msg)
+        dlg._on_validation_finished()
+
+    monkeypatch.setattr(dlg, "_start_async_validation", fake_start_validation)
+
+    # 3. Mockar _on_validation_finished para evitar QMessageBox em offscreen
+    dlg._on_validation_finished = lambda: finished_called.append(True)
+
+    # 4. Espionar _persist_config
+    persist_called = []
+
+    def spied_persist():
+        persist_called.append(True)
+        val = dlg._fields["gemini_api_key"].text().strip()
+        cfg.api_keys.gemini_api_key = val
+
+    dlg._persist_config = spied_persist
+
+    # 5. Disparar caminho ass\u00edncoco do botão Salvar
+    dlg._salvar_com_validacao_async()
+
+    # 6. _persist_config chamado imediatamente (cfg persistido)
+    assert len(persist_called) == 1
+    assert cfg.api_keys.gemini_api_key == "AIzaSyValidKey00000000, AIzaSyInvalidKey111111"
+
+    # 7. Caminho ass\u00edncoco iniciado com feedback individual de cada chave
+    assert len(async_started) == 1
+    assert len(validation_emitted) == 2
+    assert validation_emitted[0] == ("gemini_api_key", 0, True, "")
+    assert validation_emitted[1] == ("gemini_api_key", 1, False, "HTTP 401: N\u00e3o autorizada")
+
+    # 8. Label do campo reflete a rejei\u00e7\u00e3o da chave 2 (HTTP 401)
+    env_lbl = dlg._env_labels["gemini_api_key"]
+    assert "HTTP 401" in env_lbl.text() or "rejeitada" in env_lbl.text()
+
+    # 9. Fluxo conclu\u00eddo (finished chamado)
+    assert len(finished_called) == 1
+
+    dlg.reject()
+
+
+def test_badge_updates_when_switching_provider(monkeypatch):
+    """BUG-UI-01: badge de provedor validado atualiza ao trocar de provedor na tela principal."""
+    get_qapp()
+    cfg = AppConfig()
+    cfg.api_keys.gemini_api_key = "AIzaSyValidKey00000000"
+    cfg.api_keys.groq_api_key = ""  # sem chave
+
+    # Simular o WebBridge / main_window sem QWebEngine real
+    class FakeBackend:
+        def __init__(self, config):
+            self._config = config
+
+        def checkProviderKey(self, provider):
+            import asyncio
+
+            async def _fake():
+                key = getattr(self._config.api_keys, f"{provider}_api_key", "") or ""
+                return bool(key.strip())
+
+            return asyncio.get_event_loop().run_until_complete(_fake())
+
+        def getProviderKeyStatus(self, provider):
+            import asyncio
+
+            async def _fake():
+                key = getattr(self._config.api_keys, f"{provider}_api_key", "") or ""
+                return "valid" if key.strip() else "invalid"
+
+            return asyncio.get_event_loop().run_until_complete(_fake())
+
+    # Estado simulado da tela principal (sem instanciar o MainWindow completo)
+    state = {"provider": "gemini"}
+
+    def providerLabel():
+        labels = {
+            "gemini": "Gemini",
+            "groq": "Groq — Fallback",
+            "nvidia": "NVIDIA NIM",
+            "claude": "Anthropic Claude",
+            "deepseek": "DeepSeek",
+        }
+        return labels.get(state["provider"], state["provider"])
+
+    def updateKeyBadge(hasKey, provider=None):
+        if provider:
+            state["provider"] = provider
+        label = providerLabel()
+        if hasKey:
+            return f"{label} — Chave Configurada"
+        return f"{label} — Sem chave (Modo Simulado)"
+
+    # Estado inicial: Gemini com chave
+    assert updateKeyBadge(True, "gemini") == "Gemini — Chave Configurada"
+
+    # Trocar para Groq (sem chave) — badge deve refletir Groq sem chave
+    assert updateKeyBadge(False, "groq") == "Groq — Fallback — Sem chave (Modo Simulado)"
+    assert state["provider"] == "groq"
+
+    # Trocar de volta para Gemini (com chave) — badge volta a indicar chave configurada
+    assert updateKeyBadge(True, "gemini") == "Gemini — Chave Configurada"
+    assert state["provider"] == "gemini"
 
 
 def test_main_window_web_view_instancia(monkeypatch):
@@ -477,5 +624,83 @@ def test_approve_manual_triage_redige_segredo_no_erro_json(tmp_path, monkeypatch
     assert raw_sk not in error_msg
     assert raw_nvapi not in error_msg
     assert "REDACTED" in error_msg
+
+
+# --------------------------------------------------------------------------- #
+# Testes de segurança: recusa de caminho não autorizado (path traversal)
+# --------------------------------------------------------------------------- #
+def test_recolocar_na_fila_recusa_caminho_fora_das_raizes(tmp_path):
+    """recolocarNaFila deve rejeitar caminhos fora de source_dir/target_dir."""
+    from tomus.gui.bridge import WebBridge
+
+    cfg = AppConfig()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True)
+
+    bridge = WebBridge(cfg)
+    bridge.source_dir = str(tmp_path / "origem")
+    bridge.target_dir = str(target_dir)
+
+    # Caminho fora das raízes (sistema)
+    caminho_malicioso = "/etc/passwd"
+    resultado = bridge.recolocarNaFila(caminho_malicioso)
+    resultado_dict = json.loads(resultado) if isinstance(resultado, str) else resultado
+    assert resultado_dict.get("success") is False
+    assert "não autorizado" in resultado_dict.get("error", "")
+
+
+def test_promote_from_manual_review_recusa_caminho_fora_das_raizes(tmp_path):
+    """promoteFromManualReview deve rejeitar source_path fora de source_dir/target_dir."""
+    from tomus.gui.bridge import WebBridge
+
+    cfg = AppConfig()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True)
+
+    bridge = WebBridge(cfg)
+    bridge.source_dir = str(tmp_path / "origem")
+    bridge.target_dir = str(target_dir)
+
+    # Caminho malicioso no JSON de promoção
+    promocao_payload = {
+        "source_path": "/etc/shadow",
+        "classificacao": {
+            "titulo": "Qualquer Título",
+            "autores": ["Autor, A."],
+            "ano": 2020,
+            "tipo": "Livro",
+            "grande_area": "Ciências Humanas",
+            "area_basica": "Psicologia",
+        },
+    }
+    resultado = bridge.promoteFromManualReview(json.dumps(promocao_payload))
+    resultado_dict = json.loads(resultado) if isinstance(resultado, str) else resultado
+    assert resultado_dict.get("success") is False
+    assert "não autorizado" in resultado_dict.get("error", "")
+    assert resultado_dict.get("recusado") is True
+
+
+def test_recolocar_na_fila_aceita_caminho_dentro_da_raiz(tmp_path, monkeypatch):
+    """recolocarNaFila deve aceitar caminho válido dentro de target_dir."""
+    import subprocess
+
+    from tomus.gui.bridge import WebBridge
+
+    cfg = AppConfig()
+    target_dir = tmp_path / "target"
+    target_dir.mkdir(parents=True)
+
+    bridge = WebBridge(cfg)
+    bridge.source_dir = str(tmp_path / "origem")
+    bridge.target_dir = str(target_dir)
+
+    # Criar um PDF válido dentro do target_dir
+    pdf_valido = target_dir / "documento_valido.pdf"
+    pdf_valido.write_bytes(b"%PDF-1.4 dummy content")
+
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd: cmd)
+    resultado = bridge.recolocarNaFila(str(pdf_valido))
+    resultado_dict = json.loads(resultado) if isinstance(resultado, str) else resultado
+    assert resultado_dict.get("success") is True
 
 

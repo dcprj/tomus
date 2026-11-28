@@ -51,6 +51,7 @@
     cntError: document.getElementById('cntError'),
     cntObsolete: document.getElementById('cntObsolete'),
     capesTree: document.getElementById('capesTree'),
+    manualReviewList: document.getElementById('manualReviewList'),
 
     // Table
     searchInput: document.getElementById('searchInput'),
@@ -80,6 +81,9 @@
     triageYear: document.getElementById('triageYear'),
     triageTipo: document.getElementById('triageTipo'),
     btnApproveTriage: document.getElementById('btnApproveTriage'),
+    btnPromoteReview: document.getElementById('btnPromoteReview'),
+    promoteResult: document.getElementById('promoteResult'),
+    triageAuditTrail: document.getElementById('triageAuditTrail'),
     kvGrandeArea: document.getElementById('kvGrandeArea'),
     kvAreaBasica: document.getElementById('kvAreaBasica'),
     kvSubarea: document.getElementById('kvSubarea'),
@@ -132,6 +136,24 @@
     btnAboutOk: document.getElementById('btnAboutOk'),
     btnCopyPix: document.getElementById('btnCopyPix'),
     pixKeyInput: document.getElementById('pixKeyInput'),
+
+    // Support modal dialog (Pix QR Code)
+    btnSupport: document.getElementById('btnSupport'),
+    supportModal: document.getElementById('supportModal'),
+    btnSupportClose: document.getElementById('btnSupportClose'),
+    btnSupportOk: document.getElementById('btnSupportOk'),
+    btnCopySupportPix: document.getElementById('btnCopySupportPix'),
+    supportPixKeyInput: document.getElementById('supportPixKey'),
+
+    // Auditoria de biblioteca (FEAT-AUDIT-01)
+    btnAuditLibrary: document.getElementById('btnAuditLibrary'),
+    auditModal: document.getElementById('auditModal'),
+    btnAuditClose: document.getElementById('btnAuditClose'),
+    btnAuditFechar: document.getElementById('btnAuditFechar'),
+    auditSummary: document.getElementById('auditSummary'),
+    auditItemsList: document.getElementById('auditItemsList'),
+    auditResumoDetalhes: document.getElementById('auditResumoDetalhes'),
+    auditItens: document.getElementById('auditItens'),
   };
 
   // --- Dicionário Taxonômico CAPES/CNPq (carregado dinamicamente do backend via getInitialState) ---
@@ -197,6 +219,37 @@
           if (el.triageAreaBasica) {
             el.triageAreaBasica.innerHTML = buildTriageAreaOptionsHtml('');
           }
+        }
+        // Listar itens pendentes de revisão manual (FEAT-TRIAGE-01)
+        if (backend && backend.listManualReviewItems) {
+          backend.listManualReviewItems().then(function (json) {
+            try {
+              const res = JSON.parse(json);
+              if (res.success && res.itens) {
+                renderManualReviewList(res.itens);
+              }
+            } catch (_) {}
+          });
+        }
+
+        // Auditoria de biblioteca (FEAT-AUDIT-01)
+        if (backend && backend.auditLibrary) {
+          el.btnAuditLibrary.disabled = true;
+          el.btnAuditLibrary.textContent = 'Auditorando...';
+          backend.auditLibrary().then(function (json) {
+            try {
+              const res = JSON.parse(json);
+              el.btnAuditLibrary.disabled = false;
+              el.btnAuditLibrary.textContent = 'Auditar Biblioteca';
+              if (res.success) {
+                renderAuditSummary(res.resumo);
+                renderAuditItens(res.itens);
+              }
+            } catch (_) {
+              el.btnAuditLibrary.disabled = false;
+              el.btnAuditLibrary.textContent = 'Auditar Biblioteca';
+            }
+          });
         }
       });
     });
@@ -621,6 +674,37 @@
     });
   }
 
+  // --- Listagem de itens pendentes de revisão manual (FEAT-TRIAGE-01) ---
+  function renderManualReviewList(itens) {
+    if (!el.manualReviewList) return;
+    el.manualReviewList.innerHTML = '';
+    if (!itens || itens.length === 0) {
+      el.manualReviewList.innerHTML = '<li class="filter-item" style="color: #94A3B8; font-style: italic; font-size: 12px; padding: 12px;">Nenhum item pendente</li>';
+      return;
+    }
+    for (const it of itens) {
+      const li = document.createElement('li');
+      li.className = 'filter-item';
+      li.style.padding = '8px';
+      li.style.borderBottom = '1px solid #E2E8F0';
+      li.style.cursor = 'pointer';
+      li.title = it.motivo || 'Revisão manual pendente';
+      li.innerHTML = `
+        <div style="font-weight: 600; font-size: 13px; color: #0F172A;">${escapeHtml(it.nome || it.caminho || '')}</div>
+        <div style="font-size: 11px; color: #64748B;">${escapeHtml(it.caminho || '')}</div>
+        <div style="font-size: 11px; color: #D97706; margin-top: 2px;">⚠ ${escapeHtml(it.motivo || 'Revisão manual pendente')}</div>
+      `;
+      li.addEventListener('click', () => {
+        // Selecionar o item na tabela, se existir
+        const path = it.pdf_caminho || it.caminho;
+        if (path) {
+          selectItem(path);
+        }
+      });
+      el.manualReviewList.appendChild(li);
+    }
+  }
+
   // --- Renderização da Tabela de Documentos ---
   function renderTable() {
     const query = state.searchQuery.trim().toLowerCase();
@@ -814,6 +898,32 @@
       el.btnOpenPdf.title = 'Abrir PDF de origem no leitor padrão';
       el.btnRevealFolder.title = 'Revelar pasta de origem no Finder / Gerenciador de Arquivos';
     }
+
+    // --- Trilha de Auditoria (FEAT-TRIAGE-01) ---
+    if (item.status === 'manual_review' || item.status === 'error') {
+      el.triagePromoteBox.style.display = 'block';
+      el.triageAuditBox.style.display = 'block';
+      const auditoria = item.auditoria || {};
+      const historico = auditoria.historico || [];
+      if (historico.length > 0) {
+        el.triageAuditTrail.innerHTML = historico
+          .map(h => `<div style="margin-bottom: 6px;"><strong>${escapeHtml(h.acao || 'ação')}</strong> — ${escapeHtml(h.data || '')} — ${escapeHtml(h.motivo || '')}</div>`)
+          .join('');
+      } else {
+        el.triageAuditTrail.innerHTML = '<div style="color: #94A3B8; font-style: italic;">Nenhuma entrada de auditoria disponível</div>';
+      }
+      // Preencher campos de edição com dados do item
+      if (el.triageTitle) el.triageTitle.value = item.title || '';
+      if (el.triageAuthors) el.triageAuthors.value = (item.authors || []).join('; ');
+      if (el.triageYear) el.triageYear.value = item.year || '';
+      if (el.triageTipo) el.triageTipo.value = item.tipo || '';
+      if (el.triageAreaBasica) el.triageAreaBasica.value = item.area_basica || '';
+      if (el.triageSubarea) el.triageSubarea.value = item.subarea || '';
+      if (el.triageEspecialidade) el.triageEspecialidade.value = item.especialidade || '';
+    } else {
+      el.triagePromoteBox.style.display = 'none';
+      el.triageAuditBox.style.display = 'none';
+    }
   }
 
   // --- Formulário de Triagem Manual ---
@@ -932,6 +1042,91 @@
         renderTable();
         renderInspector(item);
       }
+    }
+  });
+
+  // --- Promover item de revisão manual para árvore definitiva (FEAT-TRIAGE-01) ---
+  el.btnPromoteReview.addEventListener('click', () => {
+    if (!state.selectedPath) return;
+    const item = state.items.find(i => i.source_path === state.selectedPath);
+    if (!item) return;
+
+    const selectedAreaBasica = el.triageAreaBasica ? el.triageAreaBasica.value : (item.area_basica || '');
+    const resolvedGrandeArea = AREA_TO_GRANDE_AREA[selectedAreaBasica] || (item.grande_area || '');
+
+    const classificacao = {
+      titulo: el.triageTitle.value.trim() || item.title || '',
+      autores: el.triageAuthors.value.split(';').map(s => s.trim()).filter(Boolean),
+      ano: el.triageYear.value ? parseInt(el.triageYear.value, 10) : (item.year || null),
+      tipo: el.triageTipo.value || item.tipo || '',
+      grande_area: resolvedGrandeArea,
+      area_basica: selectedAreaBasica,
+      subarea: el.triageSubarea ? el.triageSubarea.value : (item.subarea || ''),
+      especialidade: el.triageEspecialidade ? el.triageEspecialidade.value : (item.especialidade || ''),
+    };
+
+    // Validar campos obrigatórios (mesma regra do backend)
+    const faltando = [];
+    if (!classificacao.titulo) faltando.push('título');
+    if (classificacao.autores.length === 0) faltando.push('autores');
+    if (!classificacao.ano) faltando.push('ano');
+    if (!classificacao.tipo) faltando.push('tipo');
+    if (!classificacao.grande_area && !classificacao.area_basica) faltando.push('taxonomia (grande área/área básica)');
+
+    if (faltando.length > 0) {
+      el.promoteResult.textContent = 'Campos obrigatórios não preenchidos: ' + faltando.join(', ');
+      el.promoteResult.style.color = '#DC2626';
+      return;
+    }
+
+    if (backend && backend.promoteFromManualReview) {
+      const payload = {
+        source_path: state.selectedPath,
+        classificacao: classificacao,
+        motivo_promocao: 'Promovido manualmente pelo usuário via inspetor',
+        usuario_responsavel: 'local',
+      };
+      backend.promoteFromManualReview(JSON.stringify(payload)).then(resStr => {
+        try {
+          const res = typeof resStr === 'string' ? JSON.parse(resStr) : resStr;
+          if (!res || !res.success) {
+            if (res.recusado) {
+              el.promoteResult.textContent = 'Recusado: ' + (res.error || 'Campos obrigatórios incompletos');
+              el.promoteResult.style.color = '#DC2626';
+            } else {
+              el.promoteResult.textContent = 'Erro: ' + (res.error || 'Não foi possível promover o item');
+              el.promoteResult.style.color = '#DC2626';
+            }
+            return;
+          }
+          el.promoteResult.textContent = 'Promovido com sucesso para a árvore definitiva!';
+          el.promoteResult.style.color = '#16A34A';
+          // Recarregar a lista de revisão manual
+          if (backend && backend.listManualReviewItems) {
+            backend.listManualReviewItems().then(function (json) {
+              try {
+                const res2 = JSON.parse(json);
+                if (res2.success && res2.itens) {
+                  renderManualReviewList(res2.itens);
+                }
+              } catch (_) {}
+            });
+          }
+          // Atualizar o inspetor para refletir a mudança
+          const updatedItem = state.items.find(i => i.source_path === state.selectedPath);
+          if (updatedItem) {
+            updatedItem.status = 'organized';
+            renderInspector(updatedItem);
+          }
+        } catch (e) {
+          console.error('Erro ao processar resposta de promoção:', e);
+          el.promoteResult.textContent = 'Erro ao processar resposta do servidor';
+          el.promoteResult.style.color = '#DC2626';
+        }
+      });
+    } else {
+      el.promoteResult.textContent = 'Backend não disponível para promoção';
+      el.promoteResult.style.color = '#DC2626';
     }
   });
 
@@ -1511,17 +1706,203 @@
     });
   }
 
-  // Copiar chave Pix
-  if (el.btnCopyPix && el.pixKeyInput) {
-    el.btnCopyPix.addEventListener('click', () => {
-      const pix = el.pixKeyInput.value.trim();
+  // --- Modal de Apoio (Pix QR Code) ---
+  function openSupportModal() {
+    if (el.supportModal) {
+      el.supportModal.style.display = 'flex';
+    }
+  }
+
+  function closeSupportModal() {
+    if (el.supportModal) {
+      el.supportModal.style.display = 'none';
+    }
+  }
+
+  if (el.btnSupport) {
+    el.btnSupport.addEventListener('click', openSupportModal);
+  }
+  if (el.btnSupportClose) {
+    el.btnSupportClose.addEventListener('click', closeSupportModal);
+  }
+  if (el.btnSupportOk) {
+    el.btnSupportOk.addEventListener('click', closeSupportModal);
+  }
+  if (el.supportModal) {
+    el.supportModal.addEventListener('click', (e) => {
+      if (e.target === el.supportModal) {
+        closeSupportModal();
+      }
+    });
+  }
+
+  // Copiar chave Pix do modal de Apoio
+  if (el.btnCopySupportPix && el.supportPixKeyInput) {
+    el.btnCopySupportPix.addEventListener('click', () => {
+      const pix = el.supportPixKeyInput.value.trim();
       navigator.clipboard.writeText(pix).then(() => {
-        const orig = el.btnCopyPix.innerHTML;
-        el.btnCopyPix.innerHTML = '✔ Copiado!';
-        setTimeout(() => { el.btnCopyPix.innerHTML = orig; }, 1800);
+        const orig = el.btnCopySupportPix.innerHTML;
+        el.btnCopySupportPix.innerHTML = '✔ Copiado!';
+        setTimeout(() => { el.btnCopySupportPix.innerHTML = orig; }, 1800);
       });
     });
   }
+
+  // --- Auditoria de biblioteca (FEAT-AUDIT-01) ---
+  function openAuditModal() {
+    if (el.auditModal) {
+      el.auditModal.style.display = 'flex';
+    }
+  }
+
+  function closeAuditModal() {
+    if (el.auditModal) {
+      el.auditModal.style.display = 'none';
+    }
+  }
+
+  if (el.btnAuditLibrary) {
+    el.btnAuditLibrary.addEventListener('click', () => {
+      el.btnAuditLibrary.disabled = true;
+      el.btnAuditLibrary.textContent = 'Auditorando...';
+      if (backend && backend.auditLibrary) {
+        backend.auditLibrary().then(function (json) {
+          el.btnAuditLibrary.disabled = false;
+          el.btnAuditLibrary.textContent = 'Auditar Biblioteca';
+          try {
+            const res = JSON.parse(json);
+            if (res.success) {
+              renderAuditSummary(res.resumo);
+              renderAuditItens(res.itens);
+              openAuditModal();
+            }
+          } catch (_) {}
+        });
+      }
+    });
+  }
+  if (el.btnAuditClose) {
+    el.btnAuditClose.addEventListener('click', closeAuditModal);
+  }
+  if (el.btnAuditFechar) {
+    el.btnAuditFechar.addEventListener('click', closeAuditModal);
+  }
+  if (el.auditModal) {
+    el.auditModal.addEventListener('click', (e) => {
+      if (e.target === el.auditModal) {
+        closeAuditModal();
+      }
+    });
+  }
+
+  // --- Renderização da auditoria (FEAT-AUDIT-01) ---
+  function renderAuditSummary(resumo) {
+    if (!el.auditResumoDetalhes) return;
+    const ok = resumo.ok || 0;
+    const total = resumo.total_pdf || 0;
+    const comProblemas = resumo.com_problemas || 0;
+    const pt = resumo.por_tipo || {};
+    el.auditResumoDetalhes.innerHTML = `
+      <div><strong>Total de PDFs:</strong> ${total}</div>
+      <div style="color: #16A34A;"><strong>OK:</strong> ${ok}</div>
+      <div style="color: #DC2626;"><strong>Com problemas:</strong> ${comProblemas}</div>
+      <div style="color: #D97706;"><strong>Órfãos:</strong> ${pt.orfao || 0} |
+      <strong>Front matter inválido:</strong> ${pt.front_matter_invalido || 0} |
+      <strong>Corrompidos:</strong> ${pt.corrompido || 0} |
+      <strong>Cópias soltas:</strong> ${pt.copia_solta || 0}</div>
+    `;
+  }
+
+  function renderAuditItens(itens) {
+    if (!el.auditItemsList) return;
+    el.auditItemsList.innerHTML = '';
+    if (!itens || itens.length === 0) {
+      el.auditItemsList.innerHTML = '<li class="filter-item" style="color: #16A34A; font-style: italic; font-size: 12px; padding: 12px;">Nenhum problema detectado</li>';
+      return;
+    }
+    const acaoLabel = {
+      'recolocar_na_fila': 'Enviar para fila de classificação',
+      'confirmar_integridade': 'Confirmar integridade',
+    };
+    for (const it of itens) {
+      const problemas = it.problemas || [];
+      const acao = it.acao_sugerida || '';
+      const li = document.createElement('li');
+      li.className = 'filter-item';
+      li.style.padding = '8px';
+      li.style.borderBottom = '1px solid #E2E8F0';
+      const problemasHtml = problemas.map(p => {
+        const cores = { 'orfao': '#DC2626', 'front_matter_invalido': '#D97706', 'corrompido': '#DC2626', 'copia_solta': '#D97706' };
+        const cor = cores[p] || '#64748B';
+        return '<span style="color: ' + cor + '; font-size: 10px; font-weight: 600;">' + escapeHtml(p) + '</span>';
+      }).join(' ');
+      li.innerHTML =
+        '<div style="font-weight: 600; font-size: 12px; color: #0F172A;">' + escapeHtml(it.nome || it.caminho || '') + '</div>' +
+        '<div style="font-size: 11px; color: #64748B;">' + escapeHtml(it.caminho || '') + '</div>' +
+        '<div style="font-size: 11px; margin-top: 4px;">' + problemasHtml + '</div>' +
+        '<button class="btn btn-outline btn-sm" style="margin-top: 6px;" data-acao="' + acao + '" data-caminho="' + escapeHtml(it.caminho || '') + '">' +
+        (acaoLabel[acao] || acao) + '</button>';
+      const btn = li.querySelector('button');
+      btn.addEventListener('click', (function(itLocal, acaoLocal, caminhoLocal) {
+        return function(e) {
+          e.stopPropagation();
+          if (acaoLocal === 'recolocar_na_fila' && backend && backend.recolocarNaFila) {
+            if (!confirm('Encaminhar "' + escapeHtml(itLocal.nome || itLocal.caminho || '') + '" para a fila de classificação?')) return;
+            btn.disabled = true;
+            btn.textContent = 'Processando...';
+            backend.recolocarNaFila(caminhoLocal).then(function(resJson) {
+              try {
+                const res = JSON.parse(resJson);
+                if (res.success) {
+                  btn.textContent = 'Enviado para fila';
+                  btn.style.background = '#16A34A';
+                  btn.style.borderColor = '#16A34A';
+                } else {
+                  btn.textContent = 'Erro';
+                  btn.style.background = '#DC2626';
+                  btn.style.borderColor = '#DC2626';
+                }
+              } catch (_) {
+                btn.textContent = 'Erro';
+                btn.style.background = '#DC2626';
+                btn.style.borderColor = '#DC2626';
+              }
+              btn.disabled = false;
+            });
+          } else if (acaoLocal === 'confirmar_integridade' && backend && backend.confirmarIntegridade) {
+            if (!confirm('Confirmar integridade de "' + escapeHtml(itLocal.nome || itLocal.caminho || '') + '"?')) return;
+            btn.disabled = true;
+            btn.textContent = 'Processando...';
+            backend.confirmarIntegridade(caminhoLocal, 'local').then(function(resJson) {
+              try {
+                const res = JSON.parse(resJson);
+                if (res.success) {
+                  btn.textContent = 'Confirmado';
+                  btn.style.background = '#16A34A';
+                  btn.style.borderColor = '#16A34A';
+                } else {
+                  btn.textContent = 'Erro';
+                  btn.style.background = '#DC2626';
+                  btn.style.borderColor = '#DC2626';
+                }
+              } catch (_) {
+                btn.textContent = 'Erro';
+                btn.style.background = '#DC2626';
+                btn.style.borderColor = '#DC2626';
+              }
+              btn.disabled = false;
+            });
+          }
+        };
+      })(it, acao, it.caminho || ''));
+      el.auditItemsList.appendChild(li);
+    }
+  }
+
+  // --- Geração de QR Code Pix EMVCo (local, sem dependência externa) ---
+  // TODO: Implementar no backend com biblioteca Python pura (ex: segno) sem
+  // dependência externa de runtime. O QR não é gerado no frontend para evitar
+  // padrão visual falso que não é legível por aplicativos bancários.
 
   // Links externos no Modal Sobre
   document.querySelectorAll('.link-external').forEach(link => {
