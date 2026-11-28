@@ -46,3 +46,11 @@ build/
 mockups/
 scratch/
 
+# Relatórios temporários gerados pelo agente (não versionar)
+temp/
+
+# Scripts internos de monitoramento do canal OneDrive (Mac <-> Windows).
+# Uso interno da orquestração: NUNCA entram em releases.
+scripts/monitorar_novas_mensagens_win.sh
+scripts/monitorar_mensagens_gate.sh
+scripts/verificar_novas_mensagens_windows.ps1

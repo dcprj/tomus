@@ -183,7 +183,7 @@
 
       <div class="nav-actions">
         <a href="index.html#download" class="btn btn-primary btn-sm">
-          <span>Baixar v1.4.1</span>
+          <span>Baixar v1.4.2</span>
         </a>
       </div>
     </div>
@@ -192,7 +192,7 @@
   <main class="doc-page">
     <div class="doc-container">
       <header class="doc-header">
-        <div class="doc-badge">Guia Didático do Usuário v1.4.1</div>
+        <div class="doc-badge">Guia Didático do Usuário v1.4.2</div>
         <h1 class="doc-title">Manual do Usuário do Tomus</h1>
         <div class="doc-meta">
           <span><strong>Para:</strong> Pesquisadores, Professores, Estudantes e Bibliotecários</span>
@@ -215,7 +215,7 @@
 
         <h3>2.1 Instalação no macOS</h3>
         <ol>
-          <li>Baixe o arquivo de instalação <code>Tomus-1.4.1-macOS.dmg</code> na página oficial do projeto.</li>
+          <li>Baixe o arquivo de instalação <code>Tomus-1.4.2-macOS.dmg</code> na página oficial do projeto.</li>
           <li>Dê um duplo clique no arquivo <code>.dmg</code> baixado para abrir a janela de instalação.</li>
           <li>Arraste o ícone do <strong>Tomus</strong> para a pasta <strong>Aplicativos</strong>.</li>
           <li>Abra o Tomus pelo Launchpad ou pelo Finder.</li>
@@ -223,9 +223,9 @@
         </ol>
 
         <h3>2.2 Instalação no Windows</h3>
-        <p>O instalador para Windows (<code>Tomus_Setup_v1.4.1_Windows_x64.exe</code>) é gerado com <strong>Inno Setup</strong> e é uma instalação <strong>por usuário</strong>: não exige senha nem privilégios de administrador.</p>
+        <p>O instalador para Windows (<code>Tomus_Setup_v1.4.2_Windows_x64.exe</code>) é gerado com <strong>Inno Setup</strong> e é uma instalação <strong>por usuário</strong>: não exige senha nem privilégios de administrador.</p>
         <ol>
-          <li>Baixe o instalador oficial <code>Tomus_Setup_v1.4.1_Windows_x64.exe</code> na seção de lançamentos <em>Releases</em> do GitHub.</li>
+          <li>Baixe o instalador oficial <code>Tomus_Setup_v1.4.2_Windows_x64.exe</code> na seção de lançamentos <em>Releases</em> do GitHub.</li>
           <li>Dê um duplo clique no arquivo <code>.exe</code> baixado para abrir o assistente do Inno Setup.</li>
           <li>Siga o assistente: aceite os termos de licença, escolha a pasta de destino (padrão: <code>%LocalAppData%\Programs\Tomus</code>) e marque, se desejar, o atalho opcional na <strong>Área de Trabalho</strong>. Atalhos são criados automaticamente no <strong>Menu Iniciar</strong>.</li>
           <li>Conclua a instalação e inicie o Tomus pelo Menu Iniciar ou pelo atalho da Área de Trabalho.</li>
@@ -270,15 +270,18 @@
         <div class="step-card">
           <div class="step-card-header">
             <span class="step-num">2</span>
-            <h3>Groq (Excelente Reserva Gratuita — 1.000 requisições/dia)</h3>
+            <h3>Groq (Apenas como Reserva de Fallback — Gratuito, Sem Cartão de Crédito)</h3>
           </div>
-          <p>O Groq é ultra-veloz e oferece gratuitamente 1.000 consultas por dia. É o parceiro perfeito para atuar como reserva automática se o Gemini atingir o limite diário.</p>
+          <p>O Groq é ultra-veloz e não exige cartão de crédito, mas sua cota gratuita é restrita a <strong>8.000 tokens por minuto (TPM)</strong> e <strong>200.000 tokens por dia (TPD)</strong>. Por esse motivo, ele <strong>não deve ser usado como provedor principal</strong> em lotes médios ou grandes. Recomendamos configurá-lo <strong>apenas na cadeia de fallback</strong> (atrás do Google Gemini e/ou NVIDIA NIM, provedores principais gratuitos), para que o Tomus acione o Groq automaticamente se o principal atingir o limite.</p>
           <ol>
             <li>Acesse o console: <a href="https://console.groq.com/" target="_blank" rel="noopener"><strong>console.groq.com</strong></a> e crie sua conta gratuita.</li>
             <li>No menu lateral esquerdo, clique em <strong>API Keys</strong>.</li>
             <li>Clique em <strong>Create API Key</strong>, dê o nome de <code>Tomus</code> e confirme.</li>
             <li>Copie a chave gerada (iniciada em <code>gsk_...</code>). Guarde-a logo, pois ela só aparece uma vez!</li>
           </ol>
+          <div class="warning-box">
+            <strong>Limite gratuito do Groq:</strong> 8.000 TPM e 200.000 TPD. O uso isolado como provedor principal em lotes grandes esgota rapidamente a cota e torna o processamento mais lento por causa do cadenciamento de tokens. Prefira Gemini ou NVIDIA NIM como principal.
+          </div>
         </div>
 
         <div class="step-card">
@@ -377,7 +380,7 @@
           </div>
           <div class="glossary-item">
             <div class="glossary-term">Revista (Tipo de Publicação)</div>
-            <div class="glossary-def">Tipo documental adicionado na v1.4.1, suportando periódicos e fascículos com citação conforme ABNT NBR 6023:2025.</div>
+            <div class="glossary-def">Tipo documental adicionado na v1.4.2, suportando periódicos e fascículos com citação conforme ABNT NBR 6023:2025.</div>
           </div>
           <div class="glossary-item">
             <div class="glossary-term">DOI (Digital Object Identifier)</div>

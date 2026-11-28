@@ -1201,28 +1201,44 @@
     el.targetPath.title = path || '';
   }
 
-  function updateKeyBadge(hasKey) {
+  // Nome amigável de cada provedor para exibição no indicador de chave
+  const PROVIDER_LABELS = {
+    gemini: 'Gemini',
+    groq: 'Groq — Fallback',
+    nvidia: 'NVIDIA NIM',
+    claude: 'Anthropic Claude',
+    deepseek: 'DeepSeek',
+  };
+
+  function providerLabel() {
+    return PROVIDER_LABELS[state.provider] || state.provider;
+  }
+
+  function updateKeyBadge(hasKey, provider) {
+    if (provider) state.provider = provider;
     if (backend && backend.getProviderKeyStatus && state.provider) {
       backend.getProviderKeyStatus(state.provider).then(function(status) {
+        const label = providerLabel();
         if (status === 'valid') {
           el.keyBadge.className = 'badge-pill badge-key-active';
-          el.keyBadgeText.textContent = 'Chave Configurada';
+          el.keyBadgeText.textContent = label + ' — Chave Configurada';
         } else if (status === 'invalid') {
           el.keyBadge.className = 'badge-pill badge-key-error';
-          el.keyBadgeText.textContent = 'Chave com Formato Inválido';
+          el.keyBadgeText.textContent = label + ' — Chave Inválida';
         } else {
           el.keyBadge.className = 'badge-pill badge-key-simulated';
-          el.keyBadgeText.textContent = 'Sem chave (Modo Simulado)';
+          el.keyBadgeText.textContent = label + ' — Sem chave (Modo Simulado)';
         }
       });
       return;
     }
+    const label = providerLabel();
     if (hasKey) {
       el.keyBadge.className = 'badge-pill badge-key-active';
-      el.keyBadgeText.textContent = 'Chave Configurada';
+      el.keyBadgeText.textContent = label + ' — Chave Configurada';
     } else {
       el.keyBadge.className = 'badge-pill badge-key-simulated';
-      el.keyBadgeText.textContent = 'Sem chave (Modo Simulado)';
+      el.keyBadgeText.textContent = label + ' — Sem chave (Modo Simulado)';
     }
   }
 
@@ -1246,8 +1262,10 @@
     state.provider = e.target.value;
     if (backend && backend.checkProviderKey) {
       backend.checkProviderKey(state.provider).then(function (hasKey) {
-        updateKeyBadge(hasKey);
+        updateKeyBadge(hasKey, state.provider);
       });
+    } else {
+      updateKeyBadge(false, state.provider);
     }
   });
 

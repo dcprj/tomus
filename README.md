@@ -30,25 +30,25 @@ Ele organiza seus documentos diretamente em seu computador conforme a taxonomia 
 
 ## 📥 Como Baixar e Instalar
 
-Você não precisa instalar Python nem configurar ambientes complexos para usar o Tomus. Baixe o instalador nativo pronto para **macOS** ou **Windows** na seção de **[Releases](https://github.com/dcprj/tomus/releases)** (tag `v1.4.1`):
+Você não precisa instalar Python nem configurar ambientes complexos para usar o Tomus. Baixe o instalador nativo pronto para **macOS** ou **Windows** na seção de **[Releases](https://github.com/dcprj/tomus/releases)** (tag `v1.4.2`):
 
 **Requisitos de plataforma:**
 * **macOS 14+** (Apple Silicon ou Intel)
 * **Windows 10/11** (64 bits)
 
-| Sistema Operacional | Formato do Pacote | Link de Download Direto (v1.4.1) |
+| Sistema Operacional | Formato do Pacote | Link de Download Direto (v1.4.2) |
 | :--- | :--- | :--- |
-| **macOS** (Apple Silicon / Intel) | `.dmg` (arraste para `/Applications`) | [Baixar Tomus-1.4.1-macOS.dmg](https://github.com/dcprj/tomus/releases/download/v1.4.1/Tomus-1.4.1-macOS.dmg) |
-| **Windows 10/11** (x64) | `.exe` (Inno Setup, sem administrador) | [Baixar Tomus_Setup_v1.4.1_Windows_x64.exe](https://github.com/dcprj/tomus/releases/download/v1.4.1/Tomus_Setup_v1.4.1_Windows_x64.exe) |
+| **macOS** (Apple Silicon / Intel) | `.dmg` (arraste para `/Applications`) | [Baixar Tomus-1.4.2-macOS.dmg](https://github.com/dcprj/tomus/releases/download/v1.4.2/Tomus-1.4.2-macOS.dmg) |
+| **Windows 10/11** (x64) | `.exe` (Inno Setup, sem administrador) | [Baixar Tomus_Setup_v1.4.2_Windows_x64.exe](https://github.com/dcprj/tomus/releases/download/v1.4.2/Tomus_Setup_v1.4.2_Windows_x64.exe) |
 
 > [!TIP]
-> Sempre prefira os assets oficiais da release [v1.4.1](https://github.com/dcprj/tomus/releases/tag/v1.4.1) ou da página [latest](https://github.com/dcprj/tomus/releases/latest). Não execute instaladores de fontes terceiras.
+> Sempre prefira os assets oficiais da release [v1.4.2](https://github.com/dcprj/tomus/releases/tag/v1.4.2) ou da página [latest](https://github.com/dcprj/tomus/releases/latest). Não execute instaladores de fontes terceiras.
 
 ---
 
 ### 1. Instalação no macOS
 
-1. Baixe o arquivo oficial `Tomus-1.4.1-macOS.dmg`.
+1. Baixe o arquivo oficial `Tomus-1.4.2-macOS.dmg`.
 2. Dê duplo clique no arquivo `.dmg` baixado para abri-lo.
 3. Arraste o ícone do aplicativo para a pasta **Applications (Aplicativos)**.
 
@@ -72,7 +72,7 @@ O instalador para Windows é gerado com **Inno Setup** e é uma instalação **p
 
 Acesse a seção de **[Releases](https://github.com/dcprj/tomus/releases)** e baixe o instalador oficial para Windows. Sempre prefira os assets oficiais do repositório dcprj/tomus — não execute instaladores de fontes terceiras.
 
-O nome do arquivo segue o padrão `Tomus_Setup_v<versao>_Windows_x64.exe` (por exemplo, `Tomus_Setup_v1.4.1_Windows_x64.exe` na release v1.4.1 vigente). Confira que o nome e a versão exibidos coincidem com o asset oficial da release do GitHub.
+O nome do arquivo segue o padrão `Tomus_Setup_v<versao>_Windows_x64.exe` (por exemplo, `Tomus_Setup_v1.4.2_Windows_x64.exe` na release v1.4.2 vigente). Confira que o nome e a versão exibidos coincidem com o asset oficial da release do GitHub.
 
 #### 2.2 Confirmação de procedência
 
@@ -98,7 +98,7 @@ Essa confirmação costuma ser necessária apenas na primeira abertura do instal
 ![Detalhes expandidos: nome do fornecedor e opção Executar assim mesmo](./docs/assets/windows-smartscreen-expandido.png)
 
 > [!NOTE]
-> As capturas acima mostram o instalador **v1.4.1** (versão publicada na release do GitHub). O nome do arquivo exibido pode variar conforme a versão disponível; sempre confira o nome exato do arquivo baixado no asset oficial da release.
+> As capturas acima mostram o instalador **v1.4.2** (versão publicada na release do GitHub). O nome do arquivo exibido pode variar conforme a versão disponível; sempre confira o nome exato do arquivo baixado no asset oficial da release.
 
 #### 2.5 Seguir o assistente de instalação
 
@@ -199,6 +199,9 @@ Acesse o site de um provedor de inteligência artificial (por exemplo, [Google A
 4. Copie a chave gerada (começa com `AIza...`).
 
 Ela é só sua e serve para conectar o Tomus ao modelo de linguagem. Cada provedor define suas próprias regras de uso, cota e preços — consulte o site de cada provedor antes de criar a chave. Você deve guardá-la com cuidado, como faria com uma senha.
+
+> [!WARNING]
+> **Groq — use apenas como reserva de fallback (não como provedor principal).** O Groq não exige cartão de crédito, mas sua cota gratuita é restrita a **8.000 tokens por minuto (TPM)** e **200.000 tokens por dia (TPD)**. O uso isolado como principal em lotes médios/grandes esgota rapidamente a cota e torna o processamento mais lento por causa do cadenciamento. Recomendamos configurar o **Google Gemini** ou o **NVIDIA NIM** como provedor principal gratuito e deixar o **Groq apenas na cadeia de fallback**, para que o Tomus acione o Groq automaticamente se o principal atingir o limite.
 
 ### 4. Insira a chave
 
