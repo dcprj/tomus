@@ -6,6 +6,7 @@ e inexistentes.
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from tomus.core.session import (
@@ -79,6 +80,39 @@ def test_save_e_load_roundtrip(tmp_path: Path):
     assert estado_carregado.move is True
     assert estado_carregado.confidence_min == 0.80
     assert estado_carregado.workers == 2
+
+
+def test_save_session_aplica_permissao_0600(tmp_path: Path, monkeypatch):
+    """save_session deve aplicar permissao 0600 (somente o dono) no arquivo de sessao.
+
+    Em POSIX verifica st_mode == 0o600. No Windows, o st_mode nao reflete
+    ACL (icacls), entao mocka set_restrictive_file_permissions e afirma que
+    foi chamada com o caminho correto.
+    """
+    session_path = tmp_path / ".tomus_session.json"
+    estado = SessionState(source_dir="/o", target_dir="/d")
+    save_session(estado, path=session_path)
+
+    if sys.platform == "win32":
+        # No Windows, st_mode nao reflete ACL. Verifica que a funcao centralizada
+        # foi chamada com o caminho do arquivo de sessao.
+        chamado = {}
+
+        def falso_set_permissions(path):
+            chamado["caminho"] = path
+            return True
+
+        monkeypatch.setattr(
+            "tomus.core.session.set_restrictive_file_permissions", falso_set_permissions
+        )
+        # Re-executar para capturar a chamada via mock.
+        save_session(estado, path=session_path)
+        assert chamado["caminho"] == session_path, (
+            f"esperado {session_path}, obteve {chamado['caminho']}"
+        )
+    else:
+        modo = session_path.stat().st_mode & 0o777
+        assert modo == 0o600, f"esperado 0o600, obteve {oct(modo)}"
 
 
 def test_load_session_arquivo_inexistente_retorna_none(tmp_path: Path):

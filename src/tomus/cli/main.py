@@ -26,6 +26,7 @@ warnings.filterwarnings(
     "ignore", category=DeprecationWarning, message=r".*SwigPy.*|.*swigvarlink.*"
 )
 
+import os
 import sys
 from pathlib import Path
 
@@ -734,6 +735,10 @@ def gui_command(
 
 def main() -> None:
     """Ponto de entrada da CLI."""
+    # Definir umask restrito (077) para que arquivos criados pelo processo
+    # (logs, sessao, cache SQLite WAL, etc.) herdem permissao 0600 por
+    # padrao, independentemente do umask do ambiente (ex: 022).
+    os.umask(0o077)
     app()
 
 

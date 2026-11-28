@@ -6,6 +6,7 @@ Cobre: conexão WAL, get/put com confidence_min, persistência seletiva,
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from tomus.core.cache import FileCache
@@ -43,6 +44,54 @@ def test_cache_conexao_wal_cria_tabela(tmp_path: Path):
         "SELECT name FROM sqlite_master WHERE type='table' AND name='processed_files'"
     )
     assert cur.fetchone() is not None
+    cache.close()
+
+
+def test_cache_aplica_permissao_0600_no_db_e_wal(tmp_path: Path, monkeypatch):
+    """_connect deve aplicar permissao 0600 no banco e arquivos auxiliares WAL.
+
+    Em POSIX verifica st_mode == 0o600. No Windows, o st_mode nao reflete ACL,
+    entao mocka set_restrictive_file_permissions e afirma que foi chamada com
+    o caminho do banco primeiro.
+    """
+    db_path = tmp_path / "state.db"
+    cache = FileCache(enabled=True, db_path=db_path)
+    cache._ensure_conn()
+    assert cache._conn is not None
+
+    if sys.platform == "win32":
+        # No Windows, st_mode nao reflete ACL. Verifica que a funcao centralizada
+        # foi chamada primeiro com o caminho do banco.
+        chamadas = []
+
+        def falso_set_permissions(path):
+            chamadas.append(path)
+            return True
+
+        monkeypatch.setattr(
+            "tomus.core.cache.set_restrictive_file_permissions", falso_set_permissions
+        )
+        # Re-executar para capturar chamadas via mock.
+        cache._conn.close()
+        cache._conn = None
+        cache._ensure_conn()
+        assert chamadas[0] == db_path, (
+            f"esperado primeira chamada em {db_path}, obteve {chamadas[0]}"
+        )
+    else:
+        # Banco principal.
+        modo_db = db_path.stat().st_mode & 0o777
+        assert modo_db == 0o600, f"esperado 0o600 no db, obteve {oct(modo_db)}"
+
+        # Arquivos auxiliares do WAL, se existirem.
+        for sufixo in ("-wal", "-shm"):
+            aux = db_path.with_suffix(db_path.suffix + sufixo)
+            if aux.exists():
+                modo_aux = aux.stat().st_mode & 0o777
+                assert modo_aux == 0o600, (
+                    f"esperado 0o600 em {aux.name}, obteve {oct(modo_aux)}"
+                )
+
     cache.close()
 
 

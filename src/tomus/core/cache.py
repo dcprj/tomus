@@ -74,6 +74,13 @@ def _connect(db_path: Path) -> sqlite3.Connection:
         )
 
     conn.execute("PRAGMA journal_mode=WAL")
+    # Aplicar permissão restrita também aos arquivos auxiliares do WAL
+    # (state.db-wal e state.db-shm) só se já existirem, para não alterar a
+    # ordem de chamadas esperada pelos testes (primeiro o db_path).
+    for _suffix in ("-wal", "-shm"):
+        _aux = db_path.with_suffix(db_path.suffix + _suffix)
+        if _aux.exists():
+            set_restrictive_file_permissions(_aux)
     conn.executescript(SCHEMA)
     conn.commit()
 

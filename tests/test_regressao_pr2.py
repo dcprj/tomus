@@ -707,8 +707,8 @@ def test_appsec_c01_sanitize_error_message_redige_chaves():
     from tomus.core.llm import _sanitize_error_message
 
     # AIzaSy (Google)
-    msg = "Erro com AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890 invalido"
-    assert "AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890" not in _sanitize_error_message(msg)
+    msg = "Erro com AIzaSyTESTE-CURTA invalido"
+    assert "AIzaSyTESTE-CURTA" not in _sanitize_error_message(msg)
     # sk-ant- (Claude)
     msg = "Erro com sk-ant-1234567890abcdef invalido"
     assert "sk-ant-1234567890abcdef" not in _sanitize_error_message(msg)

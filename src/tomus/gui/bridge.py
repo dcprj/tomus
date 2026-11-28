@@ -740,6 +740,20 @@ class WebBridge(QObject):
             motivo_promocao = data.get("motivo_promocao", "Promovido manualmente pelo usuário")
             usuario_responsavel = data.get("usuario_responsavel", "local")
 
+            # Validação de caminho (AppSec A-03): rejeitar caminhos fora das
+            # raízes autorizadas (source_dir/target_dir/pastas do usuário).
+            roots = [
+                Path(d) for d in (self.source_dir, self.target_dir) if d and str(d).strip()
+            ] + list(_USER_SAFE_DIRS)
+            if not source_path or not _is_safe_path(source_path, roots):
+                _logger.warning(
+                    "rejeitado promoteFromManualReview em caminho não seguro: %s",
+                    source_path,
+                )
+                return json.dumps(
+                    {"success": False, "error": "Caminho não autorizado", "recusado": True}
+                )
+
             from tomus.storage.organizer import LibraryOrganizer
             org = LibraryOrganizer(target)
             entry = org.promote_from_manual_review(
@@ -804,6 +818,17 @@ class WebBridge(QObject):
         if not target or not Path(target).exists():
             return json.dumps({"success": False, "error": "Diretório de destino não configurado"})
         try:
+            # Validação de caminho (AppSec A-03): rejeitar caminhos fora das
+            # raízes autorizadas (source_dir/target_dir/pastas do usuário).
+            roots = [
+                Path(d) for d in (self.source_dir, self.target_dir) if d and str(d).strip()
+            ] + list(_USER_SAFE_DIRS)
+            if not source_path or not _is_safe_path(source_path, roots):
+                _logger.warning(
+                    "rejeitado recolocarNaFila em caminho não seguro: %s", source_path
+                )
+                return json.dumps({"success": False, "error": "Caminho não autorizado"})
+
             from tomus.storage.organizer import LibraryOrganizer
             org = LibraryOrganizer(target)
             entry = org.recolocar_na_fila(Path(source_path))

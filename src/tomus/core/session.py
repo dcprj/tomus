@@ -13,6 +13,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
+from tomus.core.file_security import set_restrictive_file_permissions
+
 SESSION_FILE = Path(".tomus_session.json")
 
 
@@ -37,6 +39,7 @@ def save_session(state: SessionState, path: Path = SESSION_FILE) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = state.model_dump(mode="json")
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    set_restrictive_file_permissions(path)
 
 
 def load_session(path: Path = SESSION_FILE) -> SessionState | None:
