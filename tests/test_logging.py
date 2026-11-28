@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 from pathlib import Path
 
 from tomus.core.logging import _THIRD_PARTY_LOGGERS, get_logger, setup_logging
@@ -40,12 +41,36 @@ def test_setup_logging_cria_arquivo_log(tmp_path: Path):
     assert "[" in texto  # colchetes de levelname e name
 
 
-def test_setup_logging_aplica_permissao_0600(tmp_path: Path):
-    """setup_logging deve aplicar permissao 0600 (somente o dono) no arquivo de log."""
+def test_setup_logging_aplica_permissao_0600(tmp_path: Path, monkeypatch):
+    """setup_logging deve aplicar permissao 0600 (somente o dono) no arquivo de log.
+
+    Em POSIX verifica st_mode == 0o600. No Windows, o st_mode nao reflete
+    ACL (icacls), entao mocka set_restrictive_file_permissions e afirma que
+    foi chamada com o caminho correto.
+    """
     log_file = tmp_path / "tomus.log"
     setup_logging(log_file=log_file, verbose=False, level=logging.INFO)
-    modo = log_file.stat().st_mode & 0o777
-    assert modo == 0o600, f"esperado 0o600, obteve {oct(modo)}"
+
+    if sys.platform == "win32":
+        # No Windows, st_mode nao reflete ACL. Verifica que a funcao centralizada
+        # foi chamada com o caminho do arquivo de log.
+        chamado = {}
+
+        def falso_set_permissions(path):
+            chamado["caminho"] = path
+            return True
+
+        monkeypatch.setattr(
+            "tomus.core.logging.set_restrictive_file_permissions", falso_set_permissions
+        )
+        # Re-executar para capturar a chamada via mock.
+        setup_logging(log_file=log_file, verbose=False, level=logging.INFO)
+        assert chamado["caminho"] == log_file, (
+            f"esperado {log_file}, obteve {chamado['caminho']}"
+        )
+    else:
+        modo = log_file.stat().st_mode & 0o777
+        assert modo == 0o600, f"esperado 0o600, obteve {oct(modo)}"
 
 
 def test_setup_logging_terminal_limpo_quando_verbose_false(tmp_path: Path, monkeypatch):
