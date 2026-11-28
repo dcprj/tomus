@@ -103,6 +103,42 @@ Este documento mantém exclusivamente itens abertos, sem duplicidades e sem hist
 - **Escopo:** `src/tomus/core/`, `src/tomus/extractors/`, `tomus.example.toml`
 - **Objetivo:** Tratar pendências não-bloqueantes remanescentes: validação explícita de cabeçalho `%PDF-` e timeout no OCR (LINCE-09/10), eliminação de leitura dupla no scanner, cache da estrutura de taxonomia, validação de `int(volume)`, limpeza do campo `github_token` sem uso em `tomus.example.toml` e renomeação de testes com versão no nome (`test_periodicals_v133.py`).
 
+### [BUG-UI-03] Badge do Provedor Não se Adapta à Janela Reduzida
+- **Status:** Aberto (achado cosmético do smoke da 1.4.3, 28/11/2026)
+- **Responsáveis:** Prisma (UX/UI)
+- **Escopo:** `src/tomus/gui/web/index.html`, `src/tomus/gui/web/style.css`
+- **Objetivo:** o badge de provedor validado na barra principal não reduz proporcionalmente quando a janela é estreitada, ficando cortado ou sobrepondo o campo de modelo. Aplicar responsividade (flex-shrink, min-width, ellipsis ou reorganização em duas linhas).
+
+### [FEAT-UX-05] Instrução de Instalação no DMG com Mecanismo Robusto
+- **Status:** Aberto (decorrente do smoke da 1.4.3)
+- **Responsáveis:** Farol (empacotamento)
+- **Escopo:** `packaging/build_macos.sh`, `packaging/`
+- **Contexto:** a imagem de fundo do DMG não renderiza. Causa raiz: o `.DS_Store` carrega `backgroundType_` como **cor** além de `backgroundImageAlias_`, e o `create-dmg` não consegue sobrescrever isso no runner headless do CI (sem WindowServer, o AppleScript falha). Renomear o asset para `background.png` não resolve — verificado duas vezes no smoke.
+- **Duas fases:** (a) curto prazo — incluir um arquivo `Instrucoes.txt` visível dentro do DMG com a orientação de arrastar `Tomus.app` para Aplicativos. Robusto, independente de `.DS_Store`, funciona em qualquer geração; (b) evolução — gerar o `.dmg` em Mac com Finder e subir como asset, para ter o visual de fato.
+- **Ressalva:** a fase (b) adiciona passo manual ao release, que tende a ser pulado. Recomenda-se (a) como padrão.
+
+### [FEAT-UX-06] QR Code Pix Real no Modal de Apoio
+- **Status:** Aberto (o QR falso foi removido na 1.4.3)
+- **Responsáveis:** Forja (backend) e Prisma (interface)
+- **Escopo:** backend de geração de imagem, `src/tomus/gui/web/`
+- **Objetivo:** gerar QR Code EMVCo BR Code válido no backend com biblioteca Python pura (ex.: `segno`, sem dependência de runtime externo) e servir a imagem para o modal. Critério de aceitação testável: **um aplicativo bancário lê o QR** e o payload EMVCo corresponde à chave Pix configurada.
+- **Aprendizado:** itens que declaram integração externa (QR, API, formato de arquivo) precisam de critério de aceitação que valide a integração, não apenas que o código não quebra.
+
+### [FEAT-ORG-01] Hierarquia CAPES Completa na Árvore de Destino
+- **Status:** Aberto (achado do smoke da 1.4.3 — lacuna de design, não regressão)
+- **Responsáveis:** Forja (storage)
+- **Escopo:** `src/tomus/storage/organizer.py`
+- **Contexto:** o caminho de destino usa `area_basica/subarea/tipo` desde a baseline v1.4.1. A taxonomia resolve corretamente `Psicologia → Ciências Humanas`, `Turismo → Ciências Sociais Aplicadas` etc., mas `grande_area` nunca é usada no path. Consequência: hierarquia truncada em 2 níveis; áreas básicas de grandes áreas diferentes ficam irmãs no topo.
+- **Impacto de mudar:** afeta bibliotecas já organizadas (do Dario e de usuários). Exige migração ou reclassificação.
+- **Recomendação:** decidir fora do calor de release. Se um dia o Tomus for usado por bibliotecas grandes, o terceiro nível passa a importar mais.
+
+### [FEAT-WEB-06] Domínio Próprio na Landing Page
+- **Status:** Aberto (domínio `tomus.app.br` registrado; DNS em transição em 28/11/2026)
+- **Responsáveis:** Farol (Pages) e Prisma (landing)
+- **Escopo:** `docs/CNAME`, configuração do GitHub Pages, DNS
+- **Objetivo:** servir a landing page e a documentação em `tomus.app.br` via GitHub Pages (gratuito, HTTPS automático). Passos: 4 registros A do GitHub (185.199.108-111.153) + CNAME de www para dcprj.github.io; custom domain em Settings → Pages; arquivo `docs/CNAME`; Enforce HTTPS. Downloads continuam no GitHub Releases.
+- **Futuro:** subdomínio de downloads ou espelho dos assets no domínio próprio.
+
 ## Qualidade e Automação de Smoke
 
 ### [FEAT-QA-01] Automação Completa do Smoke na VM do Windows (Camada C — Clique na GUI)
